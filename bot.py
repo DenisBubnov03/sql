@@ -11,9 +11,9 @@ from commands.student_notifications import check_call_notifications, check_payme
 from commands.student_selection import *
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics
+import os
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# Токен Telegram-бота
-TELEGRAM_TOKEN = "7581276969:AAG7CmzyHrVzGwvpdc6zsmS--TrTE-Kc1UI"
 
 # Состояния для ConversationHandler
 def main():
