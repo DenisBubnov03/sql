@@ -28,5 +28,13 @@ async def exit_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Возврат в главное меню и завершение ConversationHandler.
     """
-    await start(update, context)  # Отображаем главное меню
+    await update.message.reply_text(
+        "Выберите действие:",
+        reply_markup=ReplyKeyboardMarkup(
+            [["Добавить студента", "Просмотреть студентов"],
+             ["Редактировать данные студента", "Проверить уведомления"],
+             ["Поиск ученика", "Статистика"]],
+            one_time_keyboard=True
+        )
+    )
     return ConversationHandler.END

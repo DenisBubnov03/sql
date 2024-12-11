@@ -2,6 +2,7 @@ from datetime import datetime
 
 from commands.authorized_users import AUTHORIZED_USERS
 from commands.logger import custom_logger
+from commands.start_commands import exit_to_main_menu
 from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, COMMISSION
 
 from telegram import Update, ReplyKeyboardMarkup
@@ -174,7 +175,7 @@ async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_T
         editor_tg = update.message.from_user.username
         custom_logger.info(f"@{editor_tg} добавил студента: {context.user_data}")
         await update.message.reply_text("Студент успешно добавлен!")
-        return ConversationHandler.END
+        return await exit_to_main_menu(update, context)
 
     except ValueError:
         await update.message.reply_text("Введите корректные данные о комиссии (например: '2, 50'). Попробуйте ещё раз.")

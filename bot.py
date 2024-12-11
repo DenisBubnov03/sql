@@ -1,11 +1,13 @@
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from commands.start_commands import start, exit_to_main_menu
+from commands.states import NOTIFICATION_MENU
 from commands.student_commands import *
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
 from commands.student_management_command import *
-from commands.student_notifications import check_notifications
+from commands.student_notifications import check_call_notifications, check_payment_notifications, \
+    check_all_notifications, show_notifications_menu
 from commands.student_selection import *
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics
@@ -77,17 +79,31 @@ def main():
             MessageHandler(filters.Regex("^🔙 Вернуться в меню$"), exit_to_main_menu),  # Добавляем обработчик для выхода
         ],
     )
-
+    notifications_handler = ConversationHandler(
+    entry_points=[MessageHandler(filters.Regex("^Проверить уведомления$"), show_notifications_menu)],
+    states={
+        NOTIFICATION_MENU: [
+            MessageHandler(filters.Regex("^По звонкам$"), check_call_notifications),
+            MessageHandler(filters.Regex("^По оплате$"), check_payment_notifications),
+            MessageHandler(filters.Regex("^Все$"), check_all_notifications),
+        ],
+        "NOTIFICATION_PROCESS": [
+            MessageHandler(filters.Regex("^🔙 Назад$"), show_notifications_menu),
+        ],
+    },
+    fallbacks=[
+        MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu),
+    ],
+)
 
     # Регистрация обработчиков
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.Regex("^Просмотреть студентов$"), view_students))
-    application.add_handler(MessageHandler(filters.Regex("^Проверить уведомления$"), check_notifications))
     application.add_handler(add_student_handler)
     application.add_handler(edit_student_handler)
     application.add_handler(search_student_handler)
     application.add_handler(statistics_handler)
-
+    application.add_handler(notifications_handler)
 
     # application.add_handler(MessageHandler(filters.Regex("Отмена"), cancel))  # Доп. проверка
     # application.add_handler(MessageHandler(filters.ALL, debug))

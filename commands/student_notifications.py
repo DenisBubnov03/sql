@@ -1,23 +1,18 @@
 # commands/student_notifications.py
 
 from datetime import datetime
-
-from telegram import Update
-from telegram.ext import ContextTypes
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ContextTypes, ConversationHandler
 
 from commands.authorized_users import AUTHORIZED_USERS
+from commands.start_commands import exit_to_main_menu
+from commands.states import NOTIFICATION_MENU
 from student_management.student_management import get_all_students
 
 
 def calculate_due_payments(students):
     """
     Вычисляет задолженности студентов по оплатам.
-
-    Args:
-        students (list): Список студентов.
-
-    Returns:
-        list: Список уведомлений по оплатам.
     """
     payment_notifications = []
     for student in students:
@@ -37,12 +32,6 @@ def calculate_due_payments(students):
 def calculate_call_notifications(students):
     """
     Вычисляет студентов, которым необходимо позвонить.
-
-    Args:
-        students (list): Список студентов.
-
-    Returns:
-        list: Список уведомлений по звонкам.
     """
     call_notifications = []
     for student in students:
@@ -67,20 +56,56 @@ def calculate_call_notifications(students):
     return call_notifications
 
 
-async def check_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_notifications_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("Вызвана функция show_notifications_menu")
+    """
+    Отображает меню для выбора уведомлений.
+    """
     user_id = update.message.from_user.id
     if user_id not in AUTHORIZED_USERS:
         await update.message.reply_text("Извините, у вас нет доступа.")
-        return
+        return ConversationHandler.END
+
+    await update.message.reply_text(
+        "Выберите тип уведомлений:",
+        reply_markup=ReplyKeyboardMarkup(
+            [["По звонкам", "По оплате", "Все"], ["🔙 Главное меню"]],
+            one_time_keyboard=True
+        )
+    )
+    return NOTIFICATION_MENU
+
+
+
+async def check_call_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("Вызвана функция check_call_notifications")  # Для отладки
+    students = get_all_students()
+    call_notifications = calculate_call_notifications(students)
+
+    if call_notifications:
+        await update.message.reply_text("❗ Уведомления по звонкам:\n" + "\n".join(call_notifications))
+    else:
+        await update.message.reply_text("✅ Нет уведомлений по звонкам.")
+    return await exit_to_main_menu(update, context)
+
+
+
+async def check_payment_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("Вызвана функция check_payment_notifications")  # Для отладки
+    students = get_all_students()
+    payment_notifications = calculate_due_payments(students)
+
+    if payment_notifications:
+        await update.message.reply_text("❗ Уведомления по оплате:\n" + "\n".join(payment_notifications))
+    else:
+        await update.message.reply_text("✅ Нет уведомлений по оплате.")
+    return await exit_to_main_menu(update, context)
+
+
+
+async def check_all_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Проверяет уведомления для студентов и отправляет их пользователю.
-
-    Args:
-        update (Update): Объект Telegram Update.
-        context (ContextTypes.DEFAULT_TYPE): Контекст команды.
-
-    Returns:
-        None
+    Проверяет все уведомления.
     """
     students = get_all_students()
 
@@ -101,3 +126,4 @@ async def check_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("✅ Все в порядке, уведомлений нет!")
     else:
         await update.message.reply_text("\n".join(messages))
+    return await exit_to_main_menu(update, context)
