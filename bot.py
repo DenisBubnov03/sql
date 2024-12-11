@@ -1,4 +1,5 @@
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import asyncio
 from flask import Flask
 from commands.start_commands import start, exit_to_main_menu
 from commands.states import NOTIFICATION_MENU
