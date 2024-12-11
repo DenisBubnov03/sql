@@ -13,11 +13,16 @@ from commands.student_selection import *
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics
 import os
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 app = Flask(__name__)
+
+
 @app.route("/")
 def home():
     return "Telegram Bot is Running!"
+
+
 # Состояния для ConversationHandler
 def main():
     # Создание приложения Telegram
@@ -83,21 +88,21 @@ def main():
         ],
     )
     notifications_handler = ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^Проверить уведомления$"), show_notifications_menu)],
-    states={
-        NOTIFICATION_MENU: [
-            MessageHandler(filters.Regex("^По звонкам$"), check_call_notifications),
-            MessageHandler(filters.Regex("^По оплате$"), check_payment_notifications),
-            MessageHandler(filters.Regex("^Все$"), check_all_notifications),
+        entry_points=[MessageHandler(filters.Regex("^Проверить уведомления$"), show_notifications_menu)],
+        states={
+            NOTIFICATION_MENU: [
+                MessageHandler(filters.Regex("^По звонкам$"), check_call_notifications),
+                MessageHandler(filters.Regex("^По оплате$"), check_payment_notifications),
+                MessageHandler(filters.Regex("^Все$"), check_all_notifications),
+            ],
+            "NOTIFICATION_PROCESS": [
+                MessageHandler(filters.Regex("^🔙 Назад$"), show_notifications_menu),
+            ],
+        },
+        fallbacks=[
+            MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu),
         ],
-        "NOTIFICATION_PROCESS": [
-            MessageHandler(filters.Regex("^🔙 Назад$"), show_notifications_menu),
-        ],
-    },
-    fallbacks=[
-        MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu),
-    ],
-)
+    )
 
     # Регистрация обработчиков
     application.add_handler(CommandHandler("start", start))
@@ -114,14 +119,12 @@ def main():
     # Запуск бота
     application.run_polling()
 
+if __name__ == "__main__":
+    # Настройка вебхука
+    loop = asyncio.get_event_loop()
 
-    
-    if __name__ == "__main__":
-        # Настройка вебхука
-        loop = asyncio.get_event_loop()
+    # Запускаем бота в асинхронном режиме
+    loop.create_task(main())
 
-        # Запускаем бота в асинхронном режиме
-        loop.create_task(main())
-    
-        # Запускаем Flask сервер
-        app.run(host="0.0.0.0", port=5000)
+    # Запускаем Flask сервер
+    app.run(host="0.0.0.0", port=5000)
