@@ -59,22 +59,38 @@ async def add_student_telegram(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return TELEGRAM
 
+    # Сохраняем Telegram в context
     context.user_data["telegram"] = telegram_account
-    await update.message.reply_text("Введите дату начала обучения (в формате ДД.ММ.ГГГГ):")
+
+    # Добавляем клавиатуру с кнопкой "Сегодня"
+    await update.message.reply_text(
+        "Введите дату начала обучения (в формате ДД.ММ.ГГГГ) или нажмите 'Сегодня':",
+        reply_markup=ReplyKeyboardMarkup(
+            [["Сегодня"], ["Назад"]],
+            one_time_keyboard=True
+        )
+    )
     return START_DATE
 
 
 # Добавление студента: шаг 4 - выбор типа обучения
 async def add_student_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Запрос типа обучения.
+    Обработка даты начала обучения.
     """
     try:
-        date_text = update.message.text
+        date_text = update.message.text.strip()
+
+        # Логика для кнопки "Сегодня"
+        if date_text == "Сегодня":
+            date_text = datetime.now().strftime("%d.%m.%Y")
+
+        # Проверка формата даты
         datetime.strptime(date_text, "%d.%m.%Y")
         context.user_data["start_date"] = date_text
+
         await update.message.reply_text(
-            "Выберите тип обучения:",
+            f"Дата начала обучения установлена: {date_text}.\nВыберите тип обучения:",
             reply_markup=ReplyKeyboardMarkup(
                 [['Ручное тестирование', 'Автотестирование', 'Фуллстек']],
                 one_time_keyboard=True
@@ -82,7 +98,14 @@ async def add_student_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return COURSE_TYPE
     except ValueError:
-        await update.message.reply_text("Дата должна быть в формате ДД.ММ.ГГГГ. Попробуйте ещё раз.")
+        # Сообщение об ошибке и предложение повторного ввода
+        await update.message.reply_text(
+            "Дата должна быть в формате ДД.ММ.ГГГГ или нажмите 'Сегодня'. Попробуйте ещё раз:",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Сегодня"], ["Назад"]],
+                one_time_keyboard=True
+            )
+        )
         return START_DATE
 
 
