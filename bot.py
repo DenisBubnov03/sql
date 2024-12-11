@@ -225,4 +225,10 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT)
+    loop = asyncio.get_event_loop()
+
+    # Запускаем бота в асинхронном режиме
+    loop.create_task(start_bot())
+
+    # Запускаем Flask сервер
+    app.run(host="0.0.0.0", port=5000)
