@@ -1,5 +1,3 @@
-# commands/student_management_command.py
-
 from datetime import datetime
 
 from commands.authorized_users import AUTHORIZED_USERS
