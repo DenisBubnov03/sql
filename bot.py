@@ -229,7 +229,7 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
 
     # Запускаем бота в асинхронном режиме
-    loop.create_task(start_bot())
+    loop.create_task(main())
 
     # Запускаем Flask сервер
     app.run(host="0.0.0.0", port=5000)
