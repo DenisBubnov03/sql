@@ -15,7 +15,9 @@ from commands.student_statistic_commands import show_statistics_menu, show_gener
 import os
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 app = Flask(__name__)
-PORT = int(os.getenv("PORT", 5000))
+@app.route("/")
+def home():
+    return "Telegram Bot is Running!"
 # Состояния для ConversationHandler
 def main():
     # Создание приложения Telegram
@@ -113,27 +115,13 @@ def main():
     application.run_polling()
 
 
-    @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-    def webhook():
-        """
-        Обрабатывает запросы Telegram через вебхуки.
-        """
-        json_data = request.get_json()
-        return application.update_queue.put(json_data)
-    
-    @app.route("/", methods=["GET"])
-    def index():
-        """
-        Корневой маршрут для проверки работоспособности сервиса.
-        """
-        return "Сервер Telegram-бота работает!", 200
     
     if __name__ == "__main__":
         # Настройка вебхука
-        webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL')}/{TELEGRAM_TOKEN}"
-    
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(application.bot.set_webhook(url=webhook_url))
+
+        # Запускаем бота в асинхронном режиме
+        loop.create_task(main())
     
-        # Запуск Flask сервера
-        app.run(host="0.0.0.0", port=PORT)
+        # Запускаем Flask сервер
+        app.run(host="0.0.0.0", port=5000)
