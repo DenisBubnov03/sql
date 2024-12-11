@@ -3,6 +3,8 @@
 from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
+
+from commands.authorized_users import AUTHORIZED_USERS
 from commands.logger import log_student_change
 from commands.start_commands import exit_to_main_menu
 from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM
@@ -37,6 +39,10 @@ async def edit_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Редактирование поля студента
 async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if user_id not in AUTHORIZED_USERS:
+        await update.message.reply_text("Извините, у вас нет доступа.")
+        return
     """
     Обрабатывает выбор поля для редактирования.
     """

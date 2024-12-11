@@ -5,6 +5,7 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from commands.authorized_users import AUTHORIZED_USERS
 from student_management.student_management import get_all_students
 
 
@@ -67,6 +68,10 @@ def calculate_call_notifications(students):
 
 
 async def check_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if user_id not in AUTHORIZED_USERS:
+        await update.message.reply_text("Извините, у вас нет доступа.")
+        return
     """
     Проверяет уведомления для студентов и отправляет их пользователю.
 

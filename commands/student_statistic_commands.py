@@ -1,5 +1,5 @@
 # commands/student_statistic_commands.py
-
+from commands.authorized_users import AUTHORIZED_USERS
 from student_management.student_management import get_all_students
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -7,6 +7,10 @@ from commands.states import STATISTICS_MENU, COURSE_TYPE_MENU
 
 
 async def show_statistics_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if user_id not in AUTHORIZED_USERS:
+        await update.message.reply_text("Извините, у вас нет доступа.")
+        return
     """
     Отображает главное меню статистики.
     """

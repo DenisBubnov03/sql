@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from commands.authorized_users import AUTHORIZED_USERS
 from commands.logger import custom_logger
 from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, COMMISSION
 
@@ -104,6 +105,10 @@ async def add_student_course_type(update: Update, context: ContextTypes.DEFAULT_
 
 # Добавление студента: шаг 6 - ввод общей стоимости
 async def add_student_total_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if user_id not in AUTHORIZED_USERS:
+        await update.message.reply_text("Извините, у вас нет доступа.")
+        return
     """
     Запрос внесённой оплаты.
     """

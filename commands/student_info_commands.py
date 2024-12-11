@@ -1,5 +1,5 @@
 # commands/student_info_commands.py
-
+from commands.authorized_users import AUTHORIZED_USERS
 from commands.states import FIO_OR_TELEGRAM
 
 from telegram import Update, ReplyKeyboardMarkup
@@ -9,6 +9,10 @@ from student_management.student_management import get_all_students
 
 
 async def search_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if user_id not in AUTHORIZED_USERS:
+        await update.message.reply_text("Извините, у вас нет доступа.")
+        return
     """
     Запрашивает ввод для поиска студента по ФИО или Telegram.
     """
