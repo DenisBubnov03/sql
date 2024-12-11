@@ -1,6 +1,6 @@
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import asyncio
-from flask import Flask
+from flask import Flask, request
 from commands.start_commands import start, exit_to_main_menu
 from commands.states import NOTIFICATION_MENU
 from commands.student_commands import *
@@ -113,27 +113,27 @@ def main():
     application.run_polling()
 
 
-@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-def webhook():
-    """
-    Обрабатывает запросы Telegram через вебхуки.
-    """
-    json_data = request.get_json()
-    return application.update_queue.put(json_data)
-
-@app.route("/", methods=["GET"])
-def index():
-    """
-    Корневой маршрут для проверки работоспособности сервиса.
-    """
-    return "Сервер Telegram-бота работает!", 200
-
-if __name__ == "__main__":
-    # Настройка вебхука
-    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL')}/{TELEGRAM_TOKEN}"
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(application.bot.set_webhook(url=webhook_url))
-
-    # Запуск Flask сервера
-    app.run(host="0.0.0.0", port=PORT)
+    @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+    def webhook():
+        """
+        Обрабатывает запросы Telegram через вебхуки.
+        """
+        json_data = request.get_json()
+        return application.update_queue.put(json_data)
+    
+    @app.route("/", methods=["GET"])
+    def index():
+        """
+        Корневой маршрут для проверки работоспособности сервиса.
+        """
+        return "Сервер Telegram-бота работает!", 200
+    
+    if __name__ == "__main__":
+        # Настройка вебхука
+        webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL')}/{TELEGRAM_TOKEN}"
+    
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(application.bot.set_webhook(url=webhook_url))
+    
+        # Запуск Flask сервера
+        app.run(host="0.0.0.0", port=PORT)
