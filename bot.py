@@ -137,5 +137,5 @@ async def start_bot():
 if __name__ == "__main__":
     print(f"Starting on port {PORT}")
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(start_bot())
+    loop.run_until_complete(main())
     app.run(host="0.0.0.0", port=PORT)
