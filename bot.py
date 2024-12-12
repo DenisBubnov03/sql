@@ -4,6 +4,7 @@ from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler
 
+# Импорт ваших остальных команд и настроек
 from commands.start_commands import start, exit_to_main_menu
 from commands.states import NOTIFICATION_MENU
 from commands.student_commands import *
@@ -29,8 +30,7 @@ from commands.student_statistic_commands import (
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 print("TELEGRAM_TOKEN:", TELEGRAM_TOKEN)
 
-# URL вашего сервиса на Render (замените your-service на реальный домен вашего сервиса)
-WEBHOOK_URL = f"https://your-service.onrender.com/webhook/{TELEGRAM_TOKEN}"
+WEBHOOK_URL = f"https://my-telegram-bot.onrender.com/webhook"  # Ваш реальный домен от Render
 
 app = Flask(__name__)
 
@@ -38,7 +38,7 @@ app = Flask(__name__)
 def home():
     return "Telegram Bot is Running!"
 
-@app.route(f'/webhook', methods=['POST'])
+@app.route('/webhook', methods=['POST'])
 def webhook():
     json_data = request.get_json(force=True)
     update = Update.de_json(json_data, application.bot)
@@ -137,9 +137,15 @@ async def start(update, context):
 if __name__ == "__main__":
     application = create_application()
 
-    async def set_webhook():
+    async def main():
+        # Устанавливаем вебхук
         await application.bot.set_webhook(url=WEBHOOK_URL)
+        # Инициализируем и запускаем приложение
+        await application.initialize()
+        await application.start()
 
-    asyncio.run(set_webhook())
+    # Запускаем асинхронно инициализацию и запуск приложения
+    asyncio.run(main())
 
+    # Запускаем Flask
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
