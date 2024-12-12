@@ -15,8 +15,9 @@ from commands.student_selection import *
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics
 import os
-
+application = Application.builder().token(TELEGRAM_TOKEN).build()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+PORT = int(os.getenv("PORT", 5000))
 app = Flask(__name__)
 
 
@@ -28,7 +29,7 @@ def home():
 # Состояния для ConversationHandler
 def main():
     # Создание приложения Telegram
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+   
 
     # Обработчик добавления студента
     add_student_handler = ConversationHandler(
@@ -121,6 +122,19 @@ def main():
     # Запуск бота
     application.run_polling()
 
+@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+def webhook():
+    json_data = request.get_json()
+    asyncio.run(application.update_queue.put(json_data))
+    return "OK", 200
+
+async def start_bot():
+    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL')}/{TELEGRAM_TOKEN}"
+    await application.bot.set_webhook(webhook_url)
+    print(f"Webhook установлен: {webhook_url}")
+
 if __name__ == "__main__":
-    threading.Thread(target=main()).start()
-    app.run(host="0.0.0.0", port=5000)
+    print(f"Starting on port {PORT}")
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(start_bot())
+    app.run(host="0.0.0.0", port=PORT)
