@@ -1,3 +1,5 @@
+import threading
+
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import asyncio
 from flask import Flask, request
@@ -14,7 +16,7 @@ from commands.student_statistic_commands import show_statistics_menu, show_gener
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics
 import os
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN = os.getenv("7581276969:AAEnBkY26QcObx_w2o-HIP9gCG-KqgQn67s")
 app = Flask(__name__)
 
 
@@ -119,34 +121,6 @@ def main():
     # Запуск бота
     application.run_polling()
 
-    @app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-    async def webhook():
-        """
-        Обрабатывает запросы Telegram через вебхуки.
-        """
-        json_data = await request.get_json()
-        await application.update_queue.put(json_data)
-        return "OK", 200
-
-    @app.route("/", methods=["GET"])
-    def index():
-        """
-        Корневой маршрут для проверки работоспособности сервиса.
-        """
-        return "Сервер Telegram-бота работает!", 200
-application = Application.builder().token(TELEGRAM_TOKEN).build()
-async def set_webhook():
-    """
-    Устанавливает webhook для Telegram.
-    """
-    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL')}/{TELEGRAM_TOKEN}"
-    await application.bot.set_webhook(url=webhook_url)
-
-
 if __name__ == "__main__":
-    # Установка webhook
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(set_webhook())
-
-    # Запуск Flask сервера
+    threading.Thread(target=main()).start()
     app.run(host="0.0.0.0", port=5000)
