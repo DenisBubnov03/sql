@@ -29,7 +29,10 @@ def home():
 # Состояния для ConversationHandler
 def main():
     # Создание приложения Telegram
-   
+    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL')}/{TELEGRAM_TOKEN}"
+    print(f"RENDER_EXTERNAL_URL: {os.getenv('RENDER_EXTERNAL_URL')}")
+    await application.bot.set_webhook(webhook_url)
+    print(f"Webhook установлен: {webhook_url}")
 
     # Обработчик добавления студента
     add_student_handler = ConversationHandler(
@@ -129,10 +132,7 @@ def webhook():
     return "OK", 200
 
 async def start_bot():
-    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL')}/{TELEGRAM_TOKEN}"
-    print(f"RENDER_EXTERNAL_URL: {os.getenv('RENDER_EXTERNAL_URL')}")
-    await application.bot.set_webhook(webhook_url)
-    print(f"Webhook установлен: {webhook_url}")
+    
 
 if __name__ == "__main__":
     print(f"Starting on port {PORT}")
