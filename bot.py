@@ -131,7 +131,7 @@ def webhook():
     asyncio.run(application.update_queue.put(json_data))
     return "OK", 200
 
-async def start_bot():
+# async def start_bot():
     
 
 if __name__ == "__main__":
