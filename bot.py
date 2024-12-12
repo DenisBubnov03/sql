@@ -130,6 +130,7 @@ def webhook():
 
 async def start_bot():
     webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL')}/{TELEGRAM_TOKEN}"
+    print(f"RENDER_EXTERNAL_URL: {os.getenv('RENDER_EXTERNAL_URL')}")
     await application.bot.set_webhook(webhook_url)
     print(f"Webhook установлен: {webhook_url}")
 
