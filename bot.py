@@ -15,11 +15,11 @@ from commands.student_selection import *
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics
 import os
-application = Application.builder().token(TELEGRAM_TOKEN).build()
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 PORT = int(os.getenv("PORT", 5000))
 app = Flask(__name__)
-
+application = Application.builder().token(TELEGRAM_TOKEN).build()
 
 @app.route("/")
 def home():
