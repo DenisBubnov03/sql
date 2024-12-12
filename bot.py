@@ -14,6 +14,8 @@ from commands.student_statistic_commands import show_statistics_menu, show_gener
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics
 import os
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+print("TELEGRAM_TOKEN:", TELEGRAM_TOKEN)
+
 application = Application.builder().token("TELEGRAM_TOKEN").build()
 
 # URL вашего сервиса (обновится после деплоя на Render)
