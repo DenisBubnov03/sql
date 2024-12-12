@@ -1,8 +1,8 @@
-import threading
-
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
-import asyncio
 from flask import Flask, request
+import asyncio
+import os
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
+
 from commands.start_commands import start, exit_to_main_menu
 from commands.states import NOTIFICATION_MENU
 from commands.student_commands import *
@@ -14,25 +14,49 @@ from commands.student_notifications import check_call_notifications, check_payme
 from commands.student_selection import *
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics
-import os
-
+# Переменные окружения
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 PORT = int(os.getenv("PORT", 5000))
+
+# Инициализация Flask
 app = Flask(__name__)
+
+# Telegram Application
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
+# Маршрут для проверки доступности
 @app.route("/")
 def home():
     return "Telegram Bot is Running!"
 
+# Маршрут для обработки вебхуков
+@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
+def webhook():
+    """
+    Обрабатывает запросы Telegram через вебхуки.
+    """
+    json_data = request.get_json()
+    asyncio.run(application.update_queue.put(json_data))
+    return "OK", 200
 
-# Состояния для ConversationHandler
-def main():
-    # Создание приложения Telegram
+# Установка вебхука
+async def set_webhook():
+    """
+    Устанавливает вебхук для Telegram.
+    """
     webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL')}/{TELEGRAM_TOKEN}"
-    print(f"RENDER_EXTERNAL_URL: {os.getenv('RENDER_EXTERNAL_URL')}")
-    # await application.bot.set_webhook(webhook_url)
     print(f"Webhook установлен: {webhook_url}")
+    await application.bot.set_webhook(webhook_url)
+
+# Основные обработчики Telegram
+def setup_handlers():
+    """
+    Настройка всех обработчиков для Telegram бота.
+    """
+    application.add_handler(CommandHandler("start", start))
+
+    # Пример добавления обработчиков
+    application.add_handler(MessageHandler(filters.Regex("^Просмотреть студентов$"), view_students))
 
     # Обработчик добавления студента
     add_student_handler = ConversationHandler(
@@ -118,24 +142,20 @@ def main():
     application.add_handler(search_student_handler)
     application.add_handler(statistics_handler)
     application.add_handler(notifications_handler)
+    application.add_handler(add_student_handler)
 
-    # application.add_handler(MessageHandler(filters.Regex("Отмена"), cancel))  # Доп. проверка
-    # application.add_handler(MessageHandler(filters.ALL, debug))
+    # Добавьте обработчики для других функций, таких как редактирование студента,
+    # просмотр статистики, проверка уведомлений и т.д.
 
-    # Запуск бота
-    application.run_polling()
-
-@app.route(f"/{TELEGRAM_TOKEN}", methods=["POST"])
-def webhook():
-    json_data = request.get_json()
-    asyncio.run(application.update_queue.put(json_data))
-    return "OK", 200
-
-# async def start_bot():
-    
-
+# Главная точка входа
 if __name__ == "__main__":
-    print(f"Starting on port {PORT}")
+    # Установка обработчиков
+    setup_handlers()
+
+    # Установка вебхука
+    print(f"Starting Flask on port {PORT}")
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    loop.run_until_complete(set_webhook())
+
+    # Запуск Flask сервера
     app.run(host="0.0.0.0", port=PORT)
