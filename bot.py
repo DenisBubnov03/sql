@@ -1,25 +1,36 @@
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import os
 import asyncio
 from flask import Flask, request
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler
+
 from commands.start_commands import start, exit_to_main_menu
 from commands.states import NOTIFICATION_MENU
 from commands.student_commands import *
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
 from commands.student_management_command import *
-from commands.student_notifications import check_call_notifications, check_payment_notifications, \
-    check_all_notifications, show_notifications_menu
+from commands.student_notifications import (
+    check_call_notifications, 
+    check_payment_notifications, 
+    check_all_notifications, 
+    show_notifications_menu
+)
 from commands.student_selection import *
-from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
-    show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics
-import os
+from commands.student_statistic_commands import (
+    show_statistics_menu, 
+    show_general_statistics, 
+    show_course_type_menu, 
+    show_manual_testing_statistics, 
+    show_automation_testing_statistics, 
+    show_fullstack_statistics
+)
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 print("TELEGRAM_TOKEN:", TELEGRAM_TOKEN)
 
-application = Application.builder().token("TELEGRAM_TOKEN").build()
-
-# URL вашего сервиса (обновится после деплоя на Render)
-WEBHOOK_URL = "https://your-service.onrender.com/webhook/" + TELEGRAM_TOKEN
+# URL вашего сервиса на Render (замените your-service на реальный домен вашего сервиса)
+WEBHOOK_URL = f"https://your-service.onrender.com/webhook/{TELEGRAM_TOKEN}"
 
 app = Flask(__name__)
 
@@ -27,23 +38,16 @@ app = Flask(__name__)
 def home():
     return "Telegram Bot is Running!"
 
-# Эндпоинт для приема обновлений от Telegram
 @app.route(f'/webhook/{TELEGRAM_TOKEN}', methods=['POST'])
 def webhook():
-    update = request.get_json(force=True)
+    json_data = request.get_json(force=True)
+    update = Update.de_json(json_data, application.bot)
     application.update_queue.put(update)
     return "OK", 200
 
-async def start(update, context):
-    await update.message.reply_text("Бот запущен!")
-
-
-# Состояния для ConversationHandler
-def main():
-    # Создание приложения Telegram
+def create_application():
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # Обработчик добавления студента
     add_student_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Добавить студента$"), add_student_start)],
         states={
@@ -53,21 +57,18 @@ def main():
             COURSE_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_course_type)],
             TOTAL_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_total_payment)],
             PAID_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_paid_amount)],
-            COMMISSION: [MessageHandler(filters.TEXT, add_student_commission)],
+            COMMISSION: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_commission)],
         },
         fallbacks=[],
     )
 
-    # Обработчик редактирования студента
     edit_student_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Редактировать данные студента$"), edit_student)],
         states={
             FIO_OR_TELEGRAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, find_student)],
             SELECT_STUDENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_multiple_students)],
             FIELD_TO_EDIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_student_field)],
-            WAIT_FOR_NEW_VALUE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_value),
-            ],
+            WAIT_FOR_NEW_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_value)],
             "COMPANY_NAME": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_company_name)],
             "SALARY": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_salary)],
             "COMMISSION": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_commission)],
@@ -99,9 +100,10 @@ def main():
             ],
         },
         fallbacks=[
-            MessageHandler(filters.Regex("^🔙 Вернуться в меню$"), exit_to_main_menu),  # Добавляем обработчик для выхода
+            MessageHandler(filters.Regex("^🔙 Вернуться в меню$"), exit_to_main_menu),
         ],
     )
+
     notifications_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Проверить уведомления$"), show_notifications_menu)],
         states={
@@ -119,7 +121,6 @@ def main():
         ],
     )
 
-    # Регистрация обработчиков
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.Regex("^Просмотреть студентов$"), view_students))
     application.add_handler(add_student_handler)
@@ -128,25 +129,17 @@ def main():
     application.add_handler(statistics_handler)
     application.add_handler(notifications_handler)
 
-    # application.add_handler(MessageHandler(filters.Regex("Отмена"), cancel))  # Доп. проверка
-    # application.add_handler(MessageHandler(filters.ALL, debug))
+    return application
 
-    # Запуск бота
-    # application.run_polling()
+async def start(update, context):
+    await update.message.reply_text("Бот запущен!")
 
 if __name__ == "__main__":
-    # Устанавливаем вебхук при старте (можно вынести отдельно)
+    application = create_application()
+
     async def set_webhook():
         await application.bot.set_webhook(url=WEBHOOK_URL)
 
-    # Запускаем асинхронно установку вебхука и приложение
-    # при помощи asyncio.run
-    import asyncio
     asyncio.run(set_webhook())
 
-    # Запускаем Flask
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
-
-    # Запуск бота
-    application.run_polling()
