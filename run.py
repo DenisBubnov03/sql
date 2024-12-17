@@ -26,7 +26,7 @@ from commands.student_statistic_commands import (
     show_fullstack_statistics
 )
 
-TELEGRAM_TOKEN = ("7581276969:AAFcFbSt5F2XpVq3yCKDjhLP7tv1cs8TK8Q")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 print("TELEGRAM_TOKEN:", TELEGRAM_TOKEN)
 
 # URL вашего сервиса на Render (замените your-service на реальный домен вашего сервиса)
