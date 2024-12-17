@@ -104,25 +104,42 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Ошибка: данные для редактирования отсутствуют. Начните сначала.")
         return ConversationHandler.END
 
+    # Получаем старое значение
     old_value = student.get(field_to_edit)
 
-    if field_to_edit == "Дата последнего звонка":
-        if new_value == "Сегодня":
-            new_value = datetime.now().strftime("%d.%m.%Y")
+    if field_to_edit == "Сумма оплаты":
         try:
-            datetime.strptime(new_value, "%d.%m.%Y")
-            update_student_data(student["ФИО"], field_to_edit, new_value)
-            log_student_change(editor_tg, student["ФИО"], {field_to_edit: (old_value, new_value)})
-            await update.message.reply_text(f"Дата последнего звонка успешно обновлена: {new_value}.")
-            # Возвращаем пользователя в главное меню
-            return await exit_to_main_menu(update, context)
-        except ValueError:
-            await update.message.reply_text("Неверный формат даты. Попробуйте снова.")
-            return WAIT_FOR_NEW_VALUE
+            # Сумма, которую вводит пользователь
+            additional_payment = int(new_value)
+            if additional_payment < 0:
+                raise ValueError("Сумма не может быть отрицательной.")
 
-    # Обновляем другие поля
-    update_student_data(student["ФИО"], field_to_edit, new_value)
-    log_student_change(editor_tg, student["ФИО"], {field_to_edit: (old_value, new_value)})
-    await update.message.reply_text(f"Поле '{field_to_edit}' успешно обновлено на '{new_value}'.")
-    # Возвращаем пользователя в главное меню
+            # Существующая оплата и общая стоимость обучения
+            existing_payment = int(student.get("Сумма оплаты", 0))
+            total_cost = int(student.get("Стоимость обучения", 0))
+
+            # Суммируем и проверяем
+            updated_payment = existing_payment + additional_payment
+            if updated_payment > total_cost:
+                await update.message.reply_text(
+                    f"Ошибка: общая сумма оплаты ({updated_payment}) превышает стоимость обучения ({total_cost})."
+                )
+                return WAIT_FOR_NEW_VALUE
+
+            # Обновляем данные
+            update_student_data(student["ФИО"], field_to_edit, updated_payment)
+            log_student_change(editor_tg, student["ФИО"], {field_to_edit: (existing_payment, updated_payment)})
+            await update.message.reply_text(
+                f"Сумма оплаты успешно обновлена: {existing_payment} ➡ {updated_payment}."
+            )
+        except ValueError:
+            await update.message.reply_text("Некорректная сумма. Введите числовое значение.")
+            return WAIT_FOR_NEW_VALUE
+    else:
+        # Логика для других полей
+        update_student_data(student["ФИО"], field_to_edit, new_value)
+        log_student_change(editor_tg, student["ФИО"], {field_to_edit: (old_value, new_value)})
+        await update.message.reply_text(f"Поле '{field_to_edit}' успешно обновлено на '{new_value}'.")
+
     return await exit_to_main_menu(update, context)
+
