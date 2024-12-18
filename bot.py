@@ -1,7 +1,7 @@
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from commands.start_commands import start, exit_to_main_menu
-from commands.states import NOTIFICATION_MENU
+from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU
 from commands.student_commands import *
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
@@ -10,7 +10,8 @@ from commands.student_notifications import check_call_notifications, check_payme
     check_all_notifications, show_notifications_menu
 from commands.student_selection import *
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
-    show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics
+    show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
+    handle_period_start, handle_period_end
 
 # Токен Telegram-бота
 TELEGRAM_TOKEN = "7581276969:AAFcFbSt5F2XpVq3yCKDjhLP7tv1cs8TK8Q"
@@ -44,6 +45,7 @@ def main():
             FIELD_TO_EDIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_student_field)],
             WAIT_FOR_NEW_VALUE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_value),
+                # Для всех полей, включая "Комиссия выплачено"
             ],
             "COMPANY_NAME": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_company_name)],
             "SALARY": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_salary)],
@@ -64,11 +66,14 @@ def main():
     statistics_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Статистика$"), show_statistics_menu)],
         states={
-            "STATISTICS_MENU": [
+            STATISTICS_MENU: [
                 MessageHandler(filters.Regex("^📈 Общая статистика$"), show_general_statistics),
                 MessageHandler(filters.Regex("^📚 По типу обучения$"), show_course_type_menu),
+                MessageHandler(filters.Regex("^📅 По периоду$"), request_period_start),
             ],
-            "COURSE_TYPE_MENU": [
+            START_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_period_start)],
+            END_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_period_end)],
+            COURSE_TYPE_MENU: [
                 MessageHandler(filters.Regex("^👨‍💻 Ручное тестирование$"), show_manual_testing_statistics),
                 MessageHandler(filters.Regex("^🤖 Автотестирование$"), show_automation_testing_statistics),
                 MessageHandler(filters.Regex("^💻 Фуллстек$"), show_fullstack_statistics),
@@ -76,9 +81,10 @@ def main():
             ],
         },
         fallbacks=[
-            MessageHandler(filters.Regex("^🔙 Вернуться в меню$"), exit_to_main_menu),  # Добавляем обработчик для выхода
+            MessageHandler(filters.Regex("^🔙 Вернуться в меню$"), exit_to_main_menu),
         ],
     )
+
     notifications_handler = ConversationHandler(
     entry_points=[MessageHandler(filters.Regex("^Проверить уведомления$"), show_notifications_menu)],
     states={
