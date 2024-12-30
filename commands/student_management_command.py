@@ -8,7 +8,7 @@ from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMEN
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from student_management.student_management import get_all_students, add_student
+from data_base.operations import add_student, get_student_by_fio_or_telegram
 
 
 # Добавление студента: шаг 1 - ввод ФИО
@@ -25,17 +25,18 @@ async def add_student_fio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Запрос Telegram студента.
     """
-    context.user_data["fio"] = update.message.text
+    context.user_data["fio"] = update.message.text.strip()
     await update.message.reply_text("Введите Telegram студента:")
     return TELEGRAM
 
 
 # Проверка уникальности Telegram
-def is_telegram_unique(telegram, students):
+def is_telegram_unique(telegram):
     """
-    Проверяет уникальность Telegram.
+    Проверяет уникальность Telegram в базе данных.
     """
-    return all(student["Telegram"].lower() != telegram.lower() for student in students)
+    student = get_student_by_fio_or_telegram(telegram)
+    return student is None
 
 
 # Добавление студента: шаг 3 - ввод даты начала обучения
@@ -51,8 +52,7 @@ async def add_student_telegram(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return TELEGRAM
 
-    students = get_all_students()
-    if not is_telegram_unique(telegram_account, students):
+    if not is_telegram_unique(telegram_account):
         await update.message.reply_text(
             f"Студент с таким Telegram ({telegram_account}) уже существует. Введите другой Telegram."
         )
@@ -61,7 +61,6 @@ async def add_student_telegram(update: Update, context: ContextTypes.DEFAULT_TYP
     # Сохраняем Telegram в context
     context.user_data["telegram"] = telegram_account
 
-    # Добавляем клавиатуру с кнопкой "Сегодня"
     await update.message.reply_text(
         "Введите дату начала обучения (в формате ДД.ММ.ГГГГ) или нажмите 'Сегодня':",
         reply_markup=ReplyKeyboardMarkup(
@@ -80,11 +79,9 @@ async def add_student_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         date_text = update.message.text.strip()
 
-        # Логика для кнопки "Сегодня"
         if date_text == "Сегодня":
             date_text = datetime.now().strftime("%d.%m.%Y")
 
-        # Проверка формата даты
         datetime.strptime(date_text, "%d.%m.%Y")
         context.user_data["start_date"] = date_text
 
@@ -97,13 +94,8 @@ async def add_student_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return COURSE_TYPE
     except ValueError:
-        # Сообщение об ошибке и предложение повторного ввода
         await update.message.reply_text(
-            "Дата должна быть в формате ДД.ММ.ГГГГ или нажмите 'Сегодня'. Попробуйте ещё раз:",
-            reply_markup=ReplyKeyboardMarkup(
-                [["Сегодня"], ["Назад"]],
-                one_time_keyboard=True
-            )
+            "Дата должна быть в формате ДД.ММ.ГГГГ или нажмите 'Сегодня'. Попробуйте ещё раз:"
         )
         return START_DATE
 
@@ -127,10 +119,6 @@ async def add_student_course_type(update: Update, context: ContextTypes.DEFAULT_
 
 # Добавление студента: шаг 6 - ввод общей стоимости
 async def add_student_total_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id not in AUTHORIZED_USERS:
-        await update.message.reply_text("Извините, у вас нет доступа.")
-        return
     """
     Запрос внесённой оплаты.
     """
@@ -163,13 +151,15 @@ async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_T
 
         context.user_data["commission"] = f"{payments}, {percentage}%"
 
-        # Сохранение данных
         add_student(
-            context.user_data["fio"], context.user_data["telegram"],
-            context.user_data["start_date"], context.user_data["course_type"],
-            context.user_data["total_payment"], context.user_data["paid_amount"],
-            "Да" if context.user_data["paid_amount"] == context.user_data["total_payment"] else "Нет",
-            context.user_data["commission"]
+            fio=context.user_data["fio"],
+            telegram=context.user_data["telegram"],
+            start_date=context.user_data["start_date"],
+            training_type=context.user_data["course_type"],
+            total_cost=context.user_data["total_payment"],
+            payment_amount=context.user_data["paid_amount"],
+            fully_paid="Да" if context.user_data["paid_amount"] == context.user_data["total_payment"] else "Нет",
+            commission=context.user_data["commission"]
         )
 
         editor_tg = update.message.from_user.username
@@ -181,16 +171,17 @@ async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("Введите корректные данные о комиссии (например: '2, 50'). Попробуйте ещё раз.")
         return COMMISSION
 
+
 async def add_student_paid_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Запрос данных о внесённой оплате.
+    """
     try:
         paid_amount = int(update.message.text)
         total_payment = context.user_data["total_payment"]
 
         if 0 <= paid_amount <= total_payment:
-            fully_paid = "Да" if paid_amount == total_payment else "Нет"
             context.user_data["paid_amount"] = paid_amount
-
-            # Переходим к вводу комиссии
             await update.message.reply_text(
                 "Введите данные о комиссии (в формате: Количество выплат, Процент). Например: '2, 50%'",
             )
@@ -201,6 +192,5 @@ async def add_student_paid_amount(update: Update, context: ContextTypes.DEFAULT_
             )
             return PAID_AMOUNT
     except ValueError:
-        await update.message.reply_text(
-            "Введите корректное число. Попробуйте ещё раз."
-        )
+        await update.message.reply_text("Введите корректное число. Попробуйте ещё раз.")
+        return PAID_AMOUNT

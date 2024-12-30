@@ -1,5 +1,3 @@
-# commands/student_commands.py
-
 from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
@@ -9,7 +7,9 @@ from commands.logger import log_student_change
 from commands.start_commands import exit_to_main_menu
 from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM
 from commands.student_info_commands import calculate_commission
-from student_management.student_management import get_all_students, update_student_data
+from data_base.db import session
+from data_base.models import Student
+from data_base.operations import get_all_students, update_student, get_student_by_fio_or_telegram
 
 
 async def view_students(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -23,8 +23,9 @@ async def view_students(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     response = "Список студентов:\n"
     for i, student in enumerate(students, start=1):
-        response += f"{i}. {student['ФИО']} - {student['Telegram']} ({student['Тип обучения']})\n"
+        response += f"{i}. {student.fio} - {student.telegram} ({student.training_type})\n"
     await update.message.reply_text(response)
+
 
 # Функция редактирования студента
 async def edit_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -45,11 +46,22 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Извините, у вас нет доступа.")
         return
 
+    FIELD_MAPPING = {
+        "ФИО": "fio",
+        "Telegram": "telegram",
+        "Дата последнего звонка": "last_call_date",
+        "Сумма оплаты": "payment_amount",
+        "Статус обучения": "training_status",
+        "Получил работу": "company",
+        "Комиссия выплачено": "commission_paid"
+    }
+
     field_to_edit = update.message.text.strip()
     student = context.user_data.get("student")
 
-    valid_fields = ["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты",
-                    "Статус обучения", "Получил работу", "Комиссия выплачено"]
+    if not student:
+        await update.message.reply_text("Ошибка: студент не выбран.")
+        return FIELD_TO_EDIT
 
     if field_to_edit == "Назад":
         await update.message.reply_text(
@@ -58,16 +70,21 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return FIO_OR_TELEGRAM
 
-    if field_to_edit in valid_fields:
+    if field_to_edit == "Получил работу":
+        # Уникальная обработка для "Получил работу"
         context.user_data["field_to_edit"] = field_to_edit
+        context.user_data["employment_step"] = "company"
+        await update.message.reply_text("Введите название компании:")
+        return WAIT_FOR_NEW_VALUE
+
+    if field_to_edit in FIELD_MAPPING:
+        context.user_data["field_to_edit"] = field_to_edit
+        db_field = FIELD_MAPPING[field_to_edit]
 
         if field_to_edit == "Дата последнего звонка":
             await update.message.reply_text(
                 "Введите дату последнего звонка в формате ДД.ММ.ГГГГ или нажмите 'Сегодня':",
-                reply_markup=ReplyKeyboardMarkup(
-                    [["Сегодня"], ["Назад"]],
-                    one_time_keyboard=True
-                )
+                reply_markup=ReplyKeyboardMarkup([["Сегодня"], ["Назад"]], one_time_keyboard=True)
             )
             return WAIT_FOR_NEW_VALUE
 
@@ -90,16 +107,13 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text(
         "Некорректное поле. Выберите одно из предложенных:",
         reply_markup=ReplyKeyboardMarkup(
-            [
-                ["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты",
-                 "Статус обучения", "Получил работу", "Комиссия выплачено"],
-                ["Назад"]
-            ],
+            [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты",
+              "Статус обучения", "Получил работу", "Комиссия выплачено"],
+             ["Назад"]],
             one_time_keyboard=True
         )
     )
     return FIELD_TO_EDIT
-
 
 
 async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -108,95 +122,103 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_value = update.message.text.strip()
     editor_tg = update.message.from_user.username
 
+    FIELD_MAPPING = {
+        "ФИО": "fio",
+        "Telegram": "telegram",
+        "Дата последнего звонка": "last_call_date",
+        "Сумма оплаты": "payment_amount",
+        "Статус обучения": "training_status",
+        "Получил работу": "company",
+        "Комиссия выплачено": "commission_paid"
+    }
+
+    # Проверяем, что студент и поле для редактирования существуют
     if not student or not field_to_edit:
         await update.message.reply_text("Ошибка: данные для редактирования отсутствуют. Начните сначала.")
         return ConversationHandler.END
 
-    old_value = student.get(field_to_edit)
+    # Обработка поля "Получил работу"
+    if field_to_edit == "Получил работу":
+        # Уникальная логика обработки
+        employment_step = context.user_data.get("employment_step")
+        if employment_step is None:
+            context.user_data["employment_step"] = "company"
+            await update.message.reply_text("Введите название компании:")
+            return WAIT_FOR_NEW_VALUE
 
-    if field_to_edit == "Статус обучения":
-        valid_statuses = ["Не учится", "Учится", "Устроился"]
-        if new_value not in valid_statuses:
+        if employment_step == "company":
+            context.user_data["company_name"] = new_value
+            context.user_data["employment_step"] = "date"
             await update.message.reply_text(
-                "Некорректный статус. Выберите из предложенных: 'Не учится', 'Учится', 'Устроился'.",
-                reply_markup=ReplyKeyboardMarkup(
-                    [["Не учится", "Учится", "Устроился"], ["Назад"]],
-                    one_time_keyboard=True
-                )
+                "Введите дату устройства (формат ДД.ММ.ГГГГ) или нажмите 'Сегодня':",
+                reply_markup=ReplyKeyboardMarkup([["Сегодня"]], one_time_keyboard=True)
             )
             return WAIT_FOR_NEW_VALUE
 
-        update_student_data(student["ФИО"], field_to_edit, new_value)
-        log_student_change(editor_tg, student["ФИО"], {field_to_edit: (old_value, new_value)})
+        if employment_step == "date":
+            if new_value.lower() == "сегодня":
+                new_value = datetime.now().strftime("%d.%m.%Y")
+            try:
+                datetime.strptime(new_value, "%d.%m.%Y")
+                context.user_data["employment_date"] = new_value
+                context.user_data["employment_step"] = "salary"
+                await update.message.reply_text("Введите зарплату:")
+                return WAIT_FOR_NEW_VALUE
+            except ValueError:
+                await update.message.reply_text("Некорректная дата. Попробуйте снова.")
+                return WAIT_FOR_NEW_VALUE
+
+        if employment_step == "salary":
+            try:
+                salary = int(new_value)
+                if salary <= 0:
+                    raise ValueError("Зарплата должна быть положительным числом.")
+                update_student(
+                    student.id,
+                    {
+                        "company": context.user_data["company_name"],
+                        "employment_date": context.user_data["employment_date"],
+                        "salary": salary
+                    }
+                )
+                await update.message.reply_text(
+                    f"Данные о трудоустройстве успешно обновлены:\n"
+                    f"Компания: {context.user_data['company_name']}\n"
+                    f"Дата устройства: {context.user_data['employment_date']}\n"
+                    f"Зарплата: {salary}"
+                )
+                context.user_data.pop("employment_step", None)
+                return await exit_to_main_menu(update, context)
+            except ValueError:
+                await update.message.reply_text("Некорректная зарплата. Введите положительное число.")
+                return WAIT_FOR_NEW_VALUE
+
+    # Преобразуем название поля в имя столбца
+    db_field = FIELD_MAPPING.get(field_to_edit)
+    if not db_field:
+        print(f"Ошибка: поле {field_to_edit} не найдено в FIELD_MAPPING.")
+        await update.message.reply_text("Некорректное поле для редактирования.")
+        return WAIT_FOR_NEW_VALUE
+
+    try:
+        # Получаем старое значение
+        old_value = getattr(student, db_field, None)
+        print(f"Старое значение: {old_value}")
+
+        # Обновляем данные
+        update_student(student.id, {db_field: new_value})
+
+        # Отправляем сообщение об успехе
         await update.message.reply_text(
-            f"Статус обучения успешно обновлён: {old_value} ➡ {new_value}."
+            f"Поле '{field_to_edit}' успешно обновлено:\n"
+            f"Старое значение: {old_value}\n"
+            f"Новое значение: {new_value}"
         )
-        return await exit_to_main_menu(update, context)
-
-    elif field_to_edit == "Дата последнего звонка":
-        if new_value.lower() == "сегодня":
-            new_value = datetime.now().strftime("%d.%m.%Y")
-        try:
-            datetime.strptime(new_value, "%d.%m.%Y")
-            update_student_data(student["ФИО"], field_to_edit, new_value)
-            log_student_change(editor_tg, student["ФИО"], {field_to_edit: (old_value, new_value)})
-            await update.message.reply_text(
-                f"Дата последнего звонка успешно обновлена на '{new_value}'."
-            )
-        except ValueError:
-            await update.message.reply_text("Некорректная дата. Введите в формате ДД.ММ.ГГГГ или нажмите 'Сегодня'.")
-            return WAIT_FOR_NEW_VALUE
-
-    elif field_to_edit == "Сумма оплаты":
-        try:
-            additional_payment = int(new_value)
-            if additional_payment < 0:
-                raise ValueError("Сумма не может быть отрицательной.")
-            existing_payment = int(student.get("Сумма оплаты", 0))
-            total_cost = int(student.get("Стоимость обучения", 0))
-            updated_payment = existing_payment + additional_payment
-            if updated_payment > total_cost:
-                await update.message.reply_text(
-                    f"Ошибка: общая сумма оплаты ({updated_payment}) превышает стоимость обучения ({total_cost})."
-                )
-                return WAIT_FOR_NEW_VALUE
-            update_student_data(student["ФИО"], field_to_edit, updated_payment)
-            log_student_change(editor_tg, student["ФИО"], {field_to_edit: (existing_payment, updated_payment)})
-            await update.message.reply_text(
-                f"Сумма оплаты успешно обновлена: {existing_payment} ➡ {updated_payment}."
-            )
-        except ValueError:
-            await update.message.reply_text("Некорректная сумма. Введите числовое значение.")
-            return WAIT_FOR_NEW_VALUE
-
-    elif field_to_edit == "Комиссия выплачено":
-        try:
-            additional_commission = int(new_value)
-            if additional_commission < 0:
-                raise ValueError("Сумма не может быть отрицательной.")
-            total_commission, paid_commission = calculate_commission(student)
-            updated_commission = paid_commission + additional_commission
-            if updated_commission > total_commission:
-                await update.message.reply_text(
-                    f"Ошибка: общая сумма комиссии ({updated_commission}) превышает расчётную ({total_commission})."
-                )
-                return WAIT_FOR_NEW_VALUE
-            update_student_data(student["ФИО"], field_to_edit, updated_commission)
-            log_student_change(editor_tg, student["ФИО"], {field_to_edit: (paid_commission, updated_commission)})
-            await update.message.reply_text(
-                f"Сумма комиссии успешно обновлена: {paid_commission} ➡ {updated_commission}."
-            )
-        except ValueError:
-            await update.message.reply_text("Некорректная сумма. Введите числовое значение.")
-            return WAIT_FOR_NEW_VALUE
-
-    else:
-        update_student_data(student["ФИО"], field_to_edit, new_value)
-        log_student_change(editor_tg, student["ФИО"], {field_to_edit: (old_value, new_value)})
-        await update.message.reply_text(f"Поле '{field_to_edit}' успешно обновлено на '{new_value}'.")
+    except Exception as e:
+        print(f"Ошибка при обновлении: {e}")
+        await update.message.reply_text(f"Произошла ошибка при обновлении: {e}")
 
     return await exit_to_main_menu(update, context)
-
 
 
 

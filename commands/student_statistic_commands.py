@@ -1,22 +1,22 @@
-# commands/student_statistic_commands.py
-import re
 from datetime import datetime
-
 from commands.authorized_users import AUTHORIZED_USERS
-from student_management.student_management import get_all_students
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from commands.states import STATISTICS_MENU, COURSE_TYPE_MENU, START_PERIOD, END_PERIOD
+from data_base.db import session
+from data_base.models import Student
+from data_base.operations import get_general_statistics, get_students_by_period, get_students_by_training_type
 
 
 async def show_statistics_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Отображает главное меню статистики.
+    """
     user_id = update.message.from_user.id
     if user_id not in AUTHORIZED_USERS:
         await update.message.reply_text("Извините, у вас нет доступа.")
         return
-    """
-    Отображает главное меню статистики.
-    """
+
     await update.message.reply_text(
         "📊 Статистика:\nВыберите тип статистики:",
         reply_markup=ReplyKeyboardMarkup(
@@ -34,9 +34,9 @@ async def show_general_statistics(update: Update, context: ContextTypes.DEFAULT_
     """
     Отображает общую статистику по всем студентам.
     """
-    students = get_all_students()
-    total_students = len(students)
-    fully_paid = sum(1 for s in students if s.get("Полностью оплачено") == "Да")
+    statistics = get_general_statistics()
+    total_students = statistics.get("total_students", 0)
+    fully_paid = statistics.get("fully_paid", 0)
     not_fully_paid = total_students - fully_paid
 
     await update.message.reply_text(
@@ -69,36 +69,15 @@ async def show_course_type_menu(update: Update, context: ContextTypes.DEFAULT_TY
     return COURSE_TYPE_MENU
 
 
-def filter_students_by_course(students, course_type):
-    """
-    Фильтрует студентов по типу обучения.
-
-    Args:
-        students (list): Список студентов.
-        course_type (str): Тип обучения.
-
-    Returns:
-        list: Список студентов с указанным типом обучения.
-    """
-    return [s for s in students if s.get("Тип обучения") == course_type]
-
-
 async def show_course_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE, course_type, emoji):
     """
     Отображает статистику для указанного типа обучения.
-
-    Args:
-        update (Update): Объект Telegram Update.
-        context (ContextTypes.DEFAULT_TYPE): Контекст команды.
-        course_type (str): Тип обучения.
-        emoji (str): Эмодзи для заголовка.
     """
-    students = get_all_students()
-    filtered_students = filter_students_by_course(students, course_type)
+    students = get_students_by_training_type(course_type)
 
     await update.message.reply_text(
         f"{emoji} Статистика по {course_type}:\n\n"
-        f"👥 Всего студентов: {len(filtered_students)}",
+        f"👥 Всего студентов: {len(students)}",
         reply_markup=ReplyKeyboardMarkup(
             [["🔙 Назад"]],
             one_time_keyboard=True
@@ -127,6 +106,7 @@ async def show_fullstack_statistics(update: Update, context: ContextTypes.DEFAUL
     """
     return await show_course_statistics(update, context, "Фуллстек", "💻")
 
+
 async def request_period_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Запрашивает начальную дату периода.
@@ -140,35 +120,14 @@ async def handle_period_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     Обрабатывает начальную дату периода.
     """
     try:
-        start_date_text = update.message.text.strip()  # Удаляем лишние пробелы
+        start_date_text = update.message.text.strip()
         start_date = datetime.strptime(start_date_text, "%d.%m.%Y")
         context.user_data["start_date"] = start_date
         await update.message.reply_text("Введите конечную дату периода в формате ДД.ММ.ГГГГ:")
         return END_PERIOD
     except ValueError:
-        await update.message.reply_text(
-            "❌ Неверный формат даты! Введите дату в формате **ДД.ММ.ГГГГ** (например: 10.11.2024):")
+        await update.message.reply_text("❌ Неверный формат даты! Введите дату в формате **ДД.ММ.ГГГГ** (например: 10.11.2024):")
         return START_PERIOD
-
-
-def parse_date(date_text):
-    """
-    Преобразует дату из любого распространённого формата в формат ДД.ММ.ГГГГ.
-    """
-    try:
-        # Попытка распознать дату в формате ДД.ММ.ГГГГ
-        return datetime.strptime(date_text, "%d.%m.%Y")
-    except ValueError:
-        pass
-
-    try:
-        # Попытка распознать дату в формате ГГГГ-ММ-ДД
-        return datetime.strptime(date_text, "%Y-%m-%d")
-    except ValueError:
-        pass
-
-    # Если дата не распознаётся
-    raise ValueError(f"Неподдерживаемый формат даты: {date_text}")
 
 
 async def handle_period_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -176,40 +135,81 @@ async def handle_period_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Обрабатывает конечную дату периода и фильтрует учеников.
     """
     try:
+        # Получаем текст конечной даты
         end_date_text = update.message.text.strip()
-        end_date = parse_date(end_date_text)  # Используем универсальный парсер
 
-        start_date = context.user_data.get("start_date")
-        if start_date and end_date < start_date:
-            await update.message.reply_text("❌ Конечная дата не может быть раньше начальной. Попробуйте снова:")
+        # Проверяем, что текст даты не пуст
+        if not end_date_text:
+            await update.message.reply_text("Дата не должна быть пустой. Введите дату в формате ДД.ММ.ГГГГ.")
             return END_PERIOD
 
+        # Преобразуем конечную дату только если это строка
+        if isinstance(end_date_text, str):
+            end_date = datetime.strptime(end_date_text, "%d.%m.%Y")
+        else:
+            end_date = end_date_text
+
+        # Получаем начальную дату из context.user_data
+        start_date = context.user_data.get("start_date")
+
+        # Проверяем, что начальная дата сохранена и является объектом datetime
+        if not start_date:
+            await update.message.reply_text("Начальная дата отсутствует. Попробуйте начать сначала.")
+            return START_PERIOD
+        if isinstance(start_date, str):
+            start_date = datetime.strptime(start_date, "%d.%m.%Y")
+
+        # Проверяем, что конечная дата не раньше начальной
+        if end_date < start_date:
+            await update.message.reply_text("Конечная дата не может быть раньше начальной. Введите корректную дату.")
+            return END_PERIOD
+
+        # Сохраняем конечную дату в context
         context.user_data["end_date"] = end_date
 
-        # Получаем всех студентов
-        students = get_all_students()
-        filtered_students = []
+        # Переходим к отображению статистики
+        return await show_period_statistics(update, context)
 
-        for student in students:
-            if "Дата начала обучения" in student:
-                try:
-                    student_date = parse_date(student["Дата начала обучения"])
-                    if start_date <= student_date <= end_date:
-                        filtered_students.append(student)
-                except ValueError:
-                    print(f"Ошибка формата у студента {student['ФИО']}: {student['Дата начала обучения']}")
-
-        if not filtered_students:
-            await update.message.reply_text("😔 Не найдено учеников в заданный период.")
-        else:
-            response = "📅 Ученики, устроившиеся в заданный период:\n\n"
-            for student in filtered_students:
-                response += f"{student['ФИО']} - {student['Telegram']} (Начало: {student['Дата начала обучения']})\n"
-            await update.message.reply_text(response)
-
-        return STATISTICS_MENU
-
-    except ValueError as e:
-        print(f"Ошибка формата даты: {e}")
-        await update.message.reply_text("❌ Неверный формат даты! Введите дату в формате **ДД.ММ.ГГГГ** (например: 10.12.2024):")
+    except ValueError:
+        await update.message.reply_text("Неверный формат даты! Введите дату в формате ДД.ММ.ГГГГ.")
         return END_PERIOD
+    except Exception as e:
+        await update.message.reply_text(f"Произошла ошибка: {e}")
+        return END_PERIOD
+
+
+
+async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Отображает статистику по периоду с указанием количества студентов.
+    """
+    start_date = context.user_data.get("start_date")
+    end_date = context.user_data.get("end_date")
+
+    # Проверяем, что даты существуют и являются объектами datetime
+    if not start_date or not end_date:
+        await update.message.reply_text("Даты периода отсутствуют. Попробуйте начать заново.")
+        return STATISTICS_MENU
+    if not isinstance(start_date, datetime) or not isinstance(end_date, datetime):
+        raise ValueError("Одна из дат не является объектом datetime.")
+
+    # Получаем студентов из базы
+    students = session.query(Student).filter(
+        Student.start_date.between(start_date, end_date)
+    ).all()
+
+    # Формируем сообщение
+    student_count = len(students)
+    if student_count == 0:
+        response = f"📅 В период с {start_date.strftime('%d.%m.%Y')} по {end_date.strftime('%d.%m.%Y')} студентов не найдено."
+    else:
+        response = (
+            f"📅 В период с {start_date.strftime('%d.%m.%Y')} по {end_date.strftime('%d.%m.%Y')}:\n"
+            f"👥 Найдено студентов: {student_count}\n\n"
+        )
+        for student in students:
+            response += f"- {student.fio} ({student.telegram})\n"
+
+    await update.message.reply_text(response)
+    return STATISTICS_MENU
+

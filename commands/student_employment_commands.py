@@ -1,12 +1,15 @@
-# commands/student_employment_commands.py
 
-from telegram import ReplyKeyboardMarkup, Update
-from telegram.ext import ConversationHandler, ContextTypes
 from commands.start_commands import exit_to_main_menu
-
 from commands.states import COMPANY_NAME, SALARY, COMMISSION, CONFIRMATION
-from student_management.student_management import update_student_data
+from data_base.operations import update_student
+from datetime import datetime
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ContextTypes, ConversationHandler
 
+# Константы для состояний
+COMPANY_NAME = "COMPANY_NAME"
+EMPLOYMENT_DATE = "EMPLOYMENT_DATE"
+SALARY = "SALARY"
 
 async def edit_student_employment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -18,9 +21,9 @@ async def edit_student_employment(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
 
     # Если студент уже имеет данные о работе
-    if student.get("Компания"):
+    if student.company:
         await update.message.reply_text(
-            f"Студент уже устроился в {student['Компания']}. Хотите изменить данные?",
+            f"Студент уже устроился в {student.company}. Хотите изменить данные?",
             reply_markup=ReplyKeyboardMarkup([["Да, изменить данные", "Отмена"]], one_time_keyboard=True)
         )
         return CONFIRMATION
@@ -93,9 +96,12 @@ async def handle_commission(update: Update, context: ContextTypes.DEFAULT_TYPE):
         student = context.user_data.get("student")
 
         # Обновляем данные студента
-        update_student_data(student["ФИО"], "Компания", context.user_data["company_name"])
-        update_student_data(student["ФИО"], "Зарплата", context.user_data["salary"])
-        update_student_data(student["ФИО"], "Комиссия", context.user_data["commission"])
+        updates = {
+            "company": context.user_data["company_name"],
+            "salary": context.user_data["salary"],
+            "commission": context.user_data["commission"]
+        }
+        update_student(student.id, updates)
 
         await update.message.reply_text("Данные успешно обновлены! Возвращаемся в главное меню...")
         return await exit_to_main_menu(update, context)
@@ -105,3 +111,35 @@ async def handle_commission(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Некорректный формат комиссии. Введите данные в формате: количество выплат, процент (например, 2, 50%)."
         )
         return COMMISSION
+
+
+async def handle_employment_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обрабатывает ввод даты устройства на работу.
+    """
+    employment_date = update.message.text.strip()
+
+    # Обработка кнопки "Сегодня"
+    if employment_date.lower() == "сегодня":
+        employment_date = datetime.now().strftime("%d.%m.%Y")
+
+    try:
+        # Проверка формата даты
+        datetime.strptime(employment_date, "%d.%m.%Y")
+        context.user_data["employment_date"] = employment_date
+
+        await update.message.reply_text("Введите зарплату:")
+        return SALARY
+    except ValueError:
+        await update.message.reply_text(
+            "Некорректная дата. Введите в формате ДД.ММ.ГГГГ или нажмите 'Сегодня':",
+            reply_markup=ReplyKeyboardMarkup([["Сегодня"]], one_time_keyboard=True)
+        )
+        return EMPLOYMENT_DATE
+
+async def cancel_employment_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обрабатывает отмену редактирования данных о трудоустройстве.
+    """
+    await update.message.reply_text("Редактирование данных о трудоустройстве отменено.")
+    return ConversationHandler.END

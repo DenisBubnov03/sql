@@ -1,21 +1,21 @@
-# commands/student_info_commands.py
 from commands.authorized_users import AUTHORIZED_USERS
 from commands.states import FIO_OR_TELEGRAM
 
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from student_management.student_management import get_all_students
+from data_base.operations import get_all_students, get_student_by_fio_or_telegram
 
 
 async def search_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id not in AUTHORIZED_USERS:
-        await update.message.reply_text("Извините, у вас нет доступа.")
-        return
     """
     Запрашивает ввод для поиска студента по ФИО или Telegram.
     """
+    user_id = update.message.from_user.id
+    if user_id not in AUTHORIZED_USERS:
+        await update.message.reply_text("Извините, у вас нет доступа.")
+        return ConversationHandler.END
+
     await update.message.reply_text(
         "Введите ФИО или Telegram ученика, информацию о котором хотите посмотреть:"
     )
@@ -26,56 +26,70 @@ def calculate_commission(student):
     """
     Вычисляет общую комиссию и уже выплаченную сумму для студента.
     """
-    commission_info = student.get("Комиссия", "0, 0%").split(", ")
-    payments = int(commission_info[0]) if len(commission_info) > 0 and commission_info[0].isdigit() else 0
-    percentage = int(commission_info[1].replace("%", "")) if len(commission_info) > 1 else 0
+    try:
+        # Разделяем данные комиссии (количество выплат, процент)
+        commission_info = student.commission.split(", ")
+        payments = int(commission_info[0]) if len(commission_info) > 0 and commission_info[0].isdigit() else 0
+        percentage = int(commission_info[1].replace("%", "")) if len(commission_info) > 1 else 0
 
-    salary_raw = student.get("Зарплата", 0)
-    salary = int(salary_raw) if isinstance(salary_raw, int) else int(salary_raw.strip()) if isinstance(salary_raw, str) else 0
+        # Зарплата
+        salary = student.salary or 0
 
-    paid_commission_raw = student.get("Комиссия выплачено", 0)
-    paid_commission = int(paid_commission_raw) if isinstance(paid_commission_raw, int) else int(
-        paid_commission_raw.strip()) if isinstance(paid_commission_raw, str) else 0
+        # Расчёт общей комиссии
+        total_commission = (salary * percentage / 100) * payments
 
-    total_commission = (salary * percentage // 100) * payments
+        # Выплаченная комиссия
+        paid_commission = student.commission_paid or 0
 
-    return total_commission, paid_commission
+        return total_commission, paid_commission
+    except Exception as e:
+        print(f"Ошибка при расчёте комиссии: {e}")
+        return 0, 0
 
 
 async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Ищет информацию о студенте и выводит её.
     """
-    search_query = update.message.text.lower()
-    students = get_all_students()
+    search_query = update.message.text.strip()
 
-    matching_students = [
-        student for student in students
-        if search_query in student["ФИО"].lower() or search_query in student["Telegram"].lower()
-    ]
+    # Логируем запрос
+    print(f"Ищем студента по запросу: {search_query}")
 
-    if not matching_students:
+    # Получаем студента
+    student = get_student_by_fio_or_telegram(search_query)
+
+    if not student:
         await update.message.reply_text("Ученик не найден. Попробуйте ещё раз.")
         return FIO_OR_TELEGRAM
 
-    if len(matching_students) > 1:
-        response = "Найдено несколько учеников. Уточните запрос:\n"
-        for student in matching_students:
-            response += f"{student['ФИО']} - {student['Telegram']}\n"
-        await update.message.reply_text(response)
-        return FIO_OR_TELEGRAM
+    print(f"Найденный студент: {student}")
 
-    student = matching_students[0]
-    context.user_data["student"] = student
+    # Проверяем наличие данных для комиссии
+    if not student.commission or "," not in student.commission:
+        total_commission, paid_commission = 0, 0
+    else:
+        total_commission, paid_commission = calculate_commission(student)
 
-    total_commission, paid_commission = calculate_commission(student)
     commission_info = f"{paid_commission} из {total_commission}"
 
+    # Формируем информацию о студенте
     info = "\n".join([
-        f"{key}: {value}" if key != "Комиссия выплачено" else f"Комиссия выплачено: {commission_info}"
-        for key, value in student.items()
+        f"ФИО: {student.fio}",
+        f"Telegram: {student.telegram}",
+        f"Дата начала обучения: {student.start_date}",
+        f"Тип обучения: {student.training_type}",
+        f"Общая стоимость: {student.total_cost}",
+        f"Оплачено: {student.payment_amount}",
+        f"Полностью оплачено: {student.fully_paid}",
+        f"Компания: {student.company}",
+        f"Зарплата: {student.salary}",
+        f"Комиссия: {student.commission}",
+        f"Комиссия выплачено: {commission_info}",
+        f"Статус обучения: {student.training_status}"
     ])
 
+    # Отправляем информацию пользователю
     await update.message.reply_text(
         f"Информация об ученике:\n\n{info}",
         reply_markup=ReplyKeyboardMarkup(
@@ -88,3 +102,4 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
         )
     )
     return ConversationHandler.END
+
