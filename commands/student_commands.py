@@ -79,12 +79,14 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if field_to_edit in FIELD_MAPPING:
         context.user_data["field_to_edit"] = field_to_edit
-        db_field = FIELD_MAPPING[field_to_edit]
 
         if field_to_edit == "Дата последнего звонка":
             await update.message.reply_text(
                 "Введите дату последнего звонка в формате ДД.ММ.ГГГГ или нажмите 'Сегодня':",
-                reply_markup=ReplyKeyboardMarkup([["Сегодня"], ["Назад"]], one_time_keyboard=True)
+                reply_markup=ReplyKeyboardMarkup(
+                    [["Сегодня"], ["Назад"]],
+                    one_time_keyboard=True
+                )
             )
             return WAIT_FOR_NEW_VALUE
 
@@ -117,6 +119,8 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from datetime import datetime
+
     student = context.user_data.get("student")
     field_to_edit = context.user_data.get("field_to_edit")
     new_value = update.message.text.strip()
@@ -139,8 +143,8 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Обработка поля "Получил работу"
     if field_to_edit == "Получил работу":
-        # Уникальная логика обработки
         employment_step = context.user_data.get("employment_step")
+
         if employment_step is None:
             context.user_data["employment_step"] = "company"
             await update.message.reply_text("Введите название компании:")
@@ -151,13 +155,14 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["employment_step"] = "date"
             await update.message.reply_text(
                 "Введите дату устройства (формат ДД.ММ.ГГГГ) или нажмите 'Сегодня':",
-                reply_markup=ReplyKeyboardMarkup([["Сегодня"]], one_time_keyboard=True)
+                reply_markup=ReplyKeyboardMarkup(["Сегодня"], one_time_keyboard=True)
             )
             return WAIT_FOR_NEW_VALUE
 
         if employment_step == "date":
             if new_value.lower() == "сегодня":
                 new_value = datetime.now().strftime("%d.%m.%Y")
+
             try:
                 datetime.strptime(new_value, "%d.%m.%Y")
                 context.user_data["employment_date"] = new_value
@@ -173,6 +178,7 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 salary = int(new_value)
                 if salary <= 0:
                     raise ValueError("Зарплата должна быть положительным числом.")
+
                 update_student(
                     student.id,
                     {
@@ -181,6 +187,7 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         "salary": salary
                     }
                 )
+
                 await update.message.reply_text(
                     f"Данные о трудоустройстве успешно обновлены:\n"
                     f"Компания: {context.user_data['company_name']}\n"
@@ -196,14 +203,20 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Преобразуем название поля в имя столбца
     db_field = FIELD_MAPPING.get(field_to_edit)
     if not db_field:
-        print(f"Ошибка: поле {field_to_edit} не найдено в FIELD_MAPPING.")
         await update.message.reply_text("Некорректное поле для редактирования.")
         return WAIT_FOR_NEW_VALUE
 
     try:
+        # Обработка специального случая для даты
+        if field_to_edit == "Дата последнего звонка" and new_value.lower() == "сегодня":
+            new_value = datetime.now().strftime("%d.%m.%Y")
+
+        # Проверяем формат даты, если это поле с датой
+        if db_field.endswith("_date"):
+            datetime.strptime(new_value, "%d.%m.%Y")
+
         # Получаем старое значение
         old_value = getattr(student, db_field, None)
-        print(f"Старое значение: {old_value}")
 
         # Обновляем данные
         update_student(student.id, {db_field: new_value})
@@ -214,11 +227,16 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Старое значение: {old_value}\n"
             f"Новое значение: {new_value}"
         )
+    except ValueError:
+        await update.message.reply_text(
+            "Неверный формат. Убедитесь, что данные введены корректно. Если это дата, используйте формат ДД.ММ.ГГГГ."
+        )
+        return WAIT_FOR_NEW_VALUE
     except Exception as e:
-        print(f"Ошибка при обновлении: {e}")
         await update.message.reply_text(f"Произошла ошибка при обновлении: {e}")
 
     return await exit_to_main_menu(update, context)
+
 
 
 
