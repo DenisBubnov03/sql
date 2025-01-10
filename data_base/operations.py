@@ -88,17 +88,30 @@ def get_students_by_period(start_date, end_date):
     ).all()
 
 # Проверка уведомлений по звонкам
-def get_students_with_no_calls():
-    """Возвращает студентов, которые давно не звонили."""
-    twenty_days_ago = datetime.now() - timedelta(days=20)
-
-    # Фильтр студентов без звонков и с последним звонком более 20 дней назад
-    return session.query(Student).filter(
-        or_(
-            Student.last_call_date == None,  # Студенты без даты звонка
-            func.to_date(Student.last_call_date, 'DD.MM.YYYY') < twenty_days_ago  # Студенты, звонившие более 20 дней назад
-        )
-    ).all()
+def get_students_with_no_calls(students):
+    """
+    Вычисляет студентов, которым необходимо позвонить.
+    """
+    call_notifications = []
+    for student in students:
+        last_call_date = student.last_call_date
+        if not last_call_date:
+            # Если дата звонка отсутствует
+            call_notifications.append(f"Студент {student.fio} ({student.telegram}) не звонил вообще.")
+        else:
+            try:
+                # Преобразуем дату звонка в объект datetime
+                last_call = datetime.strptime(last_call_date, "%d.%m.%Y")
+                days_since_last_call = (datetime.now() - last_call).days
+                if days_since_last_call > 20:
+                    call_notifications.append(
+                        f"Студент {student.fio} ({student.telegram}) не звонил {days_since_last_call} дней. Пора позвонить!"
+                    )
+            except ValueError:
+                call_notifications.append(
+                    f"Некорректная дата звонка у студента {student.fio} ({student.telegram}): {last_call_date}."
+                )
+    return call_notifications
 
 
 

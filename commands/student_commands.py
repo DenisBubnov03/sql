@@ -59,16 +59,17 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
     field_to_edit = update.message.text.strip()
     student = context.user_data.get("student")
 
-    if not student:
-        await update.message.reply_text("Ошибка: студент не выбран.")
-        return FIELD_TO_EDIT
-
+    # Универсальная обработка кнопки "Назад"
     if field_to_edit == "Назад":
         await update.message.reply_text(
-            "Возврат к выбору студента. Введите ФИО или Telegram:",
-            reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True)
+            "Возврат в главное меню:",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Добавить студента", "Просмотреть студентов"],
+                 ["Редактировать данные студента", "Проверить уведомления"]],
+                one_time_keyboard=True
+            )
         )
-        return FIO_OR_TELEGRAM
+        return ConversationHandler.END
 
     if field_to_edit == "Получил работу":
         # Уникальная обработка для "Получил работу"
@@ -141,30 +142,79 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Ошибка: данные для редактирования отсутствуют. Начните сначала.")
         return ConversationHandler.END
 
-    # Обработка поля "Получил работу"
+    if field_to_edit == "Комиссия выплачено":
+        try:
+            # Новая выплата по комиссии
+            additional_payment = float(new_value)
+            if additional_payment < 0:
+                raise ValueError("Сумма не может быть отрицательной.")
+
+            # Расчет общей комиссии и выплаченной суммы
+            total_commission = calculate_commission(student)[0]  # Общая комиссия
+            current_commission_paid = student.commission_paid or 0  # Выплачено на текущий момент
+
+            # Новая сумма выплаченной комиссии
+            new_commission_paid = current_commission_paid + additional_payment
+
+            # Проверка, чтобы выплата не превышала общую сумму комиссии
+            if new_commission_paid > total_commission:
+                await update.message.reply_text(
+                    f"Ошибка: общая выплаченная комиссия ({new_commission_paid:.2f}) "
+                    f"превышает рассчитанную ({total_commission:.2f})."
+                )
+                return WAIT_FOR_NEW_VALUE
+
+            # Обновляем поле "commission_paid" в базе
+            update_student(student.id, {"commission_paid": new_commission_paid})
+
+            # Остаток комиссии для оплаты
+            remaining_commission = total_commission - new_commission_paid
+
+            # Отправляем уведомление о результате
+            await update.message.reply_text(
+                f"Сумма комиссии успешно обновлена: {current_commission_paid:.2f} ➡ {new_commission_paid:.2f}\n"
+                f"Остаток для оплаты: {remaining_commission:.2f}"
+            )
+
+            # Перезагружаем данные студента
+            updated_student = session.query(Student).get(student.id)
+            context.user_data["student"] = updated_student
+
+        except ValueError:
+            await update.message.reply_text("Некорректная сумма. Введите положительное число.")
+            return WAIT_FOR_NEW_VALUE
+        except Exception as e:
+            await update.message.reply_text(f"Произошла ошибка при обновлении: {e}")
+            return WAIT_FOR_NEW_VALUE
+
+        # Возвращаемся в главное меню после успешного обновления
+        return await exit_to_main_menu(update, context)
+
     if field_to_edit == "Получил работу":
         employment_step = context.user_data.get("employment_step")
 
+        # Этап: Название компании
         if employment_step is None:
             context.user_data["employment_step"] = "company"
             await update.message.reply_text("Введите название компании:")
             return WAIT_FOR_NEW_VALUE
 
+        # Этап: Дата устройства
         if employment_step == "company":
             context.user_data["company_name"] = new_value
             context.user_data["employment_step"] = "date"
             await update.message.reply_text(
                 "Введите дату устройства (формат ДД.ММ.ГГГГ) или нажмите 'Сегодня':",
-                reply_markup=ReplyKeyboardMarkup(["Сегодня"], one_time_keyboard=True)
+                reply_markup=ReplyKeyboardMarkup([["Сегодня"]], one_time_keyboard=True)
             )
             return WAIT_FOR_NEW_VALUE
 
+        # Этап: Зарплата
         if employment_step == "date":
             if new_value.lower() == "сегодня":
                 new_value = datetime.now().strftime("%d.%m.%Y")
-
             try:
-                datetime.strptime(new_value, "%d.%m.%Y")
+                datetime.strptime(new_value, "%d.%m.%Y")  # Проверка формата даты
                 context.user_data["employment_date"] = new_value
                 context.user_data["employment_step"] = "salary"
                 await update.message.reply_text("Введите зарплату:")
@@ -178,26 +228,48 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 salary = int(new_value)
                 if salary <= 0:
                     raise ValueError("Зарплата должна быть положительным числом.")
+                context.user_data["salary"] = salary
+                context.user_data["employment_step"] = "commission"
+                await update.message.reply_text(
+                    "Введите данные о комиссии в формате: количество выплат, процент (например: 2, 50%):"
+                )
+                return WAIT_FOR_NEW_VALUE
+            except ValueError:
+                await update.message.reply_text("Некорректная зарплата. Введите положительное число.")
+                return WAIT_FOR_NEW_VALUE
 
+        if employment_step == "commission":
+            try:
+                payments, percentage = map(str.strip, new_value.split(","))
+                payments = int(payments)
+                percentage = int(percentage.strip('%'))
+                if payments <= 0 or percentage <= 0:
+                    raise ValueError("Количество выплат и процент должны быть положительными числами.")
+                commission = f"{payments}, {percentage}%"
                 update_student(
                     student.id,
                     {
                         "company": context.user_data["company_name"],
                         "employment_date": context.user_data["employment_date"],
-                        "salary": salary
+                        "salary": context.user_data["salary"],
+                        "commission": commission,
+                        "training_status": "Устроился"  # Обновляем статус обучения
                     }
                 )
-
                 await update.message.reply_text(
                     f"Данные о трудоустройстве успешно обновлены:\n"
                     f"Компания: {context.user_data['company_name']}\n"
                     f"Дата устройства: {context.user_data['employment_date']}\n"
-                    f"Зарплата: {salary}"
+                    f"Зарплата: {context.user_data['salary']}\n"
+                    f"Комиссия: {commission}\n"
+                    f"Статус обучения: Устроился"
                 )
                 context.user_data.pop("employment_step", None)
                 return await exit_to_main_menu(update, context)
             except ValueError:
-                await update.message.reply_text("Некорректная зарплата. Введите положительное число.")
+                await update.message.reply_text(
+                    "Некорректные данные о комиссии. Убедитесь, что формат: количество выплат, процент (например: 2, 50%)."
+                )
                 return WAIT_FOR_NEW_VALUE
 
     # Преобразуем название поля в имя столбца
@@ -214,6 +286,43 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Проверяем формат даты, если это поле с датой
         if db_field.endswith("_date"):
             datetime.strptime(new_value, "%d.%m.%Y")
+
+        # Обработка поля "Сумма оплаты"
+        if field_to_edit == "Сумма оплаты":
+            try:
+                additional_payment = int(new_value)
+                if additional_payment < 0:
+                    raise ValueError("Сумма не может быть отрицательной.")
+
+                # Текущая сумма оплаты
+                existing_payment = int(getattr(student, "payment_amount", 0))
+                total_cost = int(getattr(student, "total_cost", 0))
+
+                updated_payment = existing_payment + additional_payment
+                fully_paid = "Да" if updated_payment == total_cost else "Нет"
+
+
+                # Суммируем и проверяем
+                updated_payment = existing_payment + additional_payment
+                if updated_payment > total_cost:
+                    await update.message.reply_text(
+                        f"Ошибка: общая сумма оплаты ({updated_payment}) превышает стоимость обучения ({total_cost})."
+                    )
+                    return WAIT_FOR_NEW_VALUE
+
+                # Обновляем данные
+                update_student(student.id, {
+                    "payment_amount": updated_payment,
+                    "fully_paid": fully_paid
+                })
+
+                await update.message.reply_text(
+                    f"Сумма оплаты успешно обновлена: {existing_payment} ➡ {updated_payment}."
+                )
+                return await exit_to_main_menu(update, context)
+            except ValueError:
+                await update.message.reply_text("Некорректная сумма. Введите числовое значение.")
+                return WAIT_FOR_NEW_VALUE
 
         # Получаем старое значение
         old_value = getattr(student, db_field, None)
@@ -236,8 +345,3 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Произошла ошибка при обновлении: {e}")
 
     return await exit_to_main_menu(update, context)
-
-
-
-
-

@@ -28,12 +28,13 @@ async def show_notifications_menu(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def check_call_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("Функция check_call_notifications вызвана")
     """
     Проверяет уведомления по звонкам.
     """
     students = get_students_with_no_calls()
-
     if students:
+        print(f"Обрабатываем студента: {students.fio}, last_call_date: {students.last_call_date}")
         notifications = [
             f"Студент {student.fio} {student.telegram} давно не звонил!" for student in students
         ]
