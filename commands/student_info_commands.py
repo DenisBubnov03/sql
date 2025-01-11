@@ -9,17 +9,36 @@ from data_base.operations import get_all_students, get_student_by_fio_or_telegra
 
 async def search_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Запрашивает ввод для поиска студента по ФИО или Telegram.
+    Запрашивает ввод для поиска студента по ФИО или Telegram с возможностью возврата в главное меню.
     """
     user_id = update.message.from_user.id
     if user_id not in AUTHORIZED_USERS:
         await update.message.reply_text("Извините, у вас нет доступа.")
         return ConversationHandler.END
 
+    # Проверяем, ввел ли пользователь "Главное меню"
+    search_query = update.message.text.strip() if update.message else None
+    if search_query == "Главное меню":
+        await update.message.reply_text(
+            "Возвращаемся в главное меню:",
+            reply_markup=ReplyKeyboardMarkup(
+                [['Добавить студента', 'Просмотреть студентов'],
+                 ['Редактировать данные студента', 'Проверить уведомления'],
+                 ['Поиск ученика', 'Статистика']],
+                one_time_keyboard=True
+            )
+        )
+        return ConversationHandler.END
+
     await update.message.reply_text(
-        "Введите ФИО или Telegram ученика, информацию о котором хотите посмотреть:"
+        "Введите ФИО или Telegram ученика, информацию о котором хотите посмотреть:",
+        reply_markup=ReplyKeyboardMarkup(
+            [["Главное меню"]],
+            one_time_keyboard=True
+        )
     )
     return FIO_OR_TELEGRAM
+
 
 
 def calculate_commission(student):
@@ -51,10 +70,20 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
     """
     Ищет информацию о студенте и выводит её.
     """
-    search_query = update.message.text.strip()
 
-    # Логируем запрос
-    print(f"Ищем студента по запросу: {search_query}")
+    # Проверяем, ввел ли пользователь "Главное меню"
+    search_query = update.message.text.strip() if update.message else None
+    if search_query == "Главное меню":
+        await update.message.reply_text(
+            "Возвращаемся в главное меню:",
+            reply_markup=ReplyKeyboardMarkup(
+                [['Добавить студента', 'Просмотреть студентов'],
+                 ['Редактировать данные студента', 'Проверить уведомления'],
+                 ['Поиск ученика', 'Статистика']],
+                one_time_keyboard=True
+            )
+        )
+        return ConversationHandler.END
 
     # Получаем студента
     student = get_student_by_fio_or_telegram(search_query)
@@ -63,7 +92,6 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("Ученик не найден. Попробуйте ещё раз.")
         return FIO_OR_TELEGRAM
 
-    print(f"Найденный студент: {student}")
 
     # Проверяем наличие данных для комиссии
     if not student.commission or "," not in student.commission:

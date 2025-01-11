@@ -16,7 +16,13 @@ async def add_student_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Старт добавления студента: запрос ФИО.
     """
-    await update.message.reply_text("Введите ФИО студента:")
+    await update.message.reply_text(
+        "Введите ФИО студента:",
+        reply_markup=ReplyKeyboardMarkup(
+            [["Главное меню"]],
+            one_time_keyboard=True
+        )
+    )
     return FIO
 
 
@@ -25,8 +31,28 @@ async def add_student_fio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Запрос Telegram студента.
     """
+    # Если пользователь нажал "Главное меню"
+    if update.message.text.strip() == "Главное меню":
+        await update.message.reply_text(
+            "Возвращаемся в главное меню:",
+            reply_markup=ReplyKeyboardMarkup(
+                [['Добавить студента', 'Просмотреть студентов'],
+                 ['Редактировать данные студента', 'Проверить уведомления'],
+                 ['Поиск ученика', 'Статистика']],
+                one_time_keyboard=True
+            )
+        )
+        return ConversationHandler.END
+
+    # Сохранение ФИО
     context.user_data["fio"] = update.message.text.strip()
-    await update.message.reply_text("Введите Telegram студента:")
+    await update.message.reply_text(
+        "Введите Telegram студента:",
+        reply_markup=ReplyKeyboardMarkup(
+            [["Главное меню"]],
+            one_time_keyboard=True
+        )
+    )
     return TELEGRAM
 
 
@@ -46,29 +72,54 @@ async def add_student_telegram(update: Update, context: ContextTypes.DEFAULT_TYP
     """
     telegram_account = update.message.text.strip()
 
+    # Обработка кнопки "Главное меню"
+    if telegram_account == "Главное меню":
+        await update.message.reply_text(
+            "Добавление студента прервано. Возвращаемся в главное меню:",
+            reply_markup=ReplyKeyboardMarkup(
+                [['Добавить студента', 'Просмотреть студентов'],
+                 ['Редактировать данные студента', 'Проверить уведомления'],
+                 ['Поиск ученика', 'Статистика']],
+                one_time_keyboard=True
+            )
+        )
+        return ConversationHandler.END
+
+    # Проверка корректности введенного Telegram
     if not telegram_account.startswith("@") or len(telegram_account) <= 1:
         await update.message.reply_text(
-            "Некорректный Telegram. Убедитесь, что он начинается с @. Попробуйте ещё раз."
+            "Некорректный Telegram. Убедитесь, что он начинается с @. Попробуйте ещё раз.",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Главное меню"]],
+                one_time_keyboard=True
+            )
         )
         return TELEGRAM
 
+    # Проверка на уникальность Telegram
     if not is_telegram_unique(telegram_account):
         await update.message.reply_text(
-            f"Студент с таким Telegram ({telegram_account}) уже существует. Введите другой Telegram."
+            f"Студент с таким Telegram ({telegram_account}) уже существует. Введите другой Telegram.",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Главное меню"]],
+                one_time_keyboard=True
+            )
         )
         return TELEGRAM
 
     # Сохраняем Telegram в context
     context.user_data["telegram"] = telegram_account
 
+    # Запрос даты начала обучения
     await update.message.reply_text(
         "Введите дату начала обучения (в формате ДД.ММ.ГГГГ) или нажмите 'Сегодня':",
         reply_markup=ReplyKeyboardMarkup(
-            [["Сегодня"], ["Назад"]],
+            [["Сегодня"], ["Главное меню"]],
             one_time_keyboard=True
         )
     )
     return START_DATE
+
 
 
 # Добавление студента: шаг 4 - выбор типа обучения
