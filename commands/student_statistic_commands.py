@@ -200,6 +200,9 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
 
     # Формируем сообщение
     student_count = len(students)
+    total_paid = sum(student.payment_amount for student in students)
+    total_cost = sum(student.total_cost for student in students)
+
     if student_count == 0:
         response = f"📅 В период с {start_date.strftime('%d.%m.%Y')} по {end_date.strftime('%d.%m.%Y')} студентов не найдено."
     else:
@@ -208,7 +211,16 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
             f"👥 Найдено студентов: {student_count}\n\n"
         )
         for student in students:
-            response += f"- {student.fio} ({student.telegram})\n"
+            response += (
+                f"- {student.fio} ({student.telegram})\n"
+                f"  Оплачено: {student.payment_amount} из {student.total_cost}\n"
+            )
+
+        response += (
+            f"\n💳 Всего оплачено: {total_paid}\n"
+            f"💰 Общая стоимость: {total_cost}\n"
+            f"🧾 Осталось оплатить: {total_cost - total_paid}"
+        )
 
     await update.message.reply_text(response)
     return STATISTICS_MENU
