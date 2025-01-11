@@ -71,19 +71,33 @@ async def show_course_type_menu(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def show_course_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE, course_type, emoji):
     """
-    Отображает статистику для указанного типа обучения.
+    Отображает статистику для указанного типа обучения с указанием студентов и их оплаты.
     """
     students = get_students_by_training_type(course_type)
 
-    await update.message.reply_text(
+    response = (
         f"{emoji} Статистика по {course_type}:\n\n"
-        f"👥 Всего студентов: {len(students)}",
+        f"👥 Всего студентов: {len(students)}\n"
+    )
+
+    if students:
+        for student in students:
+            response += (
+                f"- {student.fio} ({student.telegram}) "
+                f"  Оплачено: {student.payment_amount} из {student.total_cost}\n"
+            )
+    else:
+        response += "Список студентов пуст."
+
+    await update.message.reply_text(
+        response,
         reply_markup=ReplyKeyboardMarkup(
             [["🔙 Назад"]],
             one_time_keyboard=True
         )
     )
     return COURSE_TYPE_MENU
+
 
 
 async def show_manual_testing_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -212,7 +226,7 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
         )
         for student in students:
             response += (
-                f"- {student.fio} ({student.telegram})\n"
+                f"- {student.fio} ({student.telegram}) "
                 f"  Оплачено: {student.payment_amount} из {student.total_cost}\n"
             )
 

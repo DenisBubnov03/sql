@@ -64,8 +64,9 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(
             "Возврат в главное меню:",
             reply_markup=ReplyKeyboardMarkup(
-                [["Добавить студента", "Просмотреть студентов"],
-                 ["Редактировать данные студента", "Проверить уведомления"]],
+                [['Добавить студента', 'Просмотреть студентов'],
+                ['Редактировать данные студента', 'Проверить уведомления'],
+                ['Поиск ученика', 'Статистика']],
                 one_time_keyboard=True
             )
         )
