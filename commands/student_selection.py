@@ -48,7 +48,7 @@ async def find_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Что вы хотите отредактировать?",
         reply_markup=ReplyKeyboardMarkup(
             [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты", "Статус обучения", "Получил работу",
-              "Комиссия выплачено"],
+              "Комиссия выплачено", "Удалить ученика"],
              ["Назад"]],
             one_time_keyboard=True
         )
@@ -76,7 +76,7 @@ async def handle_multiple_students(update: Update, context: ContextTypes.DEFAULT
                 f"Вы выбрали студента: {matching_students[index].fio}.",
                 reply_markup=ReplyKeyboardMarkup(
                     [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты", "Статус обучения", "Получил работу",
-                      "Комиссия выплачено"],
+                      "Комиссия выплачено", "Удалить ученика"],
                      ["Назад"]],
                     one_time_keyboard=True
                 )

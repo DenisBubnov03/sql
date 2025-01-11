@@ -9,7 +9,7 @@ from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM
 from commands.student_info_commands import calculate_commission
 from data_base.db import session
 from data_base.models import Student
-from data_base.operations import get_all_students, update_student, get_student_by_fio_or_telegram
+from data_base.operations import get_all_students, update_student, get_student_by_fio_or_telegram, delete_student
 
 
 async def view_students(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -39,8 +39,12 @@ async def edit_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return FIO_OR_TELEGRAM
 
 
+
 # Редактирование поля студента
 async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Выбор поля для редактирования или удаления.
+    """
     user_id = update.message.from_user.id
     if user_id not in AUTHORIZED_USERS:
         await update.message.reply_text("Извините, у вас нет доступа.")
@@ -53,7 +57,8 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Сумма оплаты": "payment_amount",
         "Статус обучения": "training_status",
         "Получил работу": "company",
-        "Комиссия выплачено": "commission_paid"
+        "Комиссия выплачено": "commission_paid",
+        "Удалить ученика": "delete_student"
     }
 
     field_to_edit = update.message.text.strip()
@@ -71,6 +76,16 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
         )
         return ConversationHandler.END
+
+    if field_to_edit == "Удалить ученика":
+        await update.message.reply_text(
+            f"Вы уверены, что хотите удалить студента {student.fio}? Это действие нельзя отменить.",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Да, удалить", "Нет, отменить"]],
+                one_time_keyboard=True
+            )
+        )
+        return "CONFIRM_DELETE"
 
     if field_to_edit == "Получил работу":
         # Уникальная обработка для "Получил работу"
@@ -112,13 +127,33 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Некорректное поле. Выберите одно из предложенных:",
         reply_markup=ReplyKeyboardMarkup(
             [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты",
-              "Статус обучения", "Получил работу", "Комиссия выплачено"],
+              "Статус обучения", "Получил работу", "Комиссия выплачено", "Удалить ученика"],
              ["Назад"]],
             one_time_keyboard=True
         )
     )
     return FIELD_TO_EDIT
 
+async def handle_student_deletion(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Подтверждение удаления студента.
+    """
+    student = context.user_data.get("student")
+    if not student:
+        await update.message.reply_text("Ошибка: объект студента не найден.")
+        return FIELD_TO_EDIT
+
+    if update.message.text == "Да, удалить":
+        try:
+            # Удаление студента
+            delete_student(student.id)
+            await update.message.reply_text(f"Студент {student.fio} успешно удалён.")
+        except Exception as e:
+            await update.message.reply_text(f"Ошибка при удалении студента: {e}")
+    else:
+        await update.message.reply_text("Удаление отменено.")
+
+    return await exit_to_main_menu(update, context)
 
 async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from datetime import datetime

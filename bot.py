@@ -1,7 +1,8 @@
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from commands.start_commands import start, exit_to_main_menu
-from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU
+from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
+    CONFIRM_DELETE
 from commands.student_commands import *
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
@@ -40,19 +41,27 @@ def main():
     edit_student_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Редактировать данные студента$"), edit_student)],
         states={
-            FIO_OR_TELEGRAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, find_student)],
-            SELECT_STUDENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_multiple_students)],
-            FIELD_TO_EDIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_student_field)],
+            FIO_OR_TELEGRAM: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, find_student),
+                MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
+            ],
+            SELECT_STUDENT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_multiple_students),
+                MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
+            ],
+            FIELD_TO_EDIT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, edit_student_field),
+                MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
+            ],
             WAIT_FOR_NEW_VALUE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_value),
-                # Для всех полей, включая "Комиссия выплачено"
+                MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
             ],
-            "COMPANY_NAME": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_company_name)],
-            "SALARY": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_salary)],
-            "COMMISSION": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_commission)],
-            "CONFIRMATION": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_employment_confirmation)],
+            CONFIRM_DELETE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_student_deletion)],
         },
-        fallbacks=[],
+        fallbacks=[
+            MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
+        ]
     )
 
     search_student_handler = ConversationHandler(

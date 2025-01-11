@@ -1,3 +1,4 @@
+from data_base import Session
 from data_base.db import session
 from data_base.models import Student
 
@@ -36,27 +37,6 @@ def add_student(fio, telegram, start_date, course_type, total_payment, paid_amou
         session.commit()
     except Exception as e:
         raise RuntimeError(f"Ошибка добавления студента: {e}")
-
-
-def delete_student(identifier):
-    """
-    Удаляет студента по ФИО или Telegram из базы данных.
-
-    Args:
-        identifier (str): ФИО или Telegram студента.
-
-    Returns:
-        bool: True, если студент удалён, иначе False.
-    """
-    try:
-        student = session.query(Student).filter((Student.fio == identifier) | (Student.telegram == identifier)).first()
-        if student:
-            session.delete(student)
-            session.commit()
-            return True
-        return False
-    except Exception as e:
-        raise RuntimeError(f"Ошибка удаления студента: {e}")
 
 
 def update_student_data(identifier, field, new_value):
