@@ -39,27 +39,65 @@ def add_student(fio, telegram, start_date, course_type, total_payment, paid_amou
         raise RuntimeError(f"Ошибка добавления студента: {e}")
 
 
-def update_student_data(identifier, field, new_value):
+from datetime import datetime
+
+def update_student_data(identifier, new_payment, payment_date):
     """
-    Обновляет данные студента в базе данных.
+    Обновляет данные студента, учитывая доплату и дату платежа.
 
     Args:
-        identifier (str): ФИО или Telegram студента.
-        field (str): Поле, которое нужно обновить.
-        new_value (str): Новое значение.
+        identifier (str | int): ID, ФИО или Telegram студента.
+        new_payment (float): Сумма доплаты.
+        payment_date (datetime.date): Дата платежа.
 
     Returns:
         bool: True, если обновление успешно, иначе False.
     """
     try:
-        student = session.query(Student).filter((Student.fio == identifier) | (Student.telegram == identifier)).first()
-        if student and hasattr(student, field):
-            setattr(student, field, new_value)
-            session.commit()
-            return True
-        return False
+        # Определяем, является ли идентификатор числом (ID) или строкой (ФИО/Telegram)
+        if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
+            student = session.query(Student).filter(Student.id == int(identifier)).first()
+        else:
+            student = session.query(Student).filter(
+                (Student.fio == identifier) | (Student.telegram == identifier)
+            ).first()
+
+        if not student:
+            return False
+
+        # Проверяем, был ли платеж в этом же месяце
+        if student.extra_payment_date and student.extra_payment_date.strftime("%m.%Y") == payment_date.strftime("%m.%Y"):
+            # Если платеж в этом месяце, суммируем доплату
+            student.extra_payment_amount += new_payment
+        else:
+            # Если новый месяц, заменяем сумму доплаты и дату
+            student.extra_payment_amount = new_payment
+            student.extra_payment_date = payment_date
+
+        # Обновляем общую сумму оплат
+        updated_payment = student.payment_amount + new_payment
+
+        # Проверяем, не превышает ли оплата стоимость курса
+        if updated_payment > student.total_cost:
+            session.rollback()
+            raise ValueError(
+                f"Ошибка: общая сумма оплаты ({updated_payment:.2f} руб.) "
+                f"превышает стоимость обучения ({student.total_cost:.2f} руб.)."
+            )
+
+        student.payment_amount = updated_payment
+
+        # Проверяем, полностью ли оплачен курс
+        student.fully_paid = "Да" if student.payment_amount >= student.total_cost else "Нет"
+
+        session.commit()
+        return True
     except Exception as e:
+        session.rollback()
         raise RuntimeError(f"Ошибка обновления данных студента: {e}")
+
+
+
 
 
 def get_all_students():

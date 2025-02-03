@@ -5,7 +5,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from commands.authorized_users import AUTHORIZED_USERS
 from commands.logger import log_student_change
 from commands.start_commands import exit_to_main_menu
-from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM
+from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM, WAIT_FOR_PAYMENT_DATE
 from commands.student_info_commands import calculate_commission
 from data_base.db import session
 from data_base.models import Student
@@ -335,27 +335,30 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 total_cost = int(getattr(student, "total_cost", 0))
 
                 updated_payment = existing_payment + additional_payment
-                fully_paid = "Да" if updated_payment == total_cost else "Нет"
 
-
-                # Суммируем и проверяем
-                updated_payment = existing_payment + additional_payment
+                # Проверяем, не превышает ли сумма оплат полную стоимость курса
                 if updated_payment > total_cost:
                     await update.message.reply_text(
-                        f"Ошибка: общая сумма оплаты ({updated_payment}) превышает стоимость обучения ({total_cost})."
+                        f"❌ Ошибка: общая сумма оплаты ({updated_payment}) превышает стоимость обучения ({total_cost})."
                     )
                     return WAIT_FOR_NEW_VALUE
 
-                # Обновляем данные
-                update_student(student.id, {
-                    "payment_amount": updated_payment,
-                    "fully_paid": fully_paid
-                })
+                # Запрашиваем у пользователя дату платежа с кнопкой "Сегодня"
+                reply_markup = ReplyKeyboardMarkup(
+                    [["Сегодня"], ["Отмена"]],
+                    one_time_keyboard=True,
+                    resize_keyboard=True
+                )
 
                 await update.message.reply_text(
-                    f"Сумма оплаты успешно обновлена: {existing_payment} ➡ {updated_payment}."
+                    "Введите дату платежа в формате ДД.ММ.ГГГГ или выберите 'Сегодня':",
+                    reply_markup=reply_markup
                 )
-                return await exit_to_main_menu(update, context)
+
+                # Сохраняем сумму платежа для обработки после выбора даты
+                context.user_data["pending_payment"] = additional_payment
+                return WAIT_FOR_PAYMENT_DATE  # Переход к следующему шагу
+
             except ValueError:
                 await update.message.reply_text("Некорректная сумма. Введите числовое значение.")
                 return WAIT_FOR_NEW_VALUE
@@ -381,3 +384,62 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Произошла ошибка при обновлении: {e}")
 
     return await exit_to_main_menu(update, context)
+
+async def handle_payment_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обрабатывает ввод даты платежа и обновляет данные студента.
+    """
+    try:
+        student = context.user_data.get("student")
+        payment_date_str = update.message.text.strip()
+
+        # Если пользователь выбрал "Сегодня", ставим текущую дату
+        if payment_date_str.lower() == "сегодня":
+            payment_date = datetime.now().date()
+        else:
+            payment_date = datetime.strptime(payment_date_str, "%d.%m.%Y").date()
+
+        new_payment = context.user_data.pop("pending_payment", 0)
+
+        # Текущие значения
+        existing_payment = int(getattr(student, "payment_amount", 0))  # Уже оплаченная сумма
+        total_cost = int(getattr(student, "total_cost", 0))  # Полная стоимость курса
+
+        # Проверяем, был ли платеж в этом же месяце
+        if student.extra_payment_date and student.extra_payment_date.strftime("%m.%Y") == payment_date.strftime("%m.%Y"):
+            student.extra_payment_amount += new_payment  # Суммируем доплату
+        else:
+            student.extra_payment_amount = new_payment  # Обновляем сумму, если новый месяц
+            student.extra_payment_date = payment_date  # Обновляем дату платежа
+
+        # Обновляем общую сумму оплат
+        updated_payment = existing_payment + new_payment
+
+        # Проверяем, не превышает ли сумма оплат полную стоимость курса
+        if updated_payment > total_cost:
+            await update.message.reply_text(
+                f"❌ Ошибка: общая сумма оплаты ({updated_payment}) "
+                f"превышает стоимость обучения ({total_cost})."
+            )
+            return WAIT_FOR_NEW_VALUE
+
+        fully_paid = "Да" if updated_payment >= total_cost else "Нет"
+
+        # Обновляем данные в базе
+        update_student(student.id, {
+            "payment_amount": updated_payment,
+            "extra_payment_amount": student.extra_payment_amount,
+            "extra_payment_date": student.extra_payment_date,
+            "fully_paid": fully_paid
+        })
+
+        await update.message.reply_text(
+            f"✅ Платеж {new_payment} руб. успешно добавлен за {payment_date.strftime('%d.%m.%Y')}.\n"
+            f"💳 Общая сумма оплаты: {updated_payment} руб. из {total_cost} руб.\n"
+            f"💰 Остаток к оплате: {max(0, total_cost - updated_payment)} руб."
+        )
+        return await exit_to_main_menu(update, context)
+
+    except ValueError:
+        await update.message.reply_text("Некорректный формат даты. Введите в формате ДД.ММ.ГГГГ или выберите 'Сегодня'.")
+        return WAIT_FOR_PAYMENT_DATE

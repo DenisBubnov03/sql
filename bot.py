@@ -2,7 +2,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from commands.start_commands import start, exit_to_main_menu
 from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
-    CONFIRM_DELETE
+    CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE
 from commands.student_commands import *
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
@@ -57,11 +57,12 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_value),
                 MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
             ],
-            CONFIRM_DELETE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_student_deletion)],
+            WAIT_FOR_PAYMENT_DATE: [  # Добавляем этот шаг
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_date),
+                MessageHandler(filters.Regex("^Сегодня$"), handle_payment_date),  # Кнопка "Сегодня"
+            ]
         },
-        fallbacks=[
-            MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
-        ]
+        fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)]
     )
 
     search_student_handler = ConversationHandler(

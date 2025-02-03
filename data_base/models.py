@@ -20,3 +20,5 @@ class Student(Base):
     training_status = Column(String(255), default="Учится", server_default="Учится")
     commission = Column(String(255), nullable=True)
     commission_paid = Column(DECIMAL(10, 2), default=0, server_default="0")
+    extra_payment_amount = Column(DECIMAL(10, 2), default=0, server_default="0")  # Сумма доплаты
+    extra_payment_date = Column(Date, nullable=True)  # Дата последнего платежа
