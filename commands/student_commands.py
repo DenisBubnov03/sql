@@ -410,7 +410,7 @@ async def handle_payment_date(update: Update, context: ContextTypes.DEFAULT_TYPE
             student.extra_payment_amount += new_payment  # Суммируем доплату
         else:
             student.extra_payment_amount = new_payment  # Обновляем сумму, если новый месяц
-            student.extra_payment_date = payment_date  # Обновляем дату платежа
+            student.extra_payment_date = payment_date.strftime('%Y-%m-%d')  # Обновляем дату платежа
 
         # Обновляем общую сумму оплат
         updated_payment = existing_payment + new_payment

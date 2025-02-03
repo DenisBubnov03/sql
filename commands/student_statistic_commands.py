@@ -216,6 +216,10 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
     student_count = len(students)
     total_paid = sum(student.payment_amount for student in students)
     total_cost = sum(student.total_cost for student in students)
+    additional_payment = sum(
+        student.extra_payment_amount for student in students
+        if student.extra_payment_date and student.extra_payment_date.strftime('%m.%Y') != start_date.strftime('%m.%Y')
+    )
 
     if student_count == 0:
         response = f"📅 В период с {start_date.strftime('%d.%m.%Y')} по {end_date.strftime('%d.%m.%Y')} студентов не найдено."
@@ -231,9 +235,11 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
             )
 
         response += (
-            f"\n💳 Всего оплачено: {total_paid}\n"
-            f"💰 Общая стоимость: {total_cost}\n"
-            f"🧾 Осталось оплатить: {total_cost - total_paid}"
+            f"\n💰 **Оплачено за обучение: {int(total_paid):,} руб.\n"
+            f"📚 **Общая стоимость обучения: {int(total_cost):,} руб.\n"
+            f"➕ **Общая сумма доплат: {int(additional_payment):,} руб.\n"
+            f"💵 **Чистая прибыль: {int(additional_payment + total_paid):,} руб.\n"
+            f"🧾 **Осталось оплатить: {int(total_cost - total_paid):,} руб."
         )
 
     await update.message.reply_text(response)
