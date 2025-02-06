@@ -200,26 +200,29 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
     start_date = context.user_data.get("start_date")
     end_date = context.user_data.get("end_date")
 
-    # Проверяем, что даты существуют и являются объектами datetime
     if not start_date or not end_date:
         await update.message.reply_text("Даты периода отсутствуют. Попробуйте начать заново.")
         return STATISTICS_MENU
     if not isinstance(start_date, datetime) or not isinstance(end_date, datetime):
         raise ValueError("Одна из дат не является объектом datetime.")
 
-    # Получаем студентов из базы
+    # Получаем студентов, начавших обучение в период
     students = session.query(Student).filter(
         Student.start_date.between(start_date, end_date)
     ).all()
+
+    # Получаем все доплаты, сделанные в период
+    additional_payments = session.query(Student.extra_payment_amount).filter(
+        Student.extra_payment_date.between(start_date, end_date)
+    ).all()
+
+    # Приводим результат к сумме
+    additional_payment = sum(payment[0] for payment in additional_payments if payment[0] is not None)
 
     # Формируем сообщение
     student_count = len(students)
     total_paid = sum(student.payment_amount for student in students)
     total_cost = sum(student.total_cost for student in students)
-    additional_payment = sum(
-        student.extra_payment_amount for student in students
-        if student.extra_payment_date and student.extra_payment_date.strftime('%m.%Y') != start_date.strftime('%m.%Y')
-    )
 
     if student_count == 0:
         response = f"📅 В период с {start_date.strftime('%d.%m.%Y')} по {end_date.strftime('%d.%m.%Y')} студентов не найдено."
@@ -244,4 +247,5 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
 
     await update.message.reply_text(response)
     return STATISTICS_MENU
+
 
