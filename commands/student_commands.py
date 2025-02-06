@@ -406,11 +406,16 @@ async def handle_payment_date(update: Update, context: ContextTypes.DEFAULT_TYPE
         total_cost = int(getattr(student, "total_cost", 0))  # Полная стоимость курса
 
         # Проверяем, был ли платеж в этом же месяце
-        if student.extra_payment_date and student.extra_payment_date.strftime("%m.%Y") == payment_date.strftime("%m.%Y"):
-            student.extra_payment_amount += new_payment  # Суммируем доплату
+        # Проверяем, был ли платеж в этом месяце
+        if student.extra_payment_date and student.extra_payment_date.strftime("%m.%Y") == payment_date.strftime(
+                "%m.%Y"):
+            # 🔹 Если уже был платёж в этом месяце → увеличиваем сумму и обновляем дату
+            student.extra_payment_amount += new_payment
+            student.extra_payment_date = payment_date  # 🔥 Теперь дата тоже обновляется!
         else:
-            student.extra_payment_amount = new_payment  # Обновляем сумму, если новый месяц
-            student.extra_payment_date = payment_date.strftime('%Y-%m-%d')  # Обновляем дату платежа
+            # 🔹 Если это первый платёж в новом месяце → записываем сумму и дату
+            student.extra_payment_amount = new_payment
+            student.extra_payment_date = payment_date
 
         # Обновляем общую сумму оплат
         updated_payment = existing_payment + new_payment
