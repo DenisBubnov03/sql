@@ -21,10 +21,22 @@ async def view_students(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Список студентов пуст. Добавьте студентов через меню.")
         return
 
-    response = "Список студентов:\n"
+    MAX_MESSAGE_LENGTH = 4000  # Ограничение Telegram
+    message = "📋 Список студентов:\n\n"
+
     for i, student in enumerate(students, start=1):
-        response += f"{i}. {student.fio} - {student.telegram} ({student.training_type})\n"
-    await update.message.reply_text(response)
+        student_text = f"{i}. {student.fio} - {student.telegram} ({student.training_type})\n"
+
+        # Если сообщение превышает лимит, отправляем его и создаем новое
+        if len(message) + len(student_text) > MAX_MESSAGE_LENGTH:
+            await update.message.reply_text(message)
+            message = "📋 Список студентов (продолжение):\n\n"
+
+        message += student_text
+
+    # Отправляем оставшуюся часть списка, если она есть
+    if message:
+        await update.message.reply_text(message)
 
 
 # Функция редактирования студента
