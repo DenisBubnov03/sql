@@ -17,6 +17,7 @@ from commands.student_statistic_commands import show_statistics_menu, show_gener
 # Токен Telegram-бота
 TELEGRAM_TOKEN = "7581276969:AAFcFbSt5F2XpVq3yCKDjhLP7tv1cs8TK8Q"
 
+
 # Состояния для ConversationHandler
 def main():
     # Создание приложения Telegram

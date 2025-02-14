@@ -1,3 +1,5 @@
+import random
+
 from data_base.db import session
 from data_base.models import Student
 from datetime import datetime, timedelta
@@ -5,6 +7,7 @@ from sqlalchemy import or_, func
 
 # Добавление нового студента
 def add_student(fio, telegram, start_date, training_type, total_cost, payment_amount, fully_paid, commission):
+    mentor_id = assign_mentor()
     try:
         student = Student(
             fio=fio,
@@ -14,7 +17,8 @@ def add_student(fio, telegram, start_date, training_type, total_cost, payment_am
             total_cost=total_cost,
             payment_amount=payment_amount,
             fully_paid=fully_paid,
-            commission=commission
+            commission=commission,
+            mentor_id=mentor_id
         )
         session.add(student)
         session.commit()
@@ -119,3 +123,13 @@ def get_students_by_training_type(training_type):
     """
     return session.query(Student).filter(Student.training_type == training_type).all()
 
+def assign_mentor():
+    """
+    Возвращает ID ментора по вероятностному распределению 60/40.
+    """
+    mentor_id = random.choices(
+        population=[1, 2],  # ID менторов
+        weights=[60, 40],  # Соотношение 60% / 40%
+        k=1  # Выбираем одного ментора
+    )[0]
+    return mentor_id

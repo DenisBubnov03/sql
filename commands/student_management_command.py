@@ -8,7 +8,7 @@ from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMEN
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from data_base.operations import add_student, get_student_by_fio_or_telegram
+from data_base.operations import add_student, get_student_by_fio_or_telegram, assign_mentor
 
 
 # Добавление студента: шаг 1 - ввод ФИО
@@ -201,7 +201,7 @@ async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_T
             raise ValueError("Комиссия должна быть положительным числом.")
 
         context.user_data["commission"] = f"{payments}, {percentage}%"
-
+        mentor_id = assign_mentor()
         add_student(
             fio=context.user_data["fio"],
             telegram=context.user_data["telegram"],
@@ -214,8 +214,8 @@ async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_T
         )
 
         editor_tg = update.message.from_user.username
-        custom_logger.info(f"@{editor_tg} добавил студента: {context.user_data}")
-        await update.message.reply_text("Студент успешно добавлен!")
+        custom_logger.info(f"@{editor_tg} добавил студента {context.user_data['fio']} к ментору {mentor_id}.")
+        await update.message.reply_text(f"✅ Студент {context.user_data['fio']} добавлен к ментору {mentor_id}.")
         return await exit_to_main_menu(update, context)
 
     except ValueError:
