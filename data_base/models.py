@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DECIMAL
+from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean
 from data_base import Base
 
 
@@ -22,3 +22,12 @@ class Student(Base):
     commission_paid = Column(DECIMAL(10, 2), default=0, server_default="0")
     extra_payment_amount = Column(DECIMAL(10, 2), default=0, server_default="0")  # Сумма доплаты
     extra_payment_date = Column(Date, nullable=True)  # Дата последнего платежа
+
+class Mentor(Base):
+    __tablename__ = "mentors"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    telegram = Column(String, unique=True, nullable=False)
+    full_name = Column(String, nullable=False)
+    is_admin = Column(Boolean, default=False)
+    chat_id = Column(String, nullable=True)

@@ -1,7 +1,7 @@
 import random
 
 from data_base.db import session
-from data_base.models import Student
+from data_base.models import Student, Mentor
 from datetime import datetime, timedelta
 from sqlalchemy import or_, func
 
@@ -125,11 +125,27 @@ def get_students_by_training_type(training_type):
 
 def assign_mentor():
     """
-    Возвращает ID ментора по вероятностному распределению 60/40.
-    """
+       Возвращает ID ментора по весовому распределению:
+       - 30% учеников идут к ментору id=1
+       - 70% распределяются равномерно среди остальных менторов
+       """
+    mentors = session.query(Mentor).all()
+
+    if len(mentors) < 2:
+        return mentors[0].id  # Если есть только один ментор, назначаем его
+
+    # Разделяем менторов
+    main_mentor = next((m for m in mentors if m.id == 1), None)  # Главный ментор (id=1)
+    other_mentors = [m for m in mentors if m.id != 1]  # Остальные менторы
+
+    if not main_mentor or not other_mentors:
+        return main_mentor.id if main_mentor else other_mentors[0].id
+
+    # 30% шансов на главного ментора, 70% на остальных
     mentor_id = random.choices(
-        population=[1, 2],  # ID менторов
-        weights=[60, 40],  # Соотношение 60% / 40%
-        k=1  # Выбираем одного ментора
+        population=[main_mentor.id] + [m.id for m in other_mentors],
+        weights=[30] + [70 / len(other_mentors)] * len(other_mentors),
+        k=1
     )[0]
+
     return mentor_id
