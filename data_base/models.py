@@ -1,4 +1,6 @@
-from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean
+from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean, ForeignKey
+from sqlalchemy.orm import relationship
+
 from data_base import Base
 
 
@@ -22,6 +24,8 @@ class Student(Base):
     commission_paid = Column(DECIMAL(10, 2), default=0, server_default="0")
     extra_payment_amount = Column(DECIMAL(10, 2), default=0, server_default="0")  # Сумма доплаты
     extra_payment_date = Column(Date, nullable=True)  # Дата последнего платежа
+    mentor_id = Column(Integer, ForeignKey("mentors.id"), nullable=False)
+    mentor = relationship("Mentor", backref="students")
 
 class Mentor(Base):
     __tablename__ = "mentors"

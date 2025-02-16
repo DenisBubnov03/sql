@@ -10,6 +10,7 @@ from sqlalchemy import or_, func
 def add_student(fio, telegram, start_date, training_type, total_cost, payment_amount, fully_paid, commission):
     mentor_id = assign_mentor(training_type)
     try:
+
         student = Student(
             fio=fio,
             telegram=telegram,
@@ -25,6 +26,7 @@ def add_student(fio, telegram, start_date, training_type, total_cost, payment_am
         session.commit()
     except Exception as e:
         session.rollback()
+
 
 
 # Получение всех студентов

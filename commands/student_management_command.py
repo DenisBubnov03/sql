@@ -201,7 +201,8 @@ async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_T
             raise ValueError("Комиссия должна быть положительным числом.")
 
         context.user_data["commission"] = f"{payments}, {percentage}%"
-        mentor_id = assign_mentor()
+        mentor_id = assign_mentor(context.user_data["course_type"])  # Назначаем ментора
+
         add_student(
             fio=context.user_data["fio"],
             telegram=context.user_data["telegram"],
@@ -221,6 +222,7 @@ async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_T
     except ValueError:
         await update.message.reply_text("Введите корректные данные о комиссии (например: '2, 50'). Попробуйте ещё раз.")
         return COMMISSION
+
 
 
 async def add_student_paid_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
