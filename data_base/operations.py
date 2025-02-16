@@ -5,9 +5,10 @@ from data_base.models import Student, Mentor
 from datetime import datetime, timedelta
 from sqlalchemy import or_, func
 
+
 # Добавление нового студента
 def add_student(fio, telegram, start_date, training_type, total_cost, payment_amount, fully_paid, commission):
-    mentor_id = assign_mentor()
+    mentor_id = assign_mentor(training_type)
     try:
         student = Student(
             fio=fio,
@@ -45,14 +46,12 @@ def get_student_by_fio_or_telegram(value):
         return None
 
 
-
 # Обновление данных студента
 def update_student(student_id, updates):
     student = session.query(Student).get(student_id)
     if not student:
         raise ValueError("Студент не найден.")
     for key, value in updates.items():
-
         setattr(student, key, value)
     session.commit()
 
@@ -91,6 +90,7 @@ def get_students_by_period(start_date, end_date):
         Student.start_date.between(start_date, end_date)
     ).all()
 
+
 # Проверка уведомлений по звонкам
 def get_students_with_no_calls():
     """Возвращает студентов, которые давно не звонили."""
@@ -99,10 +99,10 @@ def get_students_with_no_calls():
     return session.query(Student).filter(
         or_(
             Student.last_call_date == None,  # Студенты без даты звонка
-            func.to_date(Student.last_call_date, 'DD.MM.YYYY') < twenty_days_ago  # Студенты, звонившие более 20 дней назад
+            func.to_date(Student.last_call_date, 'DD.MM.YYYY') < twenty_days_ago
+            # Студенты, звонившие более 20 дней назад
         )
     ).all()
-
 
 
 # Проверка задолженностей по оплате
@@ -111,6 +111,8 @@ def get_students_with_unpaid_payment():
     return session.query(Student).filter(
         func.coalesce(Student.total_cost, 0) > func.coalesce(Student.payment_amount, 0)
     ).all()
+
+
 def get_students_by_training_type(training_type):
     """
     Возвращает студентов по типу обучения.
@@ -123,18 +125,28 @@ def get_students_by_training_type(training_type):
     """
     return session.query(Student).filter(Student.training_type == training_type).all()
 
-def assign_mentor():
+
+def assign_mentor(training_type):
     """
-       Возвращает ID ментора по весовому распределению:
-       - 30% учеников идут к ментору id=1
-       - 70% распределяются равномерно среди остальных менторов
-       """
+    Возвращает ID ментора с учётом:
+    - Автотестировщики → Ментор id=3
+    - Фуллстек → Ментор id=1
+    - Ручное тестирование → 30% к Ментору id=1, 70% к остальным ментором
+    """
+    # Если курс = "Автотестирование", назначаем ментора id=3
+    if training_type == "Автотестирование":
+        return 3
+
+    # Если курс = "Фуллстек", назначаем ментора id=1
+    if training_type == "Фуллстек":
+        return 1
+
+    # Для "Ручного тестирования" работаем по старой логике
     mentors = session.query(Mentor).all()
 
     if len(mentors) < 2:
         return mentors[0].id  # Если есть только один ментор, назначаем его
 
-    # Разделяем менторов
     main_mentor = next((m for m in mentors if m.id == 1), None)  # Главный ментор (id=1)
     other_mentors = [m for m in mentors if m.id != 1]  # Остальные менторы
 
