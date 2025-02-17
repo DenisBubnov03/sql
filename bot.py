@@ -58,6 +58,9 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_value),
                 MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
             ],
+            CONFIRM_DELETE: [  # Добавляем состояние для подтверждения удаления
+                MessageHandler(filters.Regex("^(Да, удалить|Нет, отмена)$"), handle_student_deletion),
+            ],
             WAIT_FOR_PAYMENT_DATE: [  # Добавляем этот шаг
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_date),
                 MessageHandler(filters.Regex("^Сегодня$"), handle_payment_date),  # Кнопка "Сегодня"
@@ -97,21 +100,21 @@ def main():
     )
 
     notifications_handler = ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^Проверить уведомления$"), show_notifications_menu)],
-    states={
-        NOTIFICATION_MENU: [
-            MessageHandler(filters.Regex("^По звонкам$"), check_call_notifications),
-            MessageHandler(filters.Regex("^По оплате$"), check_payment_notifications),
-            MessageHandler(filters.Regex("^Все$"), check_all_notifications),
+        entry_points=[MessageHandler(filters.Regex("^Проверить уведомления$"), show_notifications_menu)],
+        states={
+            NOTIFICATION_MENU: [
+                MessageHandler(filters.Regex("^По звонкам$"), check_call_notifications),
+                MessageHandler(filters.Regex("^По оплате$"), check_payment_notifications),
+                MessageHandler(filters.Regex("^Все$"), check_all_notifications),
+            ],
+            "NOTIFICATION_PROCESS": [
+                MessageHandler(filters.Regex("^🔙 Назад$"), show_notifications_menu),
+            ],
+        },
+        fallbacks=[
+            MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu),
         ],
-        "NOTIFICATION_PROCESS": [
-            MessageHandler(filters.Regex("^🔙 Назад$"), show_notifications_menu),
-        ],
-    },
-    fallbacks=[
-        MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu),
-    ],
-)
+    )
 
     # Регистрация обработчиков
     application.add_handler(CommandHandler("start", start))
@@ -127,6 +130,7 @@ def main():
 
     # Запуск бота
     application.run_polling()
+
 
 if __name__ == "__main__":
     main()
