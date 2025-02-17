@@ -28,7 +28,6 @@ def add_student(fio, telegram, start_date, training_type, total_cost, payment_am
         session.rollback()
 
 
-
 # Получение всех студентов
 def get_all_students():
     """Возвращает список всех студентов."""
