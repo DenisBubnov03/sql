@@ -7,25 +7,25 @@ from sqlalchemy import or_, func
 
 
 # Добавление нового студента
-def add_student(fio, telegram, start_date, training_type, total_cost, payment_amount, fully_paid, commission):
-    mentor_id = assign_mentor(training_type)
-    try:
-
-        student = Student(
-            fio=fio,
-            telegram=telegram,
-            start_date=start_date,
-            training_type=training_type,
-            total_cost=total_cost,
-            payment_amount=payment_amount,
-            fully_paid=fully_paid,
-            commission=commission,
-            mentor_id=mentor_id
-        )
-        session.add(student)
-        session.commit()
-    except Exception as e:
-        session.rollback()
+# def add_student(fio, telegram, start_date, training_type, total_cost, payment_amount, fully_paid, commission):
+#     mentor_id = assign_mentor(training_type)
+#     try:
+#
+#         student = Student(
+#             fio=fio,
+#             telegram=telegram,
+#             start_date=start_date,
+#             training_type=training_type,
+#             total_cost=total_cost,
+#             payment_amount=payment_amount,
+#             fully_paid=fully_paid,
+#             commission=commission,
+#             mentor_id=mentor_id
+#         )
+#         session.add(student)
+#         session.commit()
+#     except Exception as e:
+#         session.rollback()
 
 
 # Получение всех студентов

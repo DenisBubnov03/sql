@@ -8,7 +8,8 @@ from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMEN
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from data_base.operations import add_student, get_student_by_fio_or_telegram, assign_mentor
+from data_base.operations import  get_student_by_fio_or_telegram, assign_mentor
+from student_management.student_management import add_student
 
 
 # Добавление студента: шаг 1 - ввод ФИО
@@ -211,7 +212,8 @@ async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_T
             total_cost=context.user_data["total_payment"],
             payment_amount=context.user_data["paid_amount"],
             fully_paid="Да" if context.user_data["paid_amount"] == context.user_data["total_payment"] else "Нет",
-            commission=context.user_data["commission"]
+            commission=context.user_data["commission"],
+            mentor_id=mentor_id
         )
 
         editor_tg = update.message.from_user.username

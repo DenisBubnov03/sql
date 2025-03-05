@@ -1,42 +1,28 @@
 from data_base import Session
 from data_base.db import session
 from data_base.models import Student
+from data_base.operations import assign_mentor
 
 
-def add_student(fio, telegram, start_date, course_type, total_payment, paid_amount, fully_paid, commission):
-    """
-    Добавляет нового студента в базу данных.
-
-    Args:
-        fio (str): ФИО студента.
-        telegram (str): Telegram студента.
-        start_date (str): Дата начала обучения.
-        course_type (str): Тип обучения.
-        total_payment (float): Стоимость курса.
-        paid_amount (float): Оплаченная сумма.
-        fully_paid (str): Полностью оплачено ("Да"/"Нет").
-        commission (str): Информация о комиссии.
-
-    Returns:
-        None
-    """
+def add_student(fio, telegram, start_date, training_type, total_cost, payment_amount, fully_paid, commission, mentor_id):
+    # mentor_id = assign_mentor(training_type)
     try:
+
         student = Student(
             fio=fio,
             telegram=telegram,
             start_date=start_date,
-            training_type=course_type,
-            total_cost=total_payment,
-            payment_amount=paid_amount,
+            training_type=training_type,
+            total_cost=total_cost,
+            payment_amount=payment_amount,
             fully_paid=fully_paid,
             commission=commission,
-            commission_paid=0,
-            training_status="Учится"
+            mentor_id=mentor_id
         )
         session.add(student)
         session.commit()
     except Exception as e:
-        raise RuntimeError(f"Ошибка добавления студента: {e}")
+        session.rollback()
 
 
 from datetime import datetime
