@@ -115,8 +115,16 @@ def main():
             MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu),
         ],
     )
+    salary_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^📊 Рассчитать зарплату$"), request_salary_period)],
+        states={
+            "WAIT_FOR_SALARY_DATES": [MessageHandler(filters.TEXT & ~filters.COMMAND, calculate_salary)]
+        },
+        fallbacks=[]
+    )
 
     # Регистрация обработчиков
+    application.add_handler(salary_handler)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.Regex("^Просмотреть студентов$"), view_students))
     application.add_handler(add_student_handler)

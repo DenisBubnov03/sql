@@ -1,4 +1,6 @@
 from datetime import datetime
+
+from sqlalchemy import func
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
@@ -8,7 +10,7 @@ from commands.start_commands import exit_to_main_menu
 from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM, WAIT_FOR_PAYMENT_DATE
 from commands.student_info_commands import calculate_commission
 from data_base.db import session
-from data_base.models import Student
+from data_base.models import Student, Payment
 from data_base.operations import get_all_students, update_student, get_student_by_fio_or_telegram, delete_student
 
 
@@ -399,7 +401,7 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_payment_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Обрабатывает ввод даты платежа и обновляет данные студента.
+    Обрабатывает ввод даты платежа, записывает платеж в `payments` и обновляет сумму оплат в `students`.
     """
     try:
         student = context.user_data.get("student")
@@ -416,47 +418,47 @@ async def handle_payment_date(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Текущие значения
         existing_payment = int(getattr(student, "payment_amount", 0))  # Уже оплаченная сумма
         total_cost = int(getattr(student, "total_cost", 0))  # Полная стоимость курса
-
-        # Проверяем, был ли платеж в этом же месяце
-        # Проверяем, был ли платеж в этом месяце
-        if student.extra_payment_date and student.extra_payment_date.strftime("%m.%Y") == payment_date.strftime(
-                "%m.%Y"):
-            # 🔹 Если уже был платёж в этом месяце → увеличиваем сумму и обновляем дату
-            student.extra_payment_amount += new_payment
-            student.extra_payment_date = payment_date  # 🔥 Теперь дата тоже обновляется!
-        else:
-            # 🔹 Если это первый платёж в новом месяце → записываем сумму и дату
-            student.extra_payment_amount = new_payment
-            student.extra_payment_date = payment_date
-
-        # Обновляем общую сумму оплат
         updated_payment = existing_payment + new_payment
 
         # Проверяем, не превышает ли сумма оплат полную стоимость курса
         if updated_payment > total_cost:
             await update.message.reply_text(
-                f"❌ Ошибка: общая сумма оплаты ({updated_payment}) "
-                f"превышает стоимость обучения ({total_cost})."
+                f"❌ Ошибка: общая сумма оплаты ({updated_payment}) превышает стоимость обучения ({total_cost})."
             )
-            return WAIT_FOR_NEW_VALUE
+            await exit_to_main_menu(update, context)  # ✅ Отправляем в меню
+            return ConversationHandler.END  # ✅ Завершаем процесс
 
-        fully_paid = "Да" if updated_payment >= total_cost else "Нет"
+        # ✅ Записываем новый платёж в `payments`
+        mentor_id = student.mentor_id
+        new_payment_entry = Payment(
+            student_id=student.id,
+            mentor_id=mentor_id,
+            amount=new_payment,
+            payment_date=payment_date,
+            comment="Дополнительный платёж через редактирование"
+        )
 
-        # Обновляем данные в базе
-        update_student(student.id, {
-            "payment_amount": updated_payment,
-            "extra_payment_amount": student.extra_payment_amount,
-            "extra_payment_date": student.extra_payment_date,
-            "fully_paid": fully_paid
-        })
+        session.add(new_payment_entry)
+        session.commit()
+
+        # ✅ Обновляем сумму оплат в `students`
+        student.payment_amount = existing_payment + new_payment
+        student.fully_paid = "Да" if student.payment_amount >= total_cost else "Нет"
+        session.commit()
 
         await update.message.reply_text(
-            f"✅ Платеж {new_payment} руб. успешно добавлен за {payment_date.strftime('%d.%m.%Y')}.\n"
-            f"💳 Общая сумма оплаты: {updated_payment} руб. из {total_cost} руб.\n"
-            f"💰 Остаток к оплате: {max(0, total_cost - updated_payment)} руб."
+            f"✅ Платёж {new_payment} руб. успешно добавлен за {payment_date.strftime('%d.%m.%Y')}.\n"
+            f"💳 Общая сумма оплаты: {student.payment_amount} руб. из {total_cost} руб.\n"
+            f"💰 Остаток к оплате: {max(0, total_cost - student.payment_amount)} руб."
         )
-        return await exit_to_main_menu(update, context)
+
+        await exit_to_main_menu(update, context)  # ✅ Гарантированно отправляем в меню
+        return ConversationHandler.END  # ✅ Завершаем процесс корректно
 
     except ValueError:
         await update.message.reply_text("Некорректный формат даты. Введите в формате ДД.ММ.ГГГГ или выберите 'Сегодня'.")
         return WAIT_FOR_PAYMENT_DATE
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка при записи платежа: {e}")
+        return WAIT_FOR_PAYMENT_DATE
+

@@ -1,4 +1,6 @@
 from datetime import datetime
+import logging
+from sqlalchemy import func
 
 from commands.authorized_users import AUTHORIZED_USERS
 from commands.logger import custom_logger
@@ -8,9 +10,11 @@ from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMEN
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
+from data_base.db import session
+from data_base.models import Payment, Mentor, Student
 from data_base.operations import  get_student_by_fio_or_telegram, assign_mentor
 from student_management.student_management import add_student
-
+logger = logging.getLogger(__name__)
 
 # Добавление студента: шаг 1 - ввод ФИО
 async def add_student_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -191,10 +195,10 @@ async def add_student_total_payment(update: Update, context: ContextTypes.DEFAUL
 # Шаг добавления комиссии
 async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Завершение добавления студента с введением комиссии.
+    Завершение добавления студента с введением комиссии и записью платежа.
     """
-    commission_input = update.message.text
     try:
+        commission_input = update.message.text
         payments, percentage = map(str.strip, commission_input.split(","))
         payments, percentage = int(payments), int(percentage.strip('%'))
 
@@ -202,28 +206,48 @@ async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_T
             raise ValueError("Комиссия должна быть положительным числом.")
 
         context.user_data["commission"] = f"{payments}, {percentage}%"
-        mentor_id = assign_mentor(context.user_data["course_type"])  # Назначаем ментора
+        mentor_id = assign_mentor(context.user_data["course_type"])
 
-        add_student(
+        # ✅ Добавляем студента
+        student_id = add_student(
             fio=context.user_data["fio"],
             telegram=context.user_data["telegram"],
             start_date=context.user_data["start_date"],
             training_type=context.user_data["course_type"],
             total_cost=context.user_data["total_payment"],
-            payment_amount=context.user_data["paid_amount"],
-            fully_paid="Да" if context.user_data["paid_amount"] == context.user_data["total_payment"] else "Нет",
+            payment_amount=context.user_data.get("paid_amount", 0),
+            fully_paid="Да" if context.user_data.get("paid_amount", 0) == context.user_data["total_payment"] else "Нет",
             commission=context.user_data["commission"],
             mentor_id=mentor_id
         )
 
-        editor_tg = update.message.from_user.username
-        custom_logger.info(f"@{editor_tg} добавил студента {context.user_data['fio']} к ментору {mentor_id}.")
-        await update.message.reply_text(f"✅ Студент {context.user_data['fio']} добавлен к ментору {mentor_id}.")
-        return await exit_to_main_menu(update, context)
+        if not student_id:
+            await update.message.reply_text("❌ Ошибка: студент не был создан.")
+            return ConversationHandler.END
+
+        context.user_data["id"] = student_id  # ✅ Теперь сохраняем `id`
+        print(f"✅ DEBUG: student_id сохранён в context: {context.user_data['id']}")
+
+        # ✅ Теперь записываем платёж
+        record_initial_payment(student_id, context.user_data.get("paid_amount", 0), mentor_id)
+
+        # ✅ Получаем имя ментора
+        from data_base.db import session
+        from data_base.models import Mentor
+
+        mentor = session.query(Mentor).filter(Mentor.id == mentor_id).first()
+        mentor_name = mentor.full_name if mentor else f"ID {mentor_id}"
+
+        # ✅ Финальное сообщение
+        await update.message.reply_text(f"✅ Студент {context.user_data['fio']} добавлен к ментору {mentor_name}!")
+
+        await exit_to_main_menu(update, context)  # ✅ Сначала выполняем меню
+        return ConversationHandler.END  # ✅ Завершаем процесс корректно
 
     except ValueError:
-        await update.message.reply_text("Введите корректные данные о комиссии (например: '2, 50'). Попробуйте ещё раз.")
+        await update.message.reply_text("❌ Введите корректные данные о комиссии.")
         return COMMISSION
+
 
 
 
@@ -249,3 +273,135 @@ async def add_student_paid_amount(update: Update, context: ContextTypes.DEFAULT_
     except ValueError:
         await update.message.reply_text("Введите корректное число. Попробуйте ещё раз.")
         return PAID_AMOUNT
+
+def record_initial_payment(student_id, paid_amount, mentor_id):
+    """
+    Записывает первоначальный платёж в `payments`.
+    """
+    try:
+        if paid_amount > 0:
+            new_payment = Payment(
+                student_id=student_id,
+                mentor_id=mentor_id,
+                amount=paid_amount,
+                payment_date=datetime.now().date(),
+                comment="Первоначальный платёж при регистрации"
+            )
+
+            session.add(new_payment)
+            session.commit()
+            print(f"✅ DEBUG: Платёж записан в payments! {paid_amount} руб.")
+
+    except Exception as e:
+        session.rollback()
+        print(f"❌ DEBUG: Ошибка при записи платежа: {e}")
+
+async def request_salary_period(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Запрашивает у пользователя период расчёта зарплаты (от и до).
+    """
+    await update.message.reply_text(
+        "📅 Введите период расчёта зарплаты в формате:\n"
+        "**ДД.ММ.ГГГГ - ДД.ММ.ГГГГ**\n"
+        "Пример: `01.03.2025 - 31.03.2025`"
+    )
+    return "WAIT_FOR_SALARY_DATES"
+
+
+
+async def calculate_salary(update: Update, context):
+    """
+    Рассчитывает зарплату менторов за указанный период.
+    """
+    try:
+        date_range = update.message.text.strip()
+        logger.info(f"📅 Полученный диапазон дат: {date_range}")
+
+        if " - " not in date_range:
+            raise ValueError("Формат должен быть ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
+
+        start_date_str, end_date_str = map(str.strip, date_range.split("-"))
+        start_date = datetime.strptime(start_date_str, "%d.%m.%Y").date()
+        end_date = datetime.strptime(end_date_str, "%d.%m.%Y").date()
+
+        if start_date > end_date:
+            raise ValueError("Дата начала не может быть позже даты окончания.")
+
+        logger.info(f"📊 Запрашиваем всех менторов...")
+        all_mentors = {mentor.id: mentor for mentor in session.query(Mentor).all()}
+
+        if not all_mentors:
+            logger.warning("⚠️ ВНИМАНИЕ: mentors не загружены! Проверь БД или session.commit()")
+            await update.message.reply_text("❌ Ошибка: не удалось загрузить список менторов.")
+            return ConversationHandler.END
+
+        mentor_salaries = {mentor.id: 0 for mentor in all_mentors.values()}
+
+        # Выбираем платежи за период
+        logger.info(f"📊 Выполняем запрос к payments...")
+        payments = session.query(
+            Payment.mentor_id, func.sum(Payment.amount)
+        ).filter(
+            Payment.payment_date >= start_date,
+            Payment.payment_date <= end_date
+        ).group_by(Payment.mentor_id).all()
+
+        logger.info(f"📊 Найдено платежей: {len(payments)}")
+
+        if not payments:
+            logger.warning("⚠️ Нет платежей за этот период!")
+            payments = []
+
+        # Расчёт зарплат
+        for mentor_id, total_amount in payments:
+            mentor = all_mentors.get(mentor_id)
+            if not mentor:
+                logger.warning(f"⚠️ Ментор с ID {mentor_id} не найден!")
+                continue
+
+            # Основной расчёт процентов
+            if mentor.id == 1:  # Главный ментор ручного тестирования
+                salary = float(total_amount) * 0.3
+            elif mentor.id == 3:  # Главный ментор автотестирования
+                salary = float(total_amount) * 0.3
+            else:
+                salary = float(total_amount) * 0.2  # Остальные менторы
+
+            mentor_salaries[mentor.id] += salary
+
+        # Дополнительные 10% главному ментору направления
+        for mentor_id, total_amount in payments:
+            student = session.query(Student).filter(Student.id == mentor_id).first()
+            if not student:
+                continue
+
+            for head_mentor in session.query(Mentor).filter(Mentor.id.in_([1, 3])).all():
+                if head_mentor.direction == student.training_type and mentor_id != head_mentor.id:
+                    mentor_salaries[head_mentor.id] += float(total_amount) * 0.1
+
+        # Добавляем лог перед финальным отчётом
+        logger.info(f"📊 Итоговые зарплаты: {mentor_salaries}")
+
+        # Генерация отчёта
+        salary_report = f"📊 **Расчёт зарплат за {start_date_str} - {end_date_str}**\n\n"
+
+        for mentor in all_mentors.values():
+            logger.info(
+                f"🔍 Проверяем: {mentor.full_name} ({mentor.id}) → Зарплата: {mentor_salaries.get(mentor.id, 0)}")
+
+            salary = mentor_salaries.get(mentor.id, 0)
+            if salary > 0:
+                salary_report += f"💰 {mentor.full_name} ({mentor.telegram}): {round(salary, 2)} руб.\n"
+            else:
+                salary_report += f"❌ {mentor.full_name} ({mentor.telegram}): У ментора нет платежей за этот период\n"
+
+        logger.info(f"📨 Отправка отчёта: \n{salary_report}")
+        await update.message.reply_text(salary_report)
+
+        return ConversationHandler.END
+
+    except ValueError as e:
+        logger.error(f"❌ Ошибка ввода даты: {e}")
+        await update.message.reply_text(f"❌ Ошибка: {e}\nВведите период в формате 'ДД.ММ.ГГГГ - ДД.ММ.ГГГГ'.")
+        return "WAIT_FOR_SALARY_DATES"
+

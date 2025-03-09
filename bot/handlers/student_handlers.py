@@ -3,7 +3,7 @@ from telegram.ext import CallbackContext, ConversationHandler
 from bot.handlers.constants import (FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT,
                            PAID_AMOUNT, COMMISSION, FIELD_TO_EDIT, FIO_OR_TELEGRAM,
                            WAIT_FOR_NEW_VALUE, SELECT_STUDENT)
-from data_base.operations import add_student, update_student
+from data_base.operations import update_student
 
 def add_student_start(update: Update, context: CallbackContext) -> int:
     """Начало диалога добавления студента."""

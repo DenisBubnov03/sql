@@ -1,31 +1,48 @@
+import logging
+
 from data_base import Session
 from data_base.db import session
-from data_base.models import Student
+from data_base.models import Student, Payment
 from data_base.operations import assign_mentor
+
+logger = logging.getLogger(__name__)
 
 
 def add_student(fio, telegram, start_date, training_type, total_cost, payment_amount, fully_paid, commission, mentor_id):
-    # mentor_id = assign_mentor(training_type)
+    """
+    Добавляет нового студента в базу данных и возвращает его ID.
+    """
     try:
-
         student = Student(
             fio=fio,
             telegram=telegram,
             start_date=start_date,
             training_type=training_type,
             total_cost=total_cost,
-            payment_amount=payment_amount,
+            payment_amount=payment_amount,  # Это просто для отображения
             fully_paid=fully_paid,
             commission=commission,
             mentor_id=mentor_id
         )
+
         session.add(student)
-        session.commit()
+        session.commit()  # 🔹 Теперь ID будет создан
+        session.refresh(student)  # 🔹 Гарантированно загружаем `id`
+
+        print(f"✅ DEBUG: Студент добавлен! ID = {student.id}, Имя = {fio}")
+
+        return student.id  # ✅ Теперь `id` точно есть
+
     except Exception as e:
         session.rollback()
+        print(f"❌ DEBUG: Ошибка при добавлении студента: {e}")
+        return None
+
+
 
 
 from datetime import datetime
+
 
 def update_student_data(identifier, new_payment, payment_date):
     """
@@ -52,7 +69,8 @@ def update_student_data(identifier, new_payment, payment_date):
             return False
 
         # Проверяем, был ли платеж в этом же месяце
-        if student.extra_payment_date and student.extra_payment_date.strftime("%m.%Y") == payment_date.strftime("%m.%Y"):
+        if student.extra_payment_date and student.extra_payment_date.strftime("%m.%Y") == payment_date.strftime(
+                "%m.%Y"):
             # Если платеж в этом месяце, суммируем доплату
             student.extra_payment_amount += new_payment
         else:
@@ -81,9 +99,6 @@ def update_student_data(identifier, new_payment, payment_date):
     except Exception as e:
         session.rollback()
         raise RuntimeError(f"Ошибка обновления данных студента: {e}")
-
-
-
 
 
 def get_all_students():
