@@ -387,9 +387,15 @@ async def calculate_salary(update: Update, context):
                     Payment.payment_date >= start_date,
                     Payment.payment_date <= end_date
                 )
+                .execution_options(stream_results=True)
                 .scalar() * 5000  # Количество платежей по Fullstack-ученикам * 5000 руб.
         )
-        mentor_salaries[1] += fullstack_bonus  # Суммируем бонус в зарплату ментора 1
+        if fullstack_bonus and fullstack_bonus > 0:
+            bonus_amount = fullstack_bonus * 5000  # Количество студентов * 5000 руб.
+            mentor_salaries[1] += bonus_amount
+            logger.info(f"🎓 Ментор 1 получил бонус за Fullstack: {bonus_amount} руб. ({fullstack_bonus} студентов).")
+        else:
+            logger.info(f"🚫 Нет Fullstack-платежей за период {start_date} - {end_date}, бонус не начисляется.")
         # Добавляем лог перед финальным отчётом
         logger.info(f"📊 Итоговые зарплаты: {mentor_salaries}")
 
