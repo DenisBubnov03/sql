@@ -378,24 +378,33 @@ async def calculate_salary(update: Update, context):
             for head_mentor in session.query(Mentor).filter(Mentor.id.in_([1, 3])).all():
                 if head_mentor.direction == student.training_type and mentor_id != head_mentor.id:
                     mentor_salaries[head_mentor.id] += float(total_amount) * 0.1
-        fullstack_bonus = (
-                session.query(func.count(Payment.id))
-                .join(Student, Payment.student_id == Student.id)
-                .filter(
-                    Student.training_type == "Фуллстек",
-                    Student.total_cost >= 50000,
-                    Payment.payment_date >= start_date,
-                    Payment.payment_date <= end_date
-                )
-                .execution_options(stream_results=True)
-                .scalar() * 5000  # Количество платежей по Fullstack-ученикам * 5000 руб.
+        # 🔹 Фильтруем студентов только по таблице students
+        fullstack_students_query = session.query(Student).filter(
+            Student.training_type == "Фуллстек",
+            Student.total_cost >= 50000,
+            Student.start_date >= start_date,
+            Student.start_date <= end_date
         )
-        if fullstack_bonus and fullstack_bonus > 0:
-            bonus_amount = fullstack_bonus * 5000  # Количество студентов * 5000 руб.
-            mentor_salaries[1] += bonus_amount
-            logger.info(f"🎓 Ментор 1 получил бонус за Fullstack: {bonus_amount} руб. ({fullstack_bonus} студентов).")
+
+        fullstack_students = fullstack_students_query.all()  # ✅ Теперь берём только студентов, у которых start_date в периоде
+        fullstack_bonus = len(fullstack_students) * 5000  # ✅ Теперь бонус считается правильно
+
+        # 🔍 Лог студентов перед начислением бонуса
+        if fullstack_students:
+            for student in fullstack_students:
+                logger.info(
+                    f"🔍 Fullstack-ученик: {student.fio} (ID {student.id}), стоимость обучения: {student.total_cost} руб.")
         else:
-            logger.info(f"🚫 Нет Fullstack-платежей за период {start_date} - {end_date}, бонус не начисляется.")
+            logger.info(f"🚫 Нет Fullstack-учеников за период {start_date} - {end_date}, бонус не начисляется.")
+
+        # 🔹 Добавляем бонус только если есть студенты
+        if fullstack_students:
+            mentor_salaries[1] += fullstack_bonus  # ✅ Начисляем бонус только один раз
+            logger.info(
+                f"🎓 Ментор 1 получил бонус за Fullstack: {fullstack_bonus} руб. ({len(fullstack_students)} студентов).")
+
+
+
         # Добавляем лог перед финальным отчётом
         logger.info(f"📊 Итоговые зарплаты: {mentor_salaries}")
 
