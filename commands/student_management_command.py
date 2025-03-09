@@ -379,9 +379,15 @@ async def calculate_salary(update: Update, context):
                 if head_mentor.direction == student.training_type and mentor_id != head_mentor.id:
                     mentor_salaries[head_mentor.id] += float(total_amount) * 0.1
         fullstack_bonus = (
-                session.query(func.count(Student.id))
-                .filter(Student.training_type == "Фуллстек", Student.total_cost >= 50000)
-                .scalar() * 5000  # Количество студентов * 5000 руб.
+                session.query(func.count(Payment.id))
+                .join(Student, Payment.student_id == Student.id)
+                .filter(
+                    Student.training_type == "Фуллстек",
+                    Student.total_cost >= 50000,
+                    Payment.payment_date >= start_date,
+                    Payment.payment_date <= end_date
+                )
+                .scalar() * 5000  # Количество платежей по Fullstack-ученикам * 5000 руб.
         )
         mentor_salaries[1] += fullstack_bonus  # Суммируем бонус в зарплату ментора 1
         # Добавляем лог перед финальным отчётом
