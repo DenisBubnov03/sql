@@ -143,7 +143,7 @@ async def handle_period_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("Введите конечную дату периода в формате ДД.ММ.ГГГГ:")
         return END_PERIOD
     except ValueError:
-        await update.message.reply_text("❌ Неверный формат даты! Введите дату в формате **ДД.ММ.ГГГГ** (например: 10.11.2024):")
+        await update.message.reply_text("❌ Неверный формат даты! Введите дату в формате ДД.ММ.ГГГГ (например: 10.11.2024):")
         return START_PERIOD
 
 

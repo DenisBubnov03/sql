@@ -302,7 +302,7 @@ async def request_salary_period(update: Update, context: ContextTypes.DEFAULT_TY
     """
     await update.message.reply_text(
         "📅 Введите период расчёта зарплаты в формате:\n"
-        "**ДД.ММ.ГГГГ - ДД.ММ.ГГГГ**\n"
+        "ДД.ММ.ГГГГ - ДД.ММ.ГГГГ\n"
         "Пример: `01.03.2025 - 31.03.2025`"
     )
     return "WAIT_FOR_SALARY_DATES"
@@ -378,12 +378,17 @@ async def calculate_salary(update: Update, context):
             for head_mentor in session.query(Mentor).filter(Mentor.id.in_([1, 3])).all():
                 if head_mentor.direction == student.training_type and mentor_id != head_mentor.id:
                     mentor_salaries[head_mentor.id] += float(total_amount) * 0.1
-
+        fullstack_bonus = (
+                session.query(func.count(Student.id))
+                .filter(Student.training_type == "Фуллстек", Student.total_cost >= 50000)
+                .scalar() * 5000  # Количество студентов * 5000 руб.
+        )
+        mentor_salaries[1] += fullstack_bonus  # Суммируем бонус в зарплату ментора 1
         # Добавляем лог перед финальным отчётом
         logger.info(f"📊 Итоговые зарплаты: {mentor_salaries}")
 
         # Генерация отчёта
-        salary_report = f"📊 **Расчёт зарплат за {start_date_str} - {end_date_str}**\n\n"
+        salary_report = f"📊 Расчёт зарплат за {start_date_str} - {end_date_str}\n\n"
 
         for mentor in all_mentors.values():
             logger.info(
