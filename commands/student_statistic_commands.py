@@ -1,10 +1,13 @@
 from datetime import datetime
+
+from sqlalchemy import func
+
 from commands.authorized_users import AUTHORIZED_USERS
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from commands.states import STATISTICS_MENU, COURSE_TYPE_MENU, START_PERIOD, END_PERIOD
 from data_base.db import session
-from data_base.models import Student
+from data_base.models import Student, Payment
 from data_base.operations import get_general_statistics, get_students_by_period, get_students_by_training_type
 
 
@@ -201,36 +204,49 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
     end_date = context.user_data.get("end_date")
 
     if not start_date or not end_date:
-        await update.message.reply_text("Даты периода отсутствуют. Попробуйте начать заново.")
+        await update.message.reply_text("❌ Ошибка: Даты периода отсутствуют. Попробуйте начать заново.")
         return STATISTICS_MENU
-    if not isinstance(start_date, datetime) or not isinstance(end_date, datetime):
-        raise ValueError("Одна из дат не является объектом datetime.")
+
+    if end_date < start_date:
+        await update.message.reply_text("⚠ Конечная дата не может быть раньше начальной. Введите корректную дату.")
+        return END_PERIOD
 
     # Получаем студентов, начавших обучение в период
     students = session.query(Student).filter(
         Student.start_date.between(start_date, end_date)
     ).all()
 
-    # Получаем все доплаты, сделанные в период
-    additional_payments = session.query(Student.extra_payment_amount).filter(
-        Student.extra_payment_date.between(start_date, end_date)
-    ).all()
-
-    # Приводим результат к сумме
-    additional_payment = sum(payment[0] for payment in additional_payments if payment[0] is not None)
-
-    # Формируем сообщение
     student_count = len(students)
-    total_paid = sum(student.payment_amount for student in students)
+
+    # Получаем сумму всех платежей (включая первоначальные и доплаты)
+    total_paid = session.query(func.sum(Payment.amount)).filter(
+        Payment.payment_date.between(start_date, end_date)
+    ).scalar() or 0
+
+    # Получаем сумму доплат (где comment = "Доплата")
+    additional_payments = session.query(func.sum(Payment.amount)).filter(
+        Payment.payment_date.between(start_date, end_date),
+        Payment.comment == "Доплата"
+    ).scalar() or 0
+
+    # Общая стоимость обучения для найденных студентов
     total_cost = sum(student.total_cost for student in students)
 
+    # Остаток к оплате
+    remaining_payment = total_cost - total_paid
+
+    # 📊 Формируем ответ в **старом формате**
     if student_count == 0:
-        response = f"📅 В период с {start_date.strftime('%d.%m.%Y')} по {end_date.strftime('%d.%m.%Y')} студентов не найдено."
+        response = (
+            f"📅 В период с {start_date.strftime('%d.%m.%Y')} по {end_date.strftime('%d.%m.%Y')} "
+            f"студентов не найдено."
+        )
     else:
         response = (
             f"📅 В период с {start_date.strftime('%d.%m.%Y')} по {end_date.strftime('%d.%m.%Y')}:\n"
             f"👥 Найдено студентов: {student_count}\n\n"
         )
+
         for student in students:
             response += (
                 f"- {student.fio} ({student.telegram}) "
@@ -240,9 +256,9 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
         response += (
             f"\n💰 Оплачено за обучение: {int(total_paid):,} руб.\n"
             f"📚 Общая стоимость обучения: {int(total_cost):,} руб.\n"
-            f"➕ Общая сумма доплат: {int(additional_payment):,} руб.\n"
-            f"💵 Чистая прибыль: {int(additional_payment + total_paid):,} руб.\n"
-            f"🧾 Осталось оплатить: {int(total_cost - total_paid):,} руб."
+            f"➕ Общая сумма доплат: {int(additional_payments):,} руб.\n"
+            f"💵 Чистая прибыль: {int(total_paid):,} руб.\n"
+            f"🧾 Осталось оплатить: {int(remaining_payment):,} руб."
         )
 
     await update.message.reply_text(response)
