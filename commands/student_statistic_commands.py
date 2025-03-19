@@ -255,7 +255,7 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
             )
 
         response += (
-            f"\n💰 Оплачено за обучение: {int(total_paid):,} руб.\n"
+            f"\n💰 Оплачено за обучение: {int(payment_amount):,} руб.\n"
             f"📚 Общая стоимость обучения: {int(total_cost):,} руб.\n"
             f"➕ Общая сумма доплат: {int(additional_payments):,} руб.\n"
             f"💵 Чистая прибыль: {int(total_paid):,} руб.\n"
