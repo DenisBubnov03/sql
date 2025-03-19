@@ -231,9 +231,10 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
 
     # Общая стоимость обучения для найденных студентов
     total_cost = sum(student.total_cost for student in students)
+    payment_amount = sum(student.payment_amount for student in students)
 
     # Остаток к оплате
-    remaining_payment = total_cost - total_paid
+    remaining_payment = total_cost - payment_amount
 
     # 📊 Формируем ответ в **старом формате**
     if student_count == 0:
