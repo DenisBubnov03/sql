@@ -1,7 +1,7 @@
 import random
 
 from data_base.db import session
-from data_base.models import Student, Mentor
+from data_base.models import Student, Mentor, Payment
 from datetime import datetime, timedelta
 from sqlalchemy import or_, func
 
@@ -108,10 +108,31 @@ def get_students_with_no_calls():
 
 # Проверка задолженностей по оплате
 def get_students_with_unpaid_payment():
-    """Возвращает студентов с неоплаченной комиссией."""
-    return session.query(Student).filter(
-        func.coalesce(Student.total_cost, 0) > func.coalesce(Student.payment_amount, 0)
+    """Возвращает студентов, которые обучаются больше месяца, не оплатили полностью курс и не делали доплат за последний месяц."""
+
+    # Дата месяц назад
+    one_month_ago = datetime.now() - timedelta(days=30)
+
+    # Запрос студентов, удовлетворяющих условиям
+    students = session.query(Student).filter(
+        Student.start_date <= one_month_ago,  # Обучаются больше месяца
+        Student.training_status.in_(["Учится", "Устроился"]),  # Статус обучения
+        Student.fully_paid == "Нет"  # Не полностью оплачено
     ).all()
+
+    # Фильтруем тех, кто **не делал доплат за последний месяц**
+    unpaid_students = []
+    for student in students:
+        last_payment = session.query(func.max(Payment.payment_date)).filter(
+            Payment.student_id == student.id,
+            Payment.comment == "Доплата",
+            Payment.payment_date >= one_month_ago  # Ищем доплаты за последний месяц
+        ).scalar()
+
+        if not last_payment:  # Если доплат за последний месяц **не было**, добавляем в список
+            unpaid_students.append(student)
+
+    return unpaid_students
 
 
 def get_students_by_training_type(training_type):
