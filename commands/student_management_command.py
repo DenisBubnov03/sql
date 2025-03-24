@@ -1,7 +1,7 @@
 from datetime import datetime
 import logging
 from sqlalchemy import func
-
+from sqlalchemy import select
 from commands.authorized_users import AUTHORIZED_USERS
 from commands.logger import custom_logger
 from commands.start_commands import exit_to_main_menu
@@ -388,6 +388,25 @@ async def calculate_salary(update: Update, context):
 
         fullstack_students = fullstack_students_query.all()  # ✅ Теперь берём только студентов, у которых start_date в периоде
         fullstack_bonus = len(fullstack_students) * 5000  # ✅ Теперь бонус считается правильно
+        # 🔹 Получаем ID всех фуллстек-студентов
+        fullstack_student_ids = select(Student.id).filter(
+            Student.training_type == "Фуллстек"
+        )
+
+        fullstack_payment_total = session.query(
+            func.sum(Payment.amount)
+        ).filter(
+            Payment.student_id.in_(fullstack_student_ids),
+            Payment.payment_date >= start_date,
+            Payment.payment_date <= end_date
+        ).scalar() or 0
+
+        # 🔹 Начисляем 30% ментору 3
+        fullstack_share_for_mentor_3 = float(fullstack_payment_total) * 0.3
+        mentor_salaries[3] += fullstack_share_for_mentor_3
+
+        logger.info(
+            f"🎯 Ментор 3 получил 30% от Fullstack-платежей: {fullstack_share_for_mentor_3} руб. (от суммы {fullstack_payment_total} руб.)")
 
         # 🔍 Лог студентов перед начислением бонуса
         if fullstack_students:
