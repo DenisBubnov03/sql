@@ -375,7 +375,7 @@ async def calculate_salary(update: Update, context):
             payout = float(payment.amount) * percent
             mentor_salaries[mentor_id] += payout
 
-            line = f"{student.fio} (ID {student.id}), {payment.payment_date}, {payment.amount} руб., {int(percent*100)}%, {round(payout, 2)} руб."
+            line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., {int(percent*100)}%, {round(payout, 2)} руб."
 
             if mentor_id not in detailed_logs:
                 detailed_logs[mentor_id] = []
