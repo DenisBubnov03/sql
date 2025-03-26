@@ -309,10 +309,9 @@ async def request_salary_period(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 
+from collections import defaultdict
+
 async def calculate_salary(update: Update, context):
-    """
-    Рассчитывает зарплату менторов за указанный период.
-    """
     try:
         date_range = update.message.text.strip()
         logger.info(f"📅 Полученный диапазон дат: {date_range}")
@@ -336,8 +335,8 @@ async def calculate_salary(update: Update, context):
             return ConversationHandler.END
 
         mentor_salaries = {mentor.id: 0 for mentor in all_mentors.values()}
+        detailed_logs = defaultdict(list)
 
-        # Выбираем платежи за период
         logger.info(f"📊 Выполняем запрос к payments...")
         payments = session.query(
             Payment.mentor_id, func.sum(Payment.amount)
@@ -352,24 +351,24 @@ async def calculate_salary(update: Update, context):
             logger.warning("⚠️ Нет платежей за этот период!")
             payments = []
 
-        # Расчёт зарплат
         for mentor_id, total_amount in payments:
             mentor = all_mentors.get(mentor_id)
             if not mentor:
                 logger.warning(f"⚠️ Ментор с ID {mentor_id} не найден!")
                 continue
 
-            # Основной расчёт процентов
-            if mentor.id == 1:  # Главный ментор ручного тестирования
-                salary = float(total_amount) * 0.3
-            elif mentor.id == 3:  # Главный ментор автотестирования
-                salary = float(total_amount) * 0.3
+            if mentor.id == 1 or mentor.id == 3:
+                percent = 0.3
             else:
-                salary = float(total_amount) * 0.2  # Остальные менторы
+                percent = 0.2
 
-            mentor_salaries[mentor.id] += salary
+            reward = float(total_amount) * percent
+            mentor_salaries[mentor.id] += reward
 
-        # Дополнительные 10% главному ментору направления
+            detailed_logs[mentor.id].append(
+                f"💰 Сумма: {int(total_amount)} руб. | Процент: {int(percent * 100)}% | +{round(reward, 2)} руб. — Общая сумма по ментору"
+            )
+
         for mentor_id, total_amount in payments:
             student = session.query(Student).filter(Student.id == mentor_id).first()
             if not student:
@@ -377,8 +376,12 @@ async def calculate_salary(update: Update, context):
 
             for head_mentor in session.query(Mentor).filter(Mentor.id.in_([1, 3])).all():
                 if head_mentor.direction == student.training_type and mentor_id != head_mentor.id:
-                    mentor_salaries[head_mentor.id] += float(total_amount) * 0.1
-        # 🔹 Фильтруем студентов только по таблице students
+                    bonus = float(total_amount) * 0.1
+                    mentor_salaries[head_mentor.id] += bonus
+                    detailed_logs[head_mentor.id].append(
+                        f"🎯 10% бонус за студента {student.fio} (ID {student.id}) | {int(total_amount)} руб. | +{round(bonus, 2)} руб."
+                    )
+
         fullstack_students_query = session.query(Student).filter(
             Student.training_type == "Фуллстек",
             Student.total_cost >= 50000,
@@ -386,9 +389,9 @@ async def calculate_salary(update: Update, context):
             Student.start_date <= end_date
         )
 
-        fullstack_students = fullstack_students_query.all()  # ✅ Теперь берём только студентов, у которых start_date в периоде
-        fullstack_bonus = len(fullstack_students) * 5000  # ✅ Теперь бонус считается правильно
-        # 🔹 Получаем ID всех фуллстек-студентов
+        fullstack_students = fullstack_students_query.all()
+        fullstack_bonus = len(fullstack_students) * 5000
+
         fullstack_student_ids = select(Student.id).filter(
             Student.training_type == "Фуллстек"
         )
@@ -401,39 +404,44 @@ async def calculate_salary(update: Update, context):
             Payment.payment_date <= end_date
         ).scalar() or 0
 
-        # 🔹 Начисляем 30% ментору 3
         fullstack_share_for_mentor_3 = float(fullstack_payment_total) * 0.3
         mentor_salaries[3] += fullstack_share_for_mentor_3
 
         logger.info(
             f"🎯 Ментор 3 получил 30% от Fullstack-платежей: {fullstack_share_for_mentor_3} руб. (от суммы {fullstack_payment_total} руб.)")
 
-        # 🔍 Лог студентов перед начислением бонуса
+        detailed_logs[3].append(
+            f"🔥 30% с общих Fullstack-платежей | {int(fullstack_payment_total)} руб. | +{round(fullstack_share_for_mentor_3, 2)} руб."
+        )
+
         if fullstack_students:
             for student in fullstack_students:
                 logger.info(
                     f"🔍 Fullstack-ученик: {student.fio} (ID {student.id}), стоимость обучения: {student.total_cost} руб.")
+                detailed_logs[1].append(
+                    f"🧠 Бонус за Fullstack: {student.fio} (ID {student.id}) | +5000 руб."
+                )
         else:
             logger.info(f"🚫 Нет Fullstack-учеников за период {start_date} - {end_date}, бонус не начисляется.")
 
-        # 🔹 Добавляем бонус только если есть студенты
         if fullstack_students:
-            mentor_salaries[1] += fullstack_bonus  # ✅ Начисляем бонус только один раз
+            mentor_salaries[1] += fullstack_bonus
             logger.info(
                 f"🎓 Ментор 1 получил бонус за Fullstack: {fullstack_bonus} руб. ({len(fullstack_students)} студентов).")
 
+        logger.info("📋 Супердетальный лог расчёта зарплат:")
+        for mentor_id, entries in detailed_logs.items():
+            mentor = all_mentors[mentor_id]
+            logger.info(f"\n👤 Ментор: {mentor.full_name} ({mentor.telegram})")
+            for line in entries:
+                logger.info(line)
+            logger.info(f"📈 ИТОГО начислено: {round(mentor_salaries[mentor_id], 2)} руб.\n" + "-" * 50)
 
-
-        # Добавляем лог перед финальным отчётом
-        logger.info(f"📊 Итоговые зарплаты: {mentor_salaries}")
-
-        # Генерация отчёта
         salary_report = f"📊 Расчёт зарплат за {start_date_str} - {end_date_str}\n\n"
 
         for mentor in all_mentors.values():
             logger.info(
                 f"🔍 Проверяем: {mentor.full_name} ({mentor.id}) → Зарплата: {mentor_salaries.get(mentor.id, 0)}")
-
             salary = mentor_salaries.get(mentor.id, 0)
             if salary > 0:
                 salary_report += f"💰 {mentor.full_name} ({mentor.telegram}): {round(salary, 2)} руб.\n"
@@ -442,11 +450,11 @@ async def calculate_salary(update: Update, context):
 
         logger.info(f"📨 Отправка отчёта: \n{salary_report}")
         await update.message.reply_text(salary_report)
-
         return ConversationHandler.END
 
     except ValueError as e:
         logger.error(f"❌ Ошибка ввода даты: {e}")
         await update.message.reply_text(f"❌ Ошибка: {e}\nВведите период в формате 'ДД.ММ.ГГГГ - ДД.ММ.ГГГГ'.")
         return "WAIT_FOR_SALARY_DATES"
+
 
