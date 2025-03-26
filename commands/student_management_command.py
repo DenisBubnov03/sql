@@ -386,21 +386,35 @@ async def calculate_salary(update: Update, context):
                 detailed_logs[mentor_id] = []
             detailed_logs[mentor_id].append(line)
 
-        # Бонус 10% главным менторам
+        # 🔁 Бонусы 10% за чужих студентов (кроме Fullstack)
         for payment in detailed_payments:
             student = session.query(Student).filter(Student.id == payment.student_id).first()
             if not student:
                 continue
 
-            for head_mentor in session.query(Mentor).filter(Mentor.id.in_([1, 3])).all():
-                if head_mentor.direction == student.training_type and payment.mentor_id != head_mentor.id:
-                    bonus = float(payment.amount) * 0.1
-                    mentor_salaries[head_mentor.id] += bonus
+            if student.training_type == "Фуллстек":
+                continue  # ❌ Бонус не начисляется за Fullstack
 
-                    line = f"Бонус за {student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., 10%, {round(bonus, 2)} руб."
-                    if head_mentor.id not in detailed_logs:
-                        detailed_logs[head_mentor.id] = []
-                    detailed_logs[head_mentor.id].append(line)
+            # 🔹 Ментор 1 получает 10% за всех чужих студентов (ручное + автотест), кроме Fullstack
+            if payment.mentor_id != 1:
+                bonus = float(payment.amount) * 0.1
+                mentor_salaries[1] += bonus
+                detailed_logs[1].append(
+                    f"🔁 10% бонус ментору 1 за чужого ученика {student.fio} ({student.training_type}) | "
+                    f"{payment.payment_date}, {payment.amount} руб. | +{round(bonus, 2)} руб."
+                )
+
+            # 🔹 Ментор 3 получает 10% только за чужих автотест-студентов
+            if (
+                    student.training_type == "Автотестирование"
+                    and payment.mentor_id != 3
+            ):
+                bonus = float(payment.amount) * 0.1
+                mentor_salaries[3] += bonus
+                detailed_logs[3].append(
+                    f"🔁 10% бонус ментору 3 за чужого автотест ученика {student.fio} | "
+                    f"{payment.payment_date}, {payment.amount} руб. | +{round(bonus, 2)} руб."
+                )
 
         # Фуллстек бонусы
         fullstack_students = session.query(Student).filter(
