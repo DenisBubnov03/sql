@@ -367,14 +367,15 @@ async def calculate_salary(update: Update, context):
             if not student:
                 continue
 
-            percent = 0.2
+            if student.training_type == "Фуллстек":
+                continue  # Fullstack оплачивается отдельно: фикс 5000 ментору 1, 30% ментору 3
+
             if mentor_id == 1 and student.training_type == "Ручное тестирование":
                 percent = 0.3
             elif mentor_id == 3 and student.training_type == "Автотестирование":
                 percent = 0.3
             else:
                 percent = 0.2
-
 
             payout = float(payment.amount) * percent
             mentor_salaries[mentor_id] += payout
