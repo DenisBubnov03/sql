@@ -14,6 +14,8 @@ from data_base.db import session
 from data_base.models import Payment, Mentor, Student
 from data_base.operations import  get_student_by_fio_or_telegram, assign_mentor
 from student_management.student_management import add_student
+logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
+
 logger = logging.getLogger(__name__)
 
 # Добавление студента: шаг 1 - ввод ФИО
@@ -308,9 +310,6 @@ async def request_salary_period(update: Update, context: ContextTypes.DEFAULT_TY
     return "WAIT_FOR_SALARY_DATES"
 
 
-
-from collections import defaultdict
-
 async def calculate_salary(update: Update, context):
     """
     Рассчитывает зарплату менторов за указанный период.
@@ -369,8 +368,12 @@ async def calculate_salary(update: Update, context):
                 continue
 
             percent = 0.2
-            if mentor_id == 1 or mentor_id == 3:
+            if mentor_id == 1 and student.training_type == "Ручное тестирование":
                 percent = 0.3
+            elif mentor_id == 3 and student.training_type == "Автотестирование":
+                percent = 0.3
+            else:
+                percent = 0.2
 
             payout = float(payment.amount) * percent
             mentor_salaries[mentor_id] += payout
