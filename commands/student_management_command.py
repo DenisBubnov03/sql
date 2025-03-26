@@ -392,7 +392,7 @@ async def calculate_salary(update: Update, context):
                     bonus = float(payment.amount) * 0.1
                     mentor_salaries[head_mentor.id] += bonus
 
-                    line = f"Бонус за {student.fio} (ID {student.id}), {payment.payment_date}, {payment.amount} руб., 10%, {round(bonus, 2)} руб."
+                    line = f"Бонус за {student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., 10%, {round(bonus, 2)} руб."
                     if head_mentor.id not in detailed_logs:
                         detailed_logs[head_mentor.id] = []
                     detailed_logs[head_mentor.id].append(line)
