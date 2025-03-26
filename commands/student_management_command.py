@@ -375,6 +375,7 @@ async def calculate_salary(update: Update, context):
             else:
                 percent = 0.2
 
+
             payout = float(payment.amount) * percent
             mentor_salaries[mentor_id] += payout
 
