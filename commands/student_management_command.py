@@ -395,6 +395,11 @@ async def calculate_salary(update: Update, context):
             if student.training_type == "Фуллстек":
                 continue  # ❌ Бонус не начисляется за Fullstack
 
+            if 1 not in detailed_logs:
+                detailed_logs[1] = []
+            if 3 not in detailed_logs:
+                detailed_logs[3] = []
+
             # 🔹 Ментор 1 получает 10% за всех чужих студентов (ручное + автотест), кроме Fullstack
             if payment.mentor_id != 1:
                 bonus = float(payment.amount) * 0.1
