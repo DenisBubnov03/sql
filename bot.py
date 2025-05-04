@@ -1,3 +1,5 @@
+import os
+
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from commands.start_commands import start, exit_to_main_menu

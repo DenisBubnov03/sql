@@ -50,6 +50,7 @@ class Payment(Base):
     amount = Column(Numeric(10, 2), nullable=False)  # Сумма платежа
     payment_date = Column(Date, nullable=False)  # Дата платежа
     comment = Column(Text, nullable=True)  # Комментарий к платежу (например, "Первый платеж")
+    status = Column(String(20), default="не подтвержден", nullable=False)
 
     # Отношения (если нужны)
     student = relationship("Student", back_populates="payments")

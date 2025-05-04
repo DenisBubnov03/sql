@@ -287,7 +287,8 @@ def record_initial_payment(student_id, paid_amount, mentor_id):
                 mentor_id=mentor_id,
                 amount=paid_amount,
                 payment_date=datetime.now().date(),
-                comment="Первоначальный платёж при регистрации"
+                comment="Первоначальный платёж при регистрации",
+                status="подтвержден"
             )
 
             session.add(new_payment)

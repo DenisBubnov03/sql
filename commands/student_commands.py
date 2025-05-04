@@ -435,7 +435,8 @@ async def handle_payment_date(update: Update, context: ContextTypes.DEFAULT_TYPE
             mentor_id=mentor_id,
             amount=new_payment,
             payment_date=payment_date,
-            comment="Дополнительный платёж через редактирование"
+            comment="Дополнительный платёж через редактирование",
+            status="подтвержден"
         )
 
         session.add(new_payment_entry)
