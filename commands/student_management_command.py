@@ -5,14 +5,15 @@ from sqlalchemy import select
 from commands.authorized_users import AUTHORIZED_USERS
 from commands.logger import custom_logger
 from commands.start_commands import exit_to_main_menu
-from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, COMMISSION
+from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, COMMISSION, \
+    SELECT_MENTOR
 
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
 from data_base.db import session
 from data_base.models import Payment, Mentor, Student
-from data_base.operations import  get_student_by_fio_or_telegram, assign_mentor
+from data_base.operations import  get_student_by_fio_or_telegram
 from student_management.student_management import add_student
 logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
 
@@ -156,23 +157,35 @@ async def add_student_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Дата должна быть в формате ДД.ММ.ГГГГ или нажмите 'Сегодня'. Попробуйте ещё раз:"
         )
         return START_DATE
+async def handle_mentor_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    selected = update.message.text.strip()
+    mentors_dict = context.user_data.get("mentors_list", {})
+    mentor_id = mentors_dict.get(selected)
+
+    if not mentor_id:
+        await update.message.reply_text("Выберите одного из предложенных менторов.")
+        return "WAIT_FOR_MENTOR_CHOICE"
+
+    context.user_data["mentor_id"] = mentor_id
+    await update.message.reply_text("Введите общую стоимость обучения:")
+    return TOTAL_PAYMENT
+
 
 
 # Добавление студента: шаг 5 - выбор стоимости обучения
 async def add_student_course_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Запрос стоимости обучения.
+    Обработка выбора направления обучения. После выбора всегда идёт шаг выбора ментора.
     """
     valid_course_types = ["Ручное тестирование", "Автотестирование", "Фуллстек"]
-    course_type = update.message.text
+    course_type = update.message.text.strip()
 
-    if course_type in valid_course_types:
-        context.user_data["course_type"] = course_type
-        await update.message.reply_text("Введите общую стоимость обучения:")
-        return TOTAL_PAYMENT
+    if course_type not in valid_course_types:
+        await update.message.reply_text(f"❌ Неверный выбор. Выберите: {', '.join(valid_course_types)}.")
+        return COURSE_TYPE
 
-    await update.message.reply_text(f"Некорректный тип обучения. Выберите: {', '.join(valid_course_types)}.")
-    return COURSE_TYPE
+    context.user_data["course_type"] = course_type
+    return await select_mentor_by_direction(update, context)
 
 
 # Добавление студента: шаг 6 - ввод общей стоимости
@@ -208,7 +221,7 @@ async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_T
             raise ValueError("Комиссия должна быть положительным числом.")
 
         context.user_data["commission"] = f"{payments}, {percentage}%"
-        mentor_id = assign_mentor(context.user_data["course_type"])
+        mentor_id = context.user_data.get("mentor_id", 1)
 
         # ✅ Добавляем студента
         student_id = add_student(
@@ -484,3 +497,45 @@ async def calculate_salary(update: Update, context):
         return "WAIT_FOR_SALARY_DATES"
 
 
+async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Показывает список менторов в зависимости от направления.
+    """
+    from data_base.models import Mentor
+
+    course_type = context.user_data["course_type"]
+
+    # Направление для фильтрации менторов
+    if course_type == "Ручное тестирование":
+        mentor_direction = "Ручное тестирование"
+    else:
+        mentor_direction = "Автотестирование"  # Авто и Фуллстек попадают сюда
+
+    mentors = session.query(Mentor).filter(Mentor.direction == mentor_direction).all()
+
+    if not mentors:
+        await update.message.reply_text("❌ Нет менторов для выбранного направления.")
+        return COURSE_TYPE
+
+    context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
+
+    await update.message.reply_text(
+        f"Выберите ментора по направлению: {mentor_direction}",
+        reply_markup=ReplyKeyboardMarkup(
+            [[name] for name in context.user_data["mentors_list"].keys()],
+            one_time_keyboard=True
+        )
+    )
+    return SELECT_MENTOR
+
+async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    selected = update.message.text.strip()
+    mentors_list = context.user_data.get("mentors_list", {})
+
+    if selected not in mentors_list:
+        await update.message.reply_text("❌ Пожалуйста, выберите одного из предложенных.")
+        return SELECT_MENTOR
+
+    context.user_data["mentor_id"] = mentors_list[selected]
+    await update.message.reply_text("Введите общую стоимость обучения:")
+    return TOTAL_PAYMENT

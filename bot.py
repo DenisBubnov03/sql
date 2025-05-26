@@ -4,7 +4,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from commands.start_commands import start, exit_to_main_menu
 from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
-    CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE
+    CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR
 from commands.student_commands import *
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
@@ -33,6 +33,7 @@ def main():
             TELEGRAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_telegram)],
             START_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_date)],
             COURSE_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_course_type)],
+            SELECT_MENTOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mentor_selection)],
             TOTAL_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_total_payment)],
             PAID_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_paid_amount)],
             COMMISSION: [MessageHandler(filters.TEXT, add_student_commission)],

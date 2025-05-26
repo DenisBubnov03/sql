@@ -3,7 +3,7 @@ import logging
 from data_base import Session
 from data_base.db import session
 from data_base.models import Student, Payment
-from data_base.operations import assign_mentor
+
 
 logger = logging.getLogger(__name__)
 

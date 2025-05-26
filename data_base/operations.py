@@ -148,57 +148,57 @@ def get_students_by_training_type(training_type):
     return session.query(Student).filter(Student.training_type == training_type).all()
 
 
-def assign_mentor(training_type):
-    """
-    Назначает ментора в зависимости от направления:
-    - Фуллстек → Всегда ментор с ID = 1
-    - Автотестирование → 30% ID = 3, 70% другие менторы с этим направлением
-    - Ручное тестирование → 30% ID = 1, 70% другие менторы с этим направлением
-    """
-    print(f"📌 Назначение ментора для курса: {training_type}")
-
-    # Фуллстек всегда получает ментора с ID = 1
-    if training_type == "Фуллстек":
-        print("💼 Назначен ментор для Фуллстек (ID: 1)")
-        return 1
-
-    # Загружаем всех менторов для других направлений
-    mentors = session.query(Mentor).all()
-    print(f"👥 Все менторы: {[m.id for m in mentors]}")
-
-    if training_type == "Автотестирование":
-        direction = "Автотестирование"
-        main_mentor_id = 3  # Главный ментор для автотестирования
-    else:
-        direction = "Ручное тестирование"
-        main_mentor_id = 1  # Главный ментор для ручного тестирования
-
-    # Фильтруем менторов по направлению
-    mentors_in_direction = [m for m in mentors if m.direction == direction]
-
-    # Если нет менторов в этом направлении, возвращаем None
-    if len(mentors_in_direction) == 0:
-        print("❌ Нет менторов для этого направления!")
-        return None
-
-    main_mentor = next((m for m in mentors_in_direction if m.id == main_mentor_id), None)
-    other_mentors = [m for m in mentors_in_direction if m.id != main_mentor_id]
-
-    print(f"💼 Главный ментор (ID: {main_mentor.id if main_mentor else 'None'})")
-    print(f"💼 Остальные менторы: {[m.id for m in other_mentors]}")
-
-    # Если только один ментор — возвращаем его
-    if not main_mentor or len(mentors_in_direction) == 1:
-        return mentors_in_direction[0].id
-
-    # 30% главный ментор, 70% распределяем между остальными
-    mentor_id = random.choices(
-        population=[main_mentor.id] + [m.id for m in other_mentors],
-        weights=[30] + [70 / len(other_mentors)] * len(other_mentors),
-        k=1
-    )[0]
-
-    print(f"🎯 Назначен ментор (ID: {mentor_id})")
-    return mentor_id
+# def assign_mentor(training_type):
+#     """
+#     Назначает ментора в зависимости от направления:
+#     - Фуллстек → Всегда ментор с ID = 1
+#     - Автотестирование → 30% ID = 3, 70% другие менторы с этим направлением
+#     - Ручное тестирование → 30% ID = 1, 70% другие менторы с этим направлением
+#     """
+#     print(f"📌 Назначение ментора для курса: {training_type}")
+#
+#     # Фуллстек всегда получает ментора с ID = 1
+#     if training_type == "Фуллстек":
+#         print("💼 Назначен ментор для Фуллстек (ID: 1)")
+#         return 1
+#
+#     # Загружаем всех менторов для других направлений
+#     mentors = session.query(Mentor).all()
+#     print(f"👥 Все менторы: {[m.id for m in mentors]}")
+#
+#     if training_type == "Автотестирование":
+#         direction = "Автотестирование"
+#         main_mentor_id = 3  # Главный ментор для автотестирования
+#     else:
+#         direction = "Ручное тестирование"
+#         main_mentor_id = 1  # Главный ментор для ручного тестирования
+#
+#     # Фильтруем менторов по направлению
+#     mentors_in_direction = [m for m in mentors if m.direction == direction]
+#
+#     # Если нет менторов в этом направлении, возвращаем None
+#     if len(mentors_in_direction) == 0:
+#         print("❌ Нет менторов для этого направления!")
+#         return None
+#
+#     main_mentor = next((m for m in mentors_in_direction if m.id == main_mentor_id), None)
+#     other_mentors = [m for m in mentors_in_direction if m.id != main_mentor_id]
+#
+#     print(f"💼 Главный ментор (ID: {main_mentor.id if main_mentor else 'None'})")
+#     print(f"💼 Остальные менторы: {[m.id for m in other_mentors]}")
+#
+#     # Если только один ментор — возвращаем его
+#     if not main_mentor or len(mentors_in_direction) == 1:
+#         return mentors_in_direction[0].id
+#
+#     # 30% главный ментор, 70% распределяем между остальными
+#     mentor_id = random.choices(
+#         population=[main_mentor.id] + [m.id for m in other_mentors],
+#         weights=[30] + [70 / len(other_mentors)] * len(other_mentors),
+#         k=1
+#     )[0]
+#
+#     print(f"🎯 Назначен ментор (ID: {mentor_id})")
+#     return mentor_id
 
 

@@ -4,6 +4,8 @@ from commands.states import FIO_OR_TELEGRAM
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
+from data_base.db import session
+from data_base.models import Mentor
 from data_base.operations import get_all_students, get_student_by_fio_or_telegram
 
 
@@ -22,9 +24,11 @@ async def search_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Возвращаемся в главное меню:",
             reply_markup=ReplyKeyboardMarkup(
-                [['Добавить студента', 'Просмотреть студентов'],
-                 ['Редактировать данные студента', 'Проверить уведомления'],
-                 ['Поиск ученика', 'Статистика']],
+                [
+        ['Добавить студента', 'Просмотреть студентов'],
+        ['Редактировать данные студента', 'Проверить уведомления'],
+        ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]
+    ],
                 one_time_keyboard=True
             )
         )
@@ -77,9 +81,11 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(
             "Возвращаемся в главное меню:",
             reply_markup=ReplyKeyboardMarkup(
-                [['Добавить студента', 'Просмотреть студентов'],
-                 ['Редактировать данные студента', 'Проверить уведомления'],
-                 ['Поиск ученика', 'Статистика']],
+                [
+                    ['Добавить студента', 'Просмотреть студентов'],
+                    ['Редактировать данные студента', 'Проверить уведомления'],
+                    ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]
+                ],
                 one_time_keyboard=True
             )
         )
@@ -87,6 +93,8 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # Получаем студента
     student = get_student_by_fio_or_telegram(search_query)
+    mentor = session.query(Mentor).filter(Mentor.id == student.mentor_id).first()
+    mentor_name = mentor.full_name if mentor else f"ID {student.mentor_id}"
 
     if not student:
         await update.message.reply_text("Ученик не найден. Попробуйте ещё раз.")
@@ -105,6 +113,7 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
     info = "\n".join([
         f"ФИО: {student.fio}",
         f"Telegram: {student.telegram}",
+        f"Ментор: {mentor_name}",
         f"Дата начала обучения: {student.start_date}",
         f"Тип обучения: {student.training_type}",
         f"Общая стоимость: {student.total_cost}",
