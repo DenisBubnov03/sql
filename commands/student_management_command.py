@@ -453,23 +453,37 @@ async def calculate_salary(update: Update, context):
                 detailed_logs[1].append(log_line)
 
         # Fullstack доля для ментора 3
-        fullstack_payment_total = session.query(
-            func.sum(Payment.amount)
-        ).filter(
-            Payment.student_id.in_(
-                select(Student.id).filter(Student.training_type == "Фуллстек")
-            ),
-            Payment.payment_date >= start_date,
-            Payment.payment_date <= end_date
-        ).scalar() or 0
+        # 🔁 Новый расчёт по Фуллстек: распределение 30%/10%/20%
+        for payment in detailed_payments:
+            student = session.query(Student).filter(Student.id == payment.student_id).first()
+            if not student or student.training_type != "Фуллстек":
+                continue
 
-        mentor_3_bonus = float(fullstack_payment_total) * 0.3
-        if mentor_3_bonus > 0:
-            mentor_salaries[3] += mentor_3_bonus
-            log_line = f"30% от всех фуллстек платежей ({fullstack_payment_total} руб.) | +{round(mentor_3_bonus, 2)} руб."
-            if 3 not in detailed_logs:
-                detailed_logs[3] = []
-            detailed_logs[3].append(log_line)
+            amount = float(payment.amount)
+            mentor_id = payment.mentor_id
+
+            # 🔹 Ментор 3 получает:
+            if mentor_id == 3:
+                bonus = amount * 0.3
+                mentor_salaries[3] += bonus
+                detailed_logs.setdefault(3, []).append(
+                    f"💼 30% ментору 3 за своего фуллстек ученика {student.fio} | "
+                    f"{payment.payment_date}, {amount} руб. | +{round(bonus, 2)} руб."
+                )
+            else:
+                bonus_3 = amount * 0.1
+                mentor_salaries[3] += bonus_3
+                detailed_logs.setdefault(3, []).append(
+                    f"🔁 10% ментору 3 за чужого фуллстек ученика {student.fio} | "
+                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_3, 2)} руб."
+                )
+
+                bonus_other = amount * 0.2
+                mentor_salaries[mentor_id] += bonus_other
+                detailed_logs.setdefault(mentor_id, []).append(
+                    f"💼 20% ментору {mentor_id} за фуллстек ученика {student.fio} | "
+                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_other, 2)} руб."
+                )
 
         # Вывод логов в файл
         for mentor_id, logs in detailed_logs.items():
