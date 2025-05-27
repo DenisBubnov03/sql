@@ -372,7 +372,8 @@ async def calculate_salary(update: Update, context):
         # Детальный расчёт зарплат
         detailed_payments = session.query(Payment).filter(
             Payment.payment_date >= start_date,
-            Payment.payment_date <= end_date
+            Payment.payment_date <= end_date,
+            Payment.status == "подтвержден"
         ).all()
 
         for payment in detailed_payments:
