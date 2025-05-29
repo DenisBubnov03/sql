@@ -2,9 +2,10 @@ import os
 
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
+from commands.entor_bonus_commands import start_bonus_process, handle_mentor_tg, handle_bonus_amount
 from commands.start_commands import start, exit_to_main_menu
 from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
-    CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR
+    CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT
 from commands.student_commands import *
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
@@ -17,7 +18,7 @@ from commands.student_statistic_commands import show_statistics_menu, show_gener
     handle_period_start, handle_period_end
 
 # Токен Telegram-бота
-TELEGRAM_TOKEN = "7581276969:AAFcFbSt5F2XpVq3yCKDjhLP7tv1cs8TK8Q"
+TELEGRAM_TOKEN = "6106505792:AAE7mlAus0SiuqKFVjHWaK8sOhe9i_6k0xQ"
 
 
 # Состояния для ConversationHandler
@@ -126,10 +127,19 @@ def main():
         fallbacks=[]
     )
 
+    bonus_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^Премия куратору$"), start_bonus_process)],
+        states={
+            AWAIT_MENTOR_TG: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mentor_tg)],
+            AWAIT_BONUS_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bonus_amount)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)],
+    )
+    application.add_handler(bonus_handler)
+
     # Регистрация обработчиков
     application.add_handler(salary_handler)
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.Regex("^Просмотреть студентов$"), view_students))
     application.add_handler(add_student_handler)
     application.add_handler(edit_student_handler)
     application.add_handler(search_student_handler)

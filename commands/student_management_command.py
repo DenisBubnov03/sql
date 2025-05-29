@@ -44,9 +44,9 @@ async def add_student_fio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Возвращаемся в главное меню:",
             reply_markup=ReplyKeyboardMarkup(
-                [['Добавить студента', 'Просмотреть студентов'],
-                 ['Редактировать данные студента', 'Проверить уведомления'],
-                 ['Поиск ученика', 'Статистика']],
+                [['Добавить студента', 'Премия куратору'],
+        ['Редактировать данные студента', 'Проверить уведомления'],
+        ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]],
                 one_time_keyboard=True
             )
         )
@@ -85,9 +85,9 @@ async def add_student_telegram(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(
             "Добавление студента прервано. Возвращаемся в главное меню:",
             reply_markup=ReplyKeyboardMarkup(
-                [['Добавить студента', 'Просмотреть студентов'],
-                 ['Редактировать данные студента', 'Проверить уведомления'],
-                 ['Поиск ученика', 'Статистика']],
+                [['Добавить студента', 'Премия куратору'],
+        ['Редактировать данные студента', 'Проверить уведомления'],
+        ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]],
                 one_time_keyboard=True
             )
         )
@@ -369,11 +369,11 @@ async def calculate_salary(update: Update, context):
         # Подробный лог для каждого ментора
         detailed_logs = {}
 
-        # Детальный расчёт зарплат
         detailed_payments = session.query(Payment).filter(
             Payment.payment_date >= start_date,
             Payment.payment_date <= end_date,
-            Payment.status == "подтвержден"
+            Payment.status == "подтвержден",
+            ~Payment.comment.ilike("%преми%")  # исключаем премии из основного расчёта
         ).all()
 
         for payment in detailed_payments:
@@ -485,6 +485,23 @@ async def calculate_salary(update: Update, context):
                     f"💼 20% ментору {mentor_id} за фуллстек ученика {student.fio} | "
                     f"{payment.payment_date}, {amount} руб. | +{round(bonus_other, 2)} руб."
                 )
+
+        # 🎁 Учет премий (выплаты с комментарием "Премия")
+        premium_payments = session.query(Payment).filter(
+            Payment.payment_date >= start_date,
+            Payment.payment_date <= end_date,
+            Payment.status == "подтвержден",
+            Payment.comment.ilike("%преми%")  # ловим "Премия", "премия", "ПРЕМИЯ" и т.д.
+        ).all()
+
+        for payment in premium_payments:
+            bonus_amount = float(payment.amount)
+            mentor_id = payment.mentor_id
+            mentor_salaries[mentor_id] += bonus_amount
+
+            detailed_logs.setdefault(mentor_id, []).append(
+                f"🎁 Премия {payment.amount} руб. | {payment.payment_date} | +{bonus_amount} руб."
+            )
 
         # Вывод логов в файл
         for mentor_id, logs in detailed_logs.items():

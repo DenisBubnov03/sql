@@ -14,33 +14,6 @@ from data_base.models import Student, Payment
 from data_base.operations import get_all_students, update_student, get_student_by_fio_or_telegram, delete_student
 
 
-async def view_students(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Отображает список студентов.
-    """
-    students = get_all_students()
-    if not students:
-        await update.message.reply_text("Список студентов пуст. Добавьте студентов через меню.")
-        return
-
-    MAX_MESSAGE_LENGTH = 4000  # Ограничение Telegram
-    message = "📋 Список студентов:\n\n"
-
-    for i, student in enumerate(students, start=1):
-        student_text = f"{i}. {student.fio} - {student.telegram} ({student.training_type})\n"
-
-        # Если сообщение превышает лимит, отправляем его и создаем новое
-        if len(message) + len(student_text) > MAX_MESSAGE_LENGTH:
-            await update.message.reply_text(message)
-            message = "📋 Список студентов (продолжение):\n\n"
-
-        message += student_text
-
-    # Отправляем оставшуюся часть списка, если она есть
-    if message:
-        await update.message.reply_text(message)
-
-
 # Функция редактирования студента
 async def edit_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -83,9 +56,9 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(
             "Возврат в главное меню:",
             reply_markup=ReplyKeyboardMarkup(
-                [['Добавить студента', 'Просмотреть студентов'],
-                ['Редактировать данные студента', 'Проверить уведомления'],
-                ['Поиск ученика', 'Статистика']],
+                [['Добавить студента', 'Премия куратору'],
+        ['Редактировать данные студента', 'Проверить уведомления'],
+        ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]],
                 one_time_keyboard=True
             )
         )
