@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
 
 
 # Настройка логгера
