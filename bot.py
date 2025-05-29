@@ -2,7 +2,7 @@ import os
 
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-from commands.entor_bonus_commands import start_bonus_process, handle_mentor_tg, handle_bonus_amount
+from commands.mentor_bonus_commands import start_bonus_process, handle_mentor_tg, handle_bonus_amount
 from commands.start_commands import start, exit_to_main_menu
 from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
     CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT
