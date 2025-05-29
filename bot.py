@@ -18,7 +18,7 @@ from commands.student_statistic_commands import show_statistics_menu, show_gener
     handle_period_start, handle_period_end
 
 # Токен Telegram-бота
-TELEGRAM_TOKEN = "6106505792:AAE7mlAus0SiuqKFVjHWaK8sOhe9i_6k0xQ"
+TELEGRAM_TOKEN = "7216866272:AAFAd7tpmmCloEsOpIfGes4BZ05XUWDEEag"
 
 
 # Состояния для ConversationHandler
