@@ -46,7 +46,7 @@ def save_current_debtors(debtors):
 
 
 async def notify_new_debtors(new_debtors):
-    bot = Bot(token="6106505792:AAE7mlAus0SiuqKFVjHWaK8sOhe9i_6k0xQ")
+    bot = Bot(token="7581276969:AAFcFbSt5F2XpVq3yCKDjhLP7tv1cs8TK8Q")
     message = "❗️ Новые должники:\n" + "\n".join(new_debtors)
     await bot.send_message(chat_id=ADMIN_CHAT_ID, text=message)
 
