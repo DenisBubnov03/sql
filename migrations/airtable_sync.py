@@ -2,6 +2,7 @@
 import psycopg2
 import requests
 import datetime
+import time
 from decimal import Decimal
 from config import AIRTABLE_API_KEY, AIRTABLE_BASE_ID, POSTGRESQL_CONFIG
 
@@ -88,6 +89,7 @@ def update_to_airtable(record_id, record, table_id, key):
         "Content-Type": "application/json"
     }
     response = requests.patch(url, headers=headers, json={"fields": record})
+    time.sleep(0.25)
     print(f"🔄 Обновлено: {record[key]} ({response.status_code})")
 
 def create_to_airtable(record, table_id, key):
@@ -97,6 +99,7 @@ def create_to_airtable(record, table_id, key):
         "Content-Type": "application/json"
     }
     response = requests.post(url, headers=headers, json={"fields": record})
+    time.sleep(0.25)
     print(f"➕ Добавлено: {record[key]} ({response.status_code})")
 
 def sync_table(conn, table_name, airtable_table_id, key):
