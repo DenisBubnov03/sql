@@ -1,4 +1,4 @@
-from commands.authorized_users import AUTHORIZED_USERS
+from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from commands.states import FIO_OR_TELEGRAM
 
 from telegram import Update, ReplyKeyboardMarkup
@@ -14,23 +14,26 @@ async def search_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Запрашивает ввод для поиска студента по ФИО или Telegram с возможностью возврата в главное меню.
     """
     user_id = update.message.from_user.id
-    if user_id not in AUTHORIZED_USERS:
+
+    if user_id not in AUTHORIZED_USERS and user_id not in NOT_ADMINS:
         await update.message.reply_text("Извините, у вас нет доступа.")
         return ConversationHandler.END
 
     # Проверяем, ввел ли пользователь "Главное меню"
     search_query = update.message.text.strip() if update.message else None
     if search_query == "Главное меню":
+        if user_id in NOT_ADMINS:
+            reply_keyboard = [['Поиск ученика']]
+        else:
+            reply_keyboard = [
+                ['Добавить студента', 'Премия куратору'],
+                ['Редактировать данные студента', 'Проверить уведомления'],
+                ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]
+            ]
+
         await update.message.reply_text(
             "Возвращаемся в главное меню:",
-            reply_markup=ReplyKeyboardMarkup(
-                [
-        ['Добавить студента', 'Премия куратору'],
-        ['Редактировать данные студента', 'Проверить уведомления'],
-        ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]
-    ],
-                one_time_keyboard=True
-            )
+            reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
         )
         return ConversationHandler.END
 
@@ -126,17 +129,20 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
         f"Статус обучения: {student.training_status}"
     ])
 
-    # Отправляем информацию пользователю
+    user_id = update.message.from_user.id
+    if user_id in NOT_ADMINS:
+        reply_keyboard = [['Поиск ученика']]
+    else:
+        reply_keyboard = [
+            ['Добавить студента', 'Просмотреть студентов'],
+            ['Редактировать данные студента', 'Проверить уведомления'],
+            ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]
+        ]
+
     await update.message.reply_text(
         f"Информация об ученике:\n\n{info}",
-        reply_markup=ReplyKeyboardMarkup(
-            [
-                ['Добавить студента', 'Премия куратору'],
-                ['Редактировать данные студента', 'Проверить уведомления'],
-                ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]
-            ],
-            one_time_keyboard=True
-        )
+        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
     )
+
     return ConversationHandler.END
 
