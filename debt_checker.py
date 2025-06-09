@@ -8,7 +8,7 @@ from telegram import Bot
 from data_base.db import session
 from data_base.models import Student, Payment
 
-ADMIN_CHAT_ID = 1257163820
+ADMIN_CHAT_ID = 325531224
 DEBT_DAYS_THRESHOLD = 30
 STATE_FILE = "prev_debtors.json"
 
