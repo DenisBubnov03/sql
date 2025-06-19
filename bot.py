@@ -16,9 +16,11 @@ from commands.student_selection import *
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
     handle_period_start, handle_period_end
+import os
+from dotenv import load_dotenv
 
 # Токен Telegram-бота
-TELEGRAM_TOKEN = "6106505792:AAE7mlAus0SiuqKFVjHWaK8sOhe9i_6k0xQ"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 
 # Состояния для ConversationHandler
