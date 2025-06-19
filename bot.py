@@ -1,4 +1,5 @@
 import os
+import tracemalloc
 
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
@@ -18,7 +19,8 @@ from commands.student_statistic_commands import show_statistics_menu, show_gener
     handle_period_start, handle_period_end
 import os
 from dotenv import load_dotenv
-
+load_dotenv()
+tracemalloc.start()
 # Токен Telegram-бота
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
