@@ -14,11 +14,6 @@ TABLES_TO_SYNC = [
         "key": "student_id"
     },
     {
-        "pg_table": "payments",
-        "airtable_table_id": "tblWRubDgF7C7A0gZ",
-        "key": "id"
-    },
-    {
         "pg_table": "mentors",
         "airtable_table_id": "tbl32BJoSL5TxRWEa",
         "key": "id"
