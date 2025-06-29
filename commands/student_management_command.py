@@ -415,8 +415,8 @@ async def calculate_salary(update: Update, context):
             if 3 not in detailed_logs:
                 detailed_logs[3] = []
 
-            # 🔹 Ментор 1 получает 10% за всех чужих студентов (ручное + автотест), кроме Fullstack
-            if payment.mentor_id != 1:
+            # 🔹 Ментор 1 получает 10% за всех чужих студентов (только ручное тестирование)
+            if payment.mentor_id != 1 and student.training_type.lower().strip() == "ручное тестирование":
                 bonus = float(payment.amount) * 0.1
                 mentor_salaries[1] += bonus
                 detailed_logs[1].append(
