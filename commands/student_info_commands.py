@@ -1,4 +1,5 @@
 from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
+from commands.start_commands import exit_to_main_menu
 from commands.states import FIO_OR_TELEGRAM
 
 from telegram import Update, ReplyKeyboardMarkup
@@ -22,20 +23,7 @@ async def search_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Проверяем, ввел ли пользователь "Главное меню"
     search_query = update.message.text.strip() if update.message else None
     if search_query == "Главное меню":
-        if user_id in NOT_ADMINS:
-            reply_keyboard = [['Поиск ученика']]
-        else:
-            reply_keyboard = [
-                ['Добавить студента', 'Премия куратору'],
-                ['Редактировать данные студента', 'Проверить уведомления'],
-                ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]
-            ]
-
-        await update.message.reply_text(
-            "Возвращаемся в главное меню:",
-            reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
-        )
-        return ConversationHandler.END
+        return await exit_to_main_menu(update, context)
 
     await update.message.reply_text(
         "Введите ФИО или Telegram ученика, информацию о котором хотите посмотреть:",
@@ -81,28 +69,16 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
     # Проверяем, ввел ли пользователь "Главное меню"
     search_query = update.message.text.strip() if update.message else None
     if search_query == "Главное меню":
-        await update.message.reply_text(
-            "Возвращаемся в главное меню:",
-            reply_markup=ReplyKeyboardMarkup(
-                [
-                    ['Добавить студента', 'Премия куратору'],
-                    ['Редактировать данные студента', 'Проверить уведомления'],
-                    ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]
-                ],
-                one_time_keyboard=True
-            )
-        )
-        return ConversationHandler.END
+        return await exit_to_main_menu(update, context)
 
     # Получаем студента
     student = get_student_by_fio_or_telegram(search_query)
-    mentor = session.query(Mentor).filter(Mentor.id == student.mentor_id).first()
-    mentor_name = mentor.full_name if mentor else f"ID {student.mentor_id}"
-
     if not student:
         await update.message.reply_text("Ученик не найден. Попробуйте ещё раз.")
         return FIO_OR_TELEGRAM
 
+    mentor = session.query(Mentor).filter(Mentor.id == student.mentor_id).first()
+    mentor_name = mentor.full_name if mentor else f"ID {student.mentor_id}"
 
     # Проверяем наличие данных для комиссии
     if not student.commission or "," not in student.commission:
@@ -129,20 +105,6 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
         f"Статус обучения: {student.training_status}"
     ])
 
-    user_id = update.message.from_user.id
-    if user_id in NOT_ADMINS:
-        reply_keyboard = [['Поиск ученика']]
-    else:
-        reply_keyboard = [
-            ['Добавить студента', 'Просмотреть студентов'],
-            ['Редактировать данные студента', 'Проверить уведомления'],
-            ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]
-        ]
-
-    await update.message.reply_text(
-        f"Информация об ученике:\n\n{info}",
-        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
-    )
-
-    return ConversationHandler.END
+    await update.message.reply_text(f"Информация об ученике:\n\n{info}")
+    return await exit_to_main_menu(update, context)
 
