@@ -41,16 +41,7 @@ async def add_student_fio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     # Если пользователь нажал "Главное меню"
     if update.message.text.strip() == "Главное меню":
-        await update.message.reply_text(
-            "Возвращаемся в главное меню:",
-            reply_markup=ReplyKeyboardMarkup(
-                [['Добавить студента', 'Премия куратору'],
-        ['Редактировать данные студента', 'Проверить уведомления'],
-        ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]],
-                one_time_keyboard=True
-            )
-        )
-        return ConversationHandler.END
+            return await exit_to_main_menu(update, context)
 
     # Сохранение ФИО
     context.user_data["fio"] = update.message.text.strip()
@@ -82,16 +73,7 @@ async def add_student_telegram(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # Обработка кнопки "Главное меню"
     if telegram_account == "Главное меню":
-        await update.message.reply_text(
-            "Добавление студента прервано. Возвращаемся в главное меню:",
-            reply_markup=ReplyKeyboardMarkup(
-                [['Добавить студента', 'Премия куратору'],
-        ['Редактировать данные студента', 'Проверить уведомления'],
-        ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]],
-                one_time_keyboard=True
-            )
-        )
-        return ConversationHandler.END
+        return await exit_to_main_menu(update, context)
 
     # Проверка корректности введенного Telegram
     if not telegram_account.startswith("@") or len(telegram_account) <= 1:

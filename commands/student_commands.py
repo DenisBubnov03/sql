@@ -53,16 +53,7 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # Универсальная обработка кнопки "Назад"
     if field_to_edit == "Назад":
-        await update.message.reply_text(
-            "Возврат в главное меню:",
-            reply_markup=ReplyKeyboardMarkup(
-                [['Добавить студента', 'Премия куратору'],
-        ['Редактировать данные студента', 'Проверить уведомления'],
-        ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]],
-                one_time_keyboard=True
-            )
-        )
-        return ConversationHandler.END
+        return await exit_to_main_menu(update, context)
 
     if field_to_edit == "Удалить ученика":
         await update.message.reply_text(

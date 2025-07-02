@@ -1,3 +1,4 @@
+from commands.start_commands import exit_to_main_menu
 from commands.states import FIO_OR_TELEGRAM, SELECT_STUDENT, FIELD_TO_EDIT
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
@@ -13,16 +14,8 @@ async def find_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_query = update.message.text.strip()
     # Если пользователь нажал "Главное меню", возвращаем в главное меню
     if search_query == "Главное меню":
-        await update.message.reply_text(
-            "Возвращаемся в главное меню:",
-            reply_markup=ReplyKeyboardMarkup(
-                [['Добавить студента', 'Премия куратору'],
-        ['Редактировать данные студента', 'Проверить уведомления'],
-        ['Поиск ученика', 'Статистика', "📊 Рассчитать зарплату"]],
-                one_time_keyboard=True
-            )
-        )
-        return ConversationHandler.END
+        return await exit_to_main_menu(update, context)
+
     students = get_all_students()  # Получение списка студентов из базы данных
 
     matching_students = [
