@@ -73,10 +73,6 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # Получаем студента
     student = get_student_by_fio_or_telegram(search_query)
-    if not student:
-        await update.message.reply_text("Ученик не найден. Попробуйте ещё раз.")
-        return FIO_OR_TELEGRAM
-
     mentor = session.query(Mentor).filter(Mentor.id == student.mentor_id).first()
     mentor_name = mentor.full_name if mentor else f"ID {student.mentor_id}"
 

@@ -37,15 +37,11 @@ def get_all_students():
 def get_student_by_fio_or_telegram(value):
     """
     Ищет студента по ФИО или Telegram.
-    Возвращает None, если студент не найден или произошла ошибка.
     """
     try:
-        student = session.query(Student).filter(
+        return session.query(Student).filter(
             (Student.fio == value) | (Student.telegram == value)
         ).first()
-        if not student:
-            return None
-        return student
     except Exception as e:
         return None
 
