@@ -16,7 +16,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Ограниченное меню для not_admin
     if user_id in NOT_ADMINS:
-        reply_keyboard = [['Поиск ученика']]
+        reply_keyboard = [['Добавить студента', 'Поиск ученика', 'Статистика']]
     else:
         reply_keyboard = [
             ['Добавить студента', 'Премия куратору'],

@@ -229,6 +229,12 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
         Payment.comment == "Доплата"
     ).scalar() or 0
 
+    # Получаем сумму доплат (где comment = "Доплата")
+    additional_commission = session.query(func.sum(Payment.amount)).filter(
+        Payment.payment_date.between(start_date, end_date),
+        Payment.comment == "Комиссия"
+    ).scalar() or 0
+
     # Общая стоимость обучения для найденных студентов
     total_cost = sum(student.total_cost for student in students)
     payment_amount = sum(student.payment_amount for student in students)
@@ -258,6 +264,7 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
             f"\n💰 Оплачено за обучение: {int(payment_amount):,} руб.\n"
             f"📚 Общая стоимость обучения: {int(total_cost):,} руб.\n"
             f"➕ Общая сумма доплат: {int(additional_payments):,} руб.\n"
+            f"💸 Общая сумма комиссии: {int(additional_commission):,} руб.\n"
             f"💵 Чистая прибыль: {int(total_paid):,} руб.\n"
             f"🧾 Осталось оплатить: {int(remaining_payment):,} руб."
         )
