@@ -51,3 +51,4 @@ async def exit_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     markup = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True, one_time_keyboard=True)
     await update.message.reply_text("Выберите действие:", reply_markup=markup)
+    return ConversationHandler.END
