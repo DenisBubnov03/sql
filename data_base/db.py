@@ -4,7 +4,7 @@ import logging
 
 # Установите уровень логирования для SQLAlchemy
 
-DATABASE_URL = "postgresql://bot_user:denbub033@localhost/student_tracker"
+DATABASE_URL = "postgresql://bot_user:denbub0311@localhost/student_tracker"
 engine = create_engine(DATABASE_URL, echo=True)
 
 
