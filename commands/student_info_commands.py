@@ -92,6 +92,7 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
         f"ФИО: {student.fio}",
         f"Telegram: {student.telegram}",
         f"Ментор: {mentor_name}",
+        f"Договор подписан: {'Да' if student.contract_signed else 'Нет'}",
         f"Дата начала обучения: {student.start_date}",
         f"Тип обучения: {student.training_type}",
         f"Общая стоимость: {student.total_cost}",

@@ -11,6 +11,7 @@ class Student(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     fio = Column(String(255), nullable=False)
     telegram = Column(String(50), unique=True, nullable=False)
+    contract_signed = Column(Boolean, default=False, server_default="false")
     start_date = Column(Date, nullable=True)
     training_type = Column(String(255), nullable=True)
     total_cost = Column(DECIMAL(10, 2), nullable=True)
