@@ -147,7 +147,6 @@ def main():
         fallbacks=[],
     )
     application.add_handler(contract_signing_handler)
-
     application.add_handler(bonus_handler)
 
     # Регистрация обработчиков
