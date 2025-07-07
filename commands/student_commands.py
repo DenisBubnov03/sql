@@ -434,31 +434,17 @@ async def start_contract_signing(update: Update, context: ContextTypes.DEFAULT_T
 
 async def handle_contract_signing(update, context):
     telegram_input = update.message.text.strip()
-    print(f"📥 Введён Telegram: {telegram_input}")
-
     if telegram_input.startswith("@"):
         telegram_input = telegram_input[1:]
-    print(f"🧹 Нормализованный Telegram: {telegram_input}")
-
     # Проверка наличия студентов
-    all_students = session.query(Student).all()
-    print(f"👥 Найдено студентов в БД: {len(all_students)}")
-
-    # Лог всех телеграмов
-    for s in all_students:
-        print(f"👤 {s.fio} — {s.telegram}")
-
     student = session.query(Student).filter(Student.telegram.ilike(f"%{telegram_input}%")).first()
 
     if not student:
         print("❌ Студент не найден.")
         await update.message.reply_text("Студент не найден.")
         return SIGN_CONTRACT
-
-    print(f"✅ Найден студент: {student.fio} ({student.telegram})")
     student.contract_signed = True
     session.commit()
-    print("💾 Договор подписан и сохранён.")
 
     await update.message.reply_text(f"✅ Договор для {student.fio} отмечен как подписанный.")
     return await exit_to_main_menu(update, context)
