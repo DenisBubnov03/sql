@@ -139,6 +139,15 @@ def main():
         },
         fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)],
     )
+    contract_signing_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^Подписание договора$"), start_contract_signing)],
+        states={
+            SIGN_CONTRACT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_contract_signing)],
+        },
+        fallbacks=[],
+    )
+    application.add_handler(contract_signing_handler)
+
     application.add_handler(bonus_handler)
 
     # Регистрация обработчиков

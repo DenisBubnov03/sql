@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from commands.authorized_users import AUTHORIZED_USERS
 from commands.logger import log_student_change
 from commands.start_commands import exit_to_main_menu
-from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM, WAIT_FOR_PAYMENT_DATE
+from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM, WAIT_FOR_PAYMENT_DATE, SIGN_CONTRACT
 from commands.student_info_commands import calculate_commission
 from data_base.db import session
 from data_base.models import Student, Payment
@@ -427,3 +427,22 @@ async def handle_payment_date(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(f"❌ Ошибка при записи платежа: {e}")
         return WAIT_FOR_PAYMENT_DATE
 
+async def start_contract_signing(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Введите Telegram ученика, чтобы отметить договор как подписанный:")
+    return SIGN_CONTRACT
+
+
+async def handle_contract_signing(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_input = update.message.text.strip()
+
+    student = session.query(Student).filter(Student.telegram == telegram_input).first()
+
+    if not student:
+        await update.message.reply_text("❌ Ученик с таким Telegram не найден.")
+        return ConversationHandler.END
+
+    student.contract_signed = True
+    session.commit()
+
+    await update.message.reply_text(f"✅ Договор для {student.fio} ({student.telegram}) отмечен как подписанный.")
+    return await exit_to_main_menu(update, context)
