@@ -9,6 +9,7 @@ from data_base.db import session
 from data_base.models import Student, Payment
 
 ADMIN_CHAT_ID = 325531224
+# ADMIN_CHAT_ID = 1257163820
 DEBT_DAYS_THRESHOLD = 30
 STATE_FILE = "prev_debtors.json"
 
@@ -18,7 +19,10 @@ def get_current_debtors():
     cutoff_date = datetime.now().date() - timedelta(days=DEBT_DAYS_THRESHOLD)
     debtors = []
 
-    students = session.query(Student).filter(Student.total_cost > Student.payment_amount).all()
+    students = session.query(Student).filter(
+        Student.total_cost > Student.payment_amount,
+        Student.training_status != "не учится"
+    ).all()
 
     for student in students:
         last_payment = session.query(Payment.payment_date).filter(
@@ -46,8 +50,15 @@ def save_current_debtors(debtors):
 
 
 async def notify_new_debtors(new_debtors):
-    bot = Bot(token="7581276969:AAFcFbSt5F2XpVq3yCKDjhLP7tv1cs8TK8Q")
+    bot = Bot(token="7581276969:AAFWv3w4Tj8inRWZIkR43Yfg-bYWTtPbIRU")
     message = "❗️ Новые должники:\n" + "\n".join(new_debtors)
+    await bot.send_message(chat_id=ADMIN_CHAT_ID, text=message)
+
+
+async def notify_cron_job_completed():
+    """Отправляет уведомление о выполнении cron job."""
+    bot = Bot(token="7581276969:AAFWv3w4Tj8inRWZIkR43Yfg-bYWTtPbIRU")
+    message = "✅ Cron job выполнена: проверка должников"
     await bot.send_message(chat_id=ADMIN_CHAT_ID, text=message)
 
 
@@ -62,6 +73,9 @@ async def check_new_debtors():
 
     if sorted(current_debtors) != sorted(previous_debtors):
         save_current_debtors(current_debtors)
+    
+    # Отправляем уведомление о выполнении cron job
+    await notify_cron_job_completed()
 
 
 if __name__ == "__main__":
