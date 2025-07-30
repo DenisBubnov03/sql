@@ -24,6 +24,9 @@ async def add_student_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Старт добавления студента: запрос ФИО.
     """
+    # Очищаем id менторов для нового сценария
+    context.user_data.pop('mentor_id', None)
+    context.user_data.pop('auto_mentor_id', None)
     await update.message.reply_text(
         "Введите ФИО студента:",
         reply_markup=ReplyKeyboardMarkup(
@@ -205,17 +208,27 @@ async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data["commission"] = f"{payments}, {percentage}%"
         mentor_id = context.user_data.get("mentor_id", 1)
 
-        # ✅ Добавляем студента
+        # Обработка даты
+        from datetime import datetime
+        start_date_str = context.user_data["start_date"]
+        if isinstance(start_date_str, str):
+            try:
+                start_date = datetime.strptime(start_date_str, "%d.%m.%Y").date()
+            except Exception:
+                start_date = None
+        else:
+            start_date = start_date_str
         student_id = add_student(
             fio=context.user_data["fio"],
             telegram=context.user_data["telegram"],
-            start_date=context.user_data["start_date"],
+            start_date=start_date,
             training_type=context.user_data["course_type"],
             total_cost=context.user_data["total_payment"],
             payment_amount=context.user_data.get("paid_amount", 0),
             fully_paid="Да" if context.user_data.get("paid_amount", 0) == context.user_data["total_payment"] else "Нет",
             commission=context.user_data["commission"],
-            mentor_id=mentor_id
+            mentor_id=context.user_data.get("mentor_id"),
+            auto_mentor_id=context.user_data.get("auto_mentor_id")
         )
 
         if not student_id:
@@ -226,17 +239,45 @@ async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_T
         print(f"✅ DEBUG: student_id сохранён в context: {context.user_data['id']}")
 
         # ✅ Теперь записываем платёж
-        record_initial_payment(student_id, context.user_data.get("paid_amount", 0), mentor_id)
+        course_type = context.user_data.get("course_type")
+        mentor_id = context.user_data.get("mentor_id")
+        auto_mentor_id = context.user_data.get("auto_mentor_id")
+        if course_type == "Фуллстек":
+            payment_mentor_id = auto_mentor_id
+        else:
+            payment_mentor_id = mentor_id if mentor_id else auto_mentor_id
+        if payment_mentor_id is not None:
+            record_initial_payment(student_id, context.user_data.get("paid_amount", 0), payment_mentor_id)
+        else:
+            print(f"❌ DEBUG: Не выбран ни один ментор для платежа студента {student_id}")
 
-        # ✅ Получаем имя ментора
+        # ✅ Получаем имена менторов
         from data_base.db import session
         from data_base.models import Mentor
 
-        mentor = session.query(Mentor).filter(Mentor.id == mentor_id).first()
-        mentor_name = mentor.full_name if mentor else f"ID {mentor_id}"
+        mentor_id = context.user_data.get("mentor_id")
+        auto_mentor_id = context.user_data.get("auto_mentor_id")
+        mentor_name = None
+        auto_mentor_name = None
+        if mentor_id:
+            mentor = session.query(Mentor).filter(Mentor.id == mentor_id).first()
+            mentor_name = mentor.full_name if mentor else f"ID {mentor_id}"
+        if auto_mentor_id:
+            auto_mentor = session.query(Mentor).filter(Mentor.id == auto_mentor_id).first()
+            auto_mentor_name = auto_mentor.full_name if auto_mentor else f"ID {auto_mentor_id}"
 
         # ✅ Финальное сообщение
-        await update.message.reply_text(f"✅ Студент {context.user_data['fio']} добавлен к ментору {mentor_name}!")
+        msg = f"✅ Студент {context.user_data['fio']} добавлен!\n"
+        if mentor_name and auto_mentor_name:
+            msg += f"Ручной ментор: {mentor_name}\nАвто-ментор: {auto_mentor_name}"
+        elif mentor_name:
+            msg += f"Ручной ментор: {mentor_name}"
+        elif auto_mentor_name:
+            msg += f"Авто-ментор: {auto_mentor_name}"
+        else:
+            msg += "Ментор не выбран."
+
+        await update.message.reply_text(msg)
 
         await exit_to_main_menu(update, context)  # ✅ Сначала выполняем меню
         return ConversationHandler.END  # ✅ Завершаем процесс корректно
@@ -276,6 +317,9 @@ def record_initial_payment(student_id, paid_amount, mentor_id):
     Записывает первоначальный платёж в `payments`.
     """
     try:
+        if mentor_id is None:
+            print(f"❌ DEBUG: Платёж не записан — не передан mentor_id для студента {student_id}")
+            return
         if paid_amount > 0:
             new_payment = Payment(
                 student_id=student_id,
@@ -519,11 +563,43 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
 
     course_type = context.user_data["course_type"]
 
-    # Направление для фильтрации менторов
+    # Для Fullstack: сначала ручное направление
+    if course_type == "Фуллстек" and "mentor_id" not in context.user_data:
+        mentor_direction = "Ручное тестирование"
+        mentors = session.query(Mentor).filter(Mentor.direction == mentor_direction).all()
+        if not mentors:
+            await update.message.reply_text("❌ Нет менторов для выбранного направления.")
+            return COURSE_TYPE
+        context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
+        await update.message.reply_text(
+            "Сначала выберите ментора для ручного направления (Ручное тестирование):",
+            reply_markup=ReplyKeyboardMarkup(
+                [[name] for name in context.user_data["mentors_list"].keys()],
+                one_time_keyboard=True
+            )
+        )
+        return SELECT_MENTOR
+    # Для Fullstack: после выбора ручного — авто
+    elif course_type == "Фуллстек" and "mentor_id" in context.user_data:
+        mentor_direction = "Автотестирование"
+        mentors = session.query(Mentor).filter(Mentor.direction == mentor_direction).all()
+        if not mentors:
+            await update.message.reply_text("❌ Нет менторов для автотестирования.")
+            return COURSE_TYPE
+        context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
+        await update.message.reply_text(
+            "Теперь выберите ментора для авто-направления (Автотестирование):",
+            reply_markup=ReplyKeyboardMarkup(
+                [[name] for name in context.user_data["mentors_list"].keys()],
+                one_time_keyboard=True
+            )
+        )
+        return SELECT_MENTOR
+    # Обычная логика для остальных направлений
     if course_type == "Ручное тестирование":
         mentor_direction = "Ручное тестирование"
     else:
-        mentor_direction = "Автотестирование"  # Авто и Фуллстек попадают сюда
+        mentor_direction = "Автотестирование"
 
     mentors = session.query(Mentor).filter(Mentor.direction == mentor_direction).all()
 
@@ -533,8 +609,13 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
 
     context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
 
+    # Для авто и ручного — стандартное сообщение
+    if course_type == "Автотестирование":
+        msg = "Выберите ментора по направлению: Автотестирование"
+    else:
+        msg = "Выберите ментора по направлению: Ручное тестирование"
     await update.message.reply_text(
-        f"Выберите ментора по направлению: {mentor_direction}",
+        msg,
         reply_markup=ReplyKeyboardMarkup(
             [[name] for name in context.user_data["mentors_list"].keys()],
             one_time_keyboard=True
@@ -550,6 +631,39 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text("❌ Пожалуйста, выберите одного из предложенных.")
         return SELECT_MENTOR
 
-    context.user_data["mentor_id"] = mentors_list[selected]
-    await update.message.reply_text("Введите общую стоимость обучения:")
-    return TOTAL_PAYMENT
+    course_type = context.user_data.get("course_type")
+    # Для Fullstack: сначала ручной, потом авто
+    if course_type == "Фуллстек":
+        # Если еще не выбран ручной ментор — сейчас выбираем его
+        if "mentor_id" not in context.user_data:
+            context.user_data["mentor_id"] = mentors_list[selected]
+            # Теперь показать выбор авто-ментора
+            from data_base.models import Mentor
+            mentors = session.query(Mentor).filter(Mentor.direction == "Автотестирование").all()
+            if not mentors:
+                await update.message.reply_text("❌ Нет менторов для автотестирования.")
+                return COURSE_TYPE
+            context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
+            await update.message.reply_text(
+                "Теперь выберите ментора для авто-направления (Автотестирование):",
+                reply_markup=ReplyKeyboardMarkup(
+                    [[name] for name in context.user_data["mentors_list"].keys()],
+                    one_time_keyboard=True
+                )
+            )
+            return SELECT_MENTOR
+        else:
+            # Сейчас выбираем авто-ментора
+            context.user_data["auto_mentor_id"] = mentors_list[selected]
+            await update.message.reply_text("Оба ментора выбраны. Введите общую стоимость обучения:")
+            return TOTAL_PAYMENT
+    elif course_type == "Автотестирование":
+        context.user_data["auto_mentor_id"] = mentors_list[selected]
+        context.user_data["mentor_id"] = None
+        await update.message.reply_text("Введите общую стоимость обучения:")
+        return TOTAL_PAYMENT
+    else:  # Ручное тестирование
+        context.user_data["mentor_id"] = mentors_list[selected]
+        context.user_data["auto_mentor_id"] = None
+        await update.message.reply_text("Введите общую стоимость обучения:")
+        return TOTAL_PAYMENT

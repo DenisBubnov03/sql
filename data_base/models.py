@@ -25,6 +25,7 @@ class Student(Base):
     commission = Column(String(255), nullable=True)
     commission_paid = Column(DECIMAL(10, 2), default=0, server_default="0")
     mentor_id = Column(Integer, ForeignKey("mentors.id"), nullable=False)
+    auto_mentor_id = Column(Integer, ForeignKey("mentors.id"), nullable=True)
     # mentor = relationship("Mentor", backref="students")
 
 

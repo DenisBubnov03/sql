@@ -8,7 +8,7 @@ from data_base.models import Student, Payment
 logger = logging.getLogger(__name__)
 
 
-def add_student(fio, telegram, start_date, training_type, total_cost, payment_amount, fully_paid, commission, mentor_id):
+def add_student(fio, telegram, start_date, training_type, total_cost, payment_amount, fully_paid, commission, mentor_id, auto_mentor_id=None):
     """
     Добавляет нового студента в базу данных и возвращает его ID.
     """
@@ -22,7 +22,8 @@ def add_student(fio, telegram, start_date, training_type, total_cost, payment_am
             payment_amount=payment_amount,  # Это просто для отображения
             fully_paid=fully_paid,
             commission=commission,
-            mentor_id=mentor_id
+            mentor_id=mentor_id,
+            auto_mentor_id=auto_mentor_id
         )
 
         session.add(student)

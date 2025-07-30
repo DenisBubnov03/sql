@@ -76,8 +76,27 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
     if not student:
         await update.message.reply_text("Ученик не найден. Попробуйте ещё раз.")
         return FIO_OR_TELEGRAM
-    mentor = session.query(Mentor).filter(Mentor.id == student.mentor_id).first()
-    mentor_name = mentor.full_name if mentor else f"ID {student.mentor_id}"
+    mentor_id = getattr(student, 'mentor_id', None)
+    auto_mentor_id = getattr(student, 'auto_mentor_id', None)
+    mentor_name = None
+    auto_mentor_name = None
+    if mentor_id:
+        mentor = session.query(Mentor).filter(Mentor.id == mentor_id).first()
+        mentor_name = mentor.full_name if mentor else f"ID {mentor_id}"
+    if auto_mentor_id:
+        auto_mentor = session.query(Mentor).filter(Mentor.id == auto_mentor_id).first()
+        auto_mentor_name = auto_mentor.full_name if auto_mentor else f"ID {auto_mentor_id}"
+
+    if student.training_type == "Фуллстек":
+        mentor_info = f"Ручной ментор: {mentor_name or 'не выбран'}\nАвто-ментор: {auto_mentor_name or 'не выбран'}"
+    elif mentor_name and auto_mentor_name:
+        mentor_info = f"Ручной ментор: {mentor_name}\nАвто-ментор: {auto_mentor_name}"
+    elif mentor_name:
+        mentor_info = f"Ручной ментор: {mentor_name}"
+    elif auto_mentor_name:
+        mentor_info = f"Авто-ментор: {auto_mentor_name}"
+    else:
+        mentor_info = "Ментор не выбран."
 
     # Проверяем наличие данных для комиссии
     if not student.commission or "," not in student.commission:
@@ -91,7 +110,7 @@ async def display_student_info(update: Update, context: ContextTypes.DEFAULT_TYP
     info = "\n".join([
         f"ФИО: {student.fio}",
         f"Telegram: {student.telegram}",
-        f"Ментор: {mentor_name}",
+        f"{mentor_info}",
         f"Договор подписан: {'Да' if student.contract_signed else 'Нет'}",
         f"Дата начала обучения: {student.start_date}",
         f"Тип обучения: {student.training_type}",

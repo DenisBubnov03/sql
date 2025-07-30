@@ -394,6 +394,9 @@ async def handle_payment_date(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         # ✅ Записываем новый платёж в `payments`
         mentor_id = student.mentor_id
+        auto_mentor_id = getattr(student, 'auto_mentor_id', None)
+        if student.training_type in ["Автотестирование", "Фуллстек"] and auto_mentor_id:
+            mentor_id = auto_mentor_id
         new_payment_entry = Payment(
             student_id=student.id,
             mentor_id=mentor_id,
