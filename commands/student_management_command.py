@@ -537,8 +537,13 @@ async def calculate_salary(update: Update, context):
                 logger.info(f"— {log}")
             logger.info(f"Итог: {round(mentor_salaries[mentor_id], 2)} руб.")
 
-        # Формирование сообщения для Telegram
-        salary_report = f"📊 Расчёт зарплат за {start_date_str} - {end_date_str}\n\n"
+        # Вычисляем общий бюджет на зарплаты
+        total_salaries = sum(mentor_salaries.values())
+        # Сохраняем для последующего использования
+        context.user_data['total_salaries'] = total_salaries
+        # Формируем отчет
+        salary_report = f"📊 Расчёт зарплат за {start_date_str} - {end_date_str}\n"
+        salary_report += f"💸 Всего на зарплаты: {int(total_salaries):,} руб.\n\n"
         for mentor in all_mentors.values():
             salary = round(mentor_salaries.get(mentor.id, 0), 2)
             if salary > 0:

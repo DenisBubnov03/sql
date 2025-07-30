@@ -195,6 +195,62 @@ async def handle_period_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return END_PERIOD
 
 
+# Вспомогательная функция, принимающая объекты date
+def calc_total_salaries_for_dates(start_date, end_date, session) -> float:
+    payments = session.query(Payment).filter(
+        Payment.payment_date >= start_date,
+        Payment.payment_date <= end_date,
+        Payment.status == "подтвержден"
+    ).all()
+
+    mentor_salaries = {}
+    for p in payments:
+        amt = float(p.amount)
+        stud = session.query(Student).get(p.student_id)
+        if not stud or not p.mentor_id:
+            continue
+
+        m_id = p.mentor_id
+        mentor_salaries.setdefault(m_id, 0)
+
+        # 1) Пропустить Fullstack на этом этапе
+        if stud.training_type == "Фуллстек":
+            continue
+
+        # 2) Процент основного курса
+        if m_id == 1 and stud.training_type == "Ручное тестирование":
+            pct = 0.3
+        elif m_id == 3 and stud.training_type == "Автотестирование":
+            pct = 0.3
+        else:
+            pct = 0.2
+        mentor_salaries[m_id] += amt * pct
+
+    # 3) Бонусы 10%
+    for p in payments:
+        stud = session.query(Student).get(p.student_id)
+        if not stud or stud.training_type == "Фуллстек":
+            continue
+
+        if p.mentor_id != 1 and stud.training_type.lower().strip() == "ручное тестирование":
+            mentor_salaries.setdefault(1, 0)
+            mentor_salaries[1] += float(p.amount) * 0.1
+
+        if p.mentor_id != 3 and stud.training_type == "Автотестирование":
+            mentor_salaries.setdefault(3, 0)
+            mentor_salaries[3] += float(p.amount) * 0.1
+
+    # 4) Fullstack‑бонусы
+    fs_students = session.query(Student).filter(
+        Student.training_type == "Фуллстек",
+        Student.start_date >= start_date,
+        Student.start_date <= end_date
+    ).all()
+    if fs_students:
+        mentor_salaries.setdefault(1, 0)
+        mentor_salaries[1] += len(fs_students) * 5000
+
+    return sum(mentor_salaries.values())
 
 async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -229,7 +285,6 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
         Payment.comment == "Доплата"
     ).scalar() or 0
 
-    # Получаем сумму доплат (где comment = "Доплата")
     additional_commission = session.query(func.sum(Payment.amount)).filter(
         Payment.payment_date.between(start_date, end_date),
         Payment.comment == "Комиссия"
@@ -260,12 +315,16 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
                 f"  Оплачено: {student.payment_amount} из {student.total_cost}\n"
             )
 
+        # где-то в вашем хэндлере, после расчёта всех чисел
+        total_salaries = calc_total_salaries_for_dates(start_date, end_date, session)
         response += (
             f"\n💰 Оплачено за обучение: {int(payment_amount):,} руб.\n"
             f"📚 Общая стоимость обучения: {int(total_cost):,} руб.\n"
             f"➕ Общая сумма доплат: {int(additional_payments):,} руб.\n"
             f"💸 Общая сумма комиссии: {int(additional_commission):,} руб.\n"
-            f"💵 Чистая прибыль: {int(total_paid):,} руб.\n"
+            f"👥 Всего на зарплаты: {int(total_salaries):,} руб.\n"
+            f"💵 Оборот: {int(total_paid):,} руб.\n"
+            f"👥 Чистая прибыль: {int(total_paid)-int(total_salaries):,} руб.\n"
             f"🧾 Осталось оплатить: {int(remaining_payment):,} руб."
         )
 
