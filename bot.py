@@ -17,7 +17,6 @@ from commands.student_selection import *
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
     handle_period_start, handle_period_end
-from bot.handlers.student_handlers import send_topic_request_to_student, start_topic_request, handle_student_selection_for_topic
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -148,18 +147,8 @@ def main():
         fallbacks=[],
     )
     
-    # Обработчик для отправки сообщений ученикам о темах
-    topic_request_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^Отправить сообщение о темах$"), start_topic_request)],
-        states={
-            "WAIT_FOR_STUDENT": [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_student_selection_for_topic)],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)],
-    )
-    
     application.add_handler(contract_signing_handler)
     application.add_handler(bonus_handler)
-    application.add_handler(topic_request_handler)
 
     # Регистрация обработчиков
     application.add_handler(salary_handler)
