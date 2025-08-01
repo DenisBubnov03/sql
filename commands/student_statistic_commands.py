@@ -197,52 +197,52 @@ async def handle_period_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Вспомогательная функция, принимающая объекты date
 def calc_total_salaries_for_dates(start_date, end_date, session) -> float:
-    payments = session.query(Payment).filter(
-        Payment.payment_date >= start_date,
-        Payment.payment_date <= end_date,
-        Payment.status == "подтвержден"
-    ).all()
+    from data_base.models import Payment, Student
 
     mentor_salaries = {}
-    for p in payments:
-        amt = float(p.amount)
-        stud = session.query(Student).get(p.student_id)
-        if not stud or not p.mentor_id:
+
+    detailed_payments = session.query(Payment).filter(
+        Payment.payment_date >= start_date,
+        Payment.payment_date <= end_date,
+        Payment.status == "подтвержден",
+        ~Payment.comment.ilike("%преми%")
+    ).all()
+
+    for p in detailed_payments:
+        student = session.query(Student).get(p.student_id)
+        if not student or not p.mentor_id:
             continue
 
         m_id = p.mentor_id
         mentor_salaries.setdefault(m_id, 0)
 
-        # 1) Пропустить Fullstack на этом этапе
-        if stud.training_type == "Фуллстек":
+        if student.training_type == "Фуллстек":
             continue
 
-        # 2) Процент основного курса
-        if m_id == 1 and stud.training_type == "Ручное тестирование":
+        if m_id == 1 and student.training_type == "Ручное тестирование":
             pct = 0.3
-        elif m_id == 3 and stud.training_type == "Автотестирование":
+        elif m_id == 3 and student.training_type == "Автотестирование":
             pct = 0.3
         else:
             pct = 0.2
-        mentor_salaries[m_id] += amt * pct
+        mentor_salaries[m_id] += float(p.amount) * pct
 
-    # 3) Бонусы 10%
-    for p in payments:
-        stud = session.query(Student).get(p.student_id)
-        if not stud or stud.training_type == "Фуллстек":
+    for p in detailed_payments:
+        student = session.query(Student).get(p.student_id)
+        if not student or student.training_type == "Фуллстек":
             continue
 
-        if p.mentor_id != 1 and stud.training_type.lower().strip() == "ручное тестирование":
+        if p.mentor_id != 1 and student.training_type.lower().strip() == "ручное тестирование":
             mentor_salaries.setdefault(1, 0)
             mentor_salaries[1] += float(p.amount) * 0.1
 
-        if p.mentor_id != 3 and stud.training_type == "Автотестирование":
+        if p.mentor_id != 3 and student.training_type == "Автотестирование":
             mentor_salaries.setdefault(3, 0)
             mentor_salaries[3] += float(p.amount) * 0.1
 
-    # 4) Fullstack‑бонусы
     fs_students = session.query(Student).filter(
         Student.training_type == "Фуллстек",
+        Student.total_cost >= 50000,
         Student.start_date >= start_date,
         Student.start_date <= end_date
     ).all()
@@ -250,7 +250,37 @@ def calc_total_salaries_for_dates(start_date, end_date, session) -> float:
         mentor_salaries.setdefault(1, 0)
         mentor_salaries[1] += len(fs_students) * 5000
 
-    return sum(mentor_salaries.values())
+    for p in detailed_payments:
+        student = session.query(Student).get(p.student_id)
+        if not student or student.training_type != "Фуллстек":
+            continue
+
+        amt = float(p.amount)
+        m_id = p.mentor_id
+
+        mentor_salaries.setdefault(m_id, 0)
+        mentor_salaries.setdefault(3, 0)
+
+        if m_id == 3:
+            mentor_salaries[3] += amt * 0.3
+        else:
+            mentor_salaries[3] += amt * 0.1
+            mentor_salaries[m_id] += amt * 0.2
+
+    premium_payments = session.query(Payment).filter(
+        Payment.payment_date >= start_date,
+        Payment.payment_date <= end_date,
+        Payment.status == "подтвержден",
+        Payment.comment.ilike("%преми%")
+    ).all()
+
+    for p in premium_payments:
+        m_id = p.mentor_id
+        mentor_salaries.setdefault(m_id, 0)
+        mentor_salaries[m_id] += float(p.amount)
+
+    return round(sum(mentor_salaries.values()), 2)
+
 
 async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
