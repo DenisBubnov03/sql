@@ -48,7 +48,7 @@ class Payment(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)  # Уникальный ID платежа
     student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)  # Привязка к студенту
-    mentor_id = Column(Integer, ForeignKey("mentors.id", ondelete="CASCADE"), nullable=False)  # Привязка к ментору
+    mentor_id = Column(Integer, ForeignKey("mentors.id", ondelete="CASCADE"), nullable=True)  # Привязка к ментору (может быть NULL для расходов)
     amount = Column(Numeric(10, 2), nullable=False)  # Сумма платежа
     payment_date = Column(Date, nullable=False)  # Дата платежа
     comment = Column(Text, nullable=True)  # Комментарий к платежу (например, "Первый платеж")

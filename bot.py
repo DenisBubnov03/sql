@@ -6,17 +6,23 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from commands.mentor_bonus_commands import start_bonus_process, handle_mentor_tg, handle_bonus_amount
 from commands.start_commands import start, exit_to_main_menu
 from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
-    CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT
-from commands.student_commands import *
+    CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
+    EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, WAIT_FOR_NEW_VALUE
+from commands.student_commands import (
+    edit_student, edit_student_field, handle_student_deletion, handle_new_value,
+    handle_payment_date, start_contract_signing, handle_contract_signing,
+    smart_edit_student, smart_edit_student_field
+)
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
 from commands.student_management_command import *
 from commands.student_notifications import check_call_notifications, check_payment_notifications, \
     check_all_notifications, show_notifications_menu
-from commands.student_selection import *
+from commands.student_selection import find_student, handle_multiple_students
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
     handle_period_start, handle_period_end
+from commands.additional_expenses_commands import start_expense_process, handle_expense_type, handle_expense_amount, handle_expense_date
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -46,9 +52,9 @@ def main():
         fallbacks=[],
     )
 
-    # Обработчик редактирования студента
+    # Обработчик редактирования студента (умный - для всех пользователей)
     edit_student_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^Редактировать данные студента$"), edit_student)],
+        entry_points=[MessageHandler(filters.Regex("^Редактировать данные студента$"), smart_edit_student)],
         states={
             FIO_OR_TELEGRAM: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, find_student),
@@ -59,7 +65,7 @@ def main():
                 MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
             ],
             FIELD_TO_EDIT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, edit_student_field),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, smart_edit_student_field),
                 MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
             ],
             WAIT_FOR_NEW_VALUE: [
@@ -147,8 +153,20 @@ def main():
         fallbacks=[],
     )
     
+    # Обработчик доп расходов
+    expense_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^Доп расходы$"), start_expense_process)],
+        states={
+            EXPENSE_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_type)],
+            EXPENSE_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_amount)],
+            EXPENSE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_date)],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)],
+    )
+    
     application.add_handler(contract_signing_handler)
     application.add_handler(bonus_handler)
+    application.add_handler(expense_handler)
 
     # Регистрация обработчиков
     application.add_handler(salary_handler)

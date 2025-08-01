@@ -4,7 +4,7 @@ from sqlalchemy import func
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from commands.authorized_users import AUTHORIZED_USERS
+from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from commands.logger import log_student_change
 from commands.start_commands import exit_to_main_menu
 from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM, WAIT_FOR_PAYMENT_DATE, SIGN_CONTRACT
@@ -26,6 +26,22 @@ async def edit_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return FIO_OR_TELEGRAM
 
 
+# Ограниченная функция редактирования для NOT_ADMINS
+async def edit_student_limited(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Ограниченная версия редактирования студента для NOT_ADMINS.
+    """
+    user_id = update.message.from_user.id
+    if user_id not in NOT_ADMINS:
+        await update.message.reply_text("Извините, у вас нет доступа.")
+        return ConversationHandler.END
+
+    await update.message.reply_text(
+        "Введите ФИО или Telegram студента, данные которого вы хотите отредактировать:",
+        reply_markup=ReplyKeyboardMarkup([["Главное меню"]], one_time_keyboard=True)
+    )
+    return FIO_OR_TELEGRAM
+
 
 # Редактирование поля студента
 async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -40,7 +56,6 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
     FIELD_MAPPING = {
         "ФИО": "fio",
         "Telegram": "telegram",
-        "Дата последнего звонка": "last_call_date",
         "Сумма оплаты": "payment_amount",
         "Статус обучения": "training_status",
         "Получил работу": "company",
@@ -107,6 +122,66 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
             [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты",
               "Статус обучения", "Получил работу", "Комиссия выплачено", "Удалить ученика"],
              ["Назад"]],
+            one_time_keyboard=True
+        )
+    )
+    return FIELD_TO_EDIT
+
+
+# Ограниченное редактирование поля студента для NOT_ADMINS
+async def edit_student_field_limited(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Ограниченный выбор поля для редактирования для NOT_ADMINS.
+    """
+    user_id = update.message.from_user.id
+    if user_id not in NOT_ADMINS:
+        await update.message.reply_text("Извините, у вас нет доступа.")
+        return ConversationHandler.END
+
+    LIMITED_FIELD_MAPPING = {
+        "ФИО": "fio",
+        "Telegram": "telegram",
+        "Статус обучения": "training_status",
+        "Получил работу": "company"
+    }
+
+    field_to_edit = update.message.text.strip()
+    student = context.user_data.get("student")
+
+    # Универсальная обработка кнопки "Назад"
+    if field_to_edit == "Назад":
+        return await exit_to_main_menu(update, context)
+
+    if field_to_edit == "Получил работу":
+        # Уникальная обработка для "Получил работу"
+        context.user_data["field_to_edit"] = field_to_edit
+        context.user_data["employment_step"] = "company"
+        await update.message.reply_text("Введите название компании:")
+        return WAIT_FOR_NEW_VALUE
+
+    if field_to_edit in LIMITED_FIELD_MAPPING:
+        context.user_data["field_to_edit"] = field_to_edit
+
+        if field_to_edit == "Статус обучения":
+            await update.message.reply_text(
+                "Выберите новый статус обучения:",
+                reply_markup=ReplyKeyboardMarkup(
+                    [["Не учится", "Учится", "Устроился"], ["Назад"]],
+                    one_time_keyboard=True
+                )
+            )
+            return WAIT_FOR_NEW_VALUE
+
+        await update.message.reply_text(
+            f"Введите новое значение для '{field_to_edit}':",
+            reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True)
+        )
+        return WAIT_FOR_NEW_VALUE
+
+    await update.message.reply_text(
+        "Некорректное поле. Выберите одно из предложенных:",
+        reply_markup=ReplyKeyboardMarkup(
+            [["ФИО", "Telegram", "Статус обучения", "Получил работу"], ["Назад"]],
             one_time_keyboard=True
         )
     )
@@ -451,3 +526,37 @@ async def handle_contract_signing(update, context):
 
     await update.message.reply_text(f"✅ Договор для {student.fio} отмечен как подписанный.")
     return await exit_to_main_menu(update, context)
+
+# Умная функция для определения прав редактирования
+async def smart_edit_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Умная функция, которая определяет права пользователя и выбирает соответствующий обработчик.
+    """
+    user_id = update.message.from_user.id
+    
+    if user_id in AUTHORIZED_USERS:
+        # Полные права - используем обычное редактирование
+        return await edit_student(update, context)
+    elif user_id in NOT_ADMINS:
+        # Ограниченные права - используем ограниченное редактирование
+        return await edit_student_limited(update, context)
+    else:
+        await update.message.reply_text("Извините, у вас нет доступа.")
+        return ConversationHandler.END
+
+# Умная функция для определения прав редактирования полей
+async def smart_edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Умная функция для редактирования полей в зависимости от прав пользователя.
+    """
+    user_id = update.message.from_user.id
+    
+    if user_id in AUTHORIZED_USERS:
+        # Полные права - используем обычное редактирование полей
+        return await edit_student_field(update, context)
+    elif user_id in NOT_ADMINS:
+        # Ограниченные права - используем ограниченное редактирование полей
+        return await edit_student_field_limited(update, context)
+    else:
+        await update.message.reply_text("Извините, у вас нет доступа.")
+        return ConversationHandler.END

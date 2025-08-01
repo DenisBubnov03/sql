@@ -2,13 +2,14 @@ from datetime import datetime
 
 from sqlalchemy import func
 
-from commands.authorized_users import AUTHORIZED_USERS
+from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from commands.states import STATISTICS_MENU, COURSE_TYPE_MENU, START_PERIOD, END_PERIOD
 from data_base.db import session
 from data_base.models import Student, Payment
 from data_base.operations import get_general_statistics, get_students_by_period, get_students_by_training_type
+from commands.additional_expenses_commands import get_additional_expenses_for_period
 
 
 async def show_statistics_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -16,7 +17,7 @@ async def show_statistics_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     Отображает главное меню статистики.
     """
     user_id = update.message.from_user.id
-    if user_id not in AUTHORIZED_USERS:
+    if user_id not in AUTHORIZED_USERS and user_id not in NOT_ADMINS:
         await update.message.reply_text("Извините, у вас нет доступа.")
         return
 
@@ -304,9 +305,10 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
 
     student_count = len(students)
 
-    # Получаем сумму всех платежей (включая первоначальные и доплаты)
+    # Получаем сумму всех платежей (включая первоначальные и доплаты), ИСКЛЮЧАЯ доп расходы
     total_paid = session.query(func.sum(Payment.amount)).filter(
-        Payment.payment_date.between(start_date, end_date)
+        Payment.payment_date.between(start_date, end_date),
+        ~Payment.comment.ilike("%Доп расход%")  # Исключаем доп расходы из оборота
     ).scalar() or 0
 
     # Получаем сумму доплат (где comment = "Доплата")
@@ -347,6 +349,13 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
 
         # где-то в вашем хэндлере, после расчёта всех чисел
         total_salaries = calc_total_salaries_for_dates(start_date, end_date, session)
+        
+        # Получаем доп расходы за период
+        additional_expenses = get_additional_expenses_for_period(start_date, end_date, session)
+        
+        # Чистая прибыль с учетом доп расходов
+        net_profit = int(total_paid) - int(total_salaries) - int(additional_expenses)
+        
         response += (
             f"\n💰 Оплачено за обучение: {int(payment_amount):,} руб.\n"
             f"📚 Общая стоимость обучения: {int(total_cost):,} руб.\n"
@@ -354,7 +363,8 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
             f"💸 Общая сумма комиссии: {int(additional_commission):,} руб.\n"
             f"👥 Всего на зарплаты: {int(total_salaries):,} руб.\n"
             f"💵 Оборот: {int(total_paid):,} руб.\n"
-            f"👥 Чистая прибыль: {int(total_paid)-int(total_salaries):,} руб.\n"
+            f"💸 Доп расходы: {int(additional_expenses):,} руб.\n"
+            f"👥 Чистая прибыль: {net_profit:,} руб.\n"
             f"🧾 Осталось оплатить: {int(remaining_payment):,} руб."
         )
 
