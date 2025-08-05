@@ -5,6 +5,19 @@ from sqlalchemy.orm import relationship
 from data_base import Base
 
 
+class CareerConsultant(Base):
+    __tablename__ = "career_consultants"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    telegram = Column(String(50), unique=True, nullable=False)
+    full_name = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(Date, nullable=True)
+
+    # Отношения
+    students = relationship("Student", back_populates="career_consultant")
+
+
 class Student(Base):
     __tablename__ = "students"
 
@@ -26,7 +39,9 @@ class Student(Base):
     commission_paid = Column(DECIMAL(10, 2), default=0, server_default="0")
     mentor_id = Column(Integer, ForeignKey("mentors.id"), nullable=False)
     auto_mentor_id = Column(Integer, ForeignKey("mentors.id"), nullable=True)
+    career_consultant_id = Column(Integer, ForeignKey("career_consultants.id"), nullable=True)
     # mentor = relationship("Mentor", backref="students")
+    career_consultant = relationship("CareerConsultant", back_populates="students")
 
 
 class Mentor(Base):
@@ -35,7 +50,6 @@ class Mentor(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     telegram = Column(String, unique=True, nullable=False)
     full_name = Column(String, nullable=False)
-    is_admin = Column(Boolean, default=False)
     chat_id = Column(String, nullable=True)
     direction = Column(String, unique=True, nullable=False)
 

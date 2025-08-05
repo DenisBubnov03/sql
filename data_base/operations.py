@@ -1,9 +1,71 @@
 import random
 
 from data_base.db import session
-from data_base.models import Student, Mentor, Payment
+from data_base.models import Student, Mentor, Payment, CareerConsultant
 from datetime import datetime, timedelta
 from sqlalchemy import or_, func
+
+
+# Функции для работы с карьерными консультантами
+def get_all_career_consultants():
+    """Возвращает список всех активных карьерных консультантов."""
+    return session.query(CareerConsultant).filter(CareerConsultant.is_active == True).all()
+
+
+def get_career_consultant_by_telegram(telegram):
+    """Находит карьерного консультанта по Telegram."""
+    return session.query(CareerConsultant).filter(
+        CareerConsultant.telegram == telegram,
+        CareerConsultant.is_active == True
+    ).first()
+
+
+def get_students_by_career_consultant(consultant_id):
+    """Возвращает всех студентов, закрепленных за карьерным консультантом."""
+    return session.query(Student).filter(
+        Student.career_consultant_id == consultant_id
+    ).all()
+
+
+def assign_student_to_career_consultant(student_id, consultant_id):
+    """Закрепляет студента за карьерным консультантом."""
+    student = session.query(Student).get(student_id)
+    if not student:
+        raise ValueError("Студент не найден.")
+    
+    consultant = session.query(CareerConsultant).get(consultant_id)
+    if not consultant:
+        raise ValueError("Карьерный консультант не найден.")
+    
+    student.career_consultant_id = consultant_id
+    session.commit()
+    return student
+
+
+def calculate_career_consultant_salary(consultant_id, start_date, end_date):
+    """
+    Рассчитывает зарплату карьерного консультанта.
+    10% от платежей со статусом "Комиссия" и подтвержденных закрепленных за ними учеников.
+    """
+    # Получаем всех студентов, закрепленных за консультантом
+    students = get_students_by_career_consultant(consultant_id)
+    student_ids = [student.id for student in students]
+    
+    if not student_ids:
+        return 0
+    
+    # Получаем все подтвержденные платежи с комментарием "Комиссия" за период
+    commission_payments = session.query(func.sum(Payment.amount)).filter(
+        Payment.student_id.in_(student_ids),
+        Payment.payment_date >= start_date,
+        Payment.payment_date <= end_date,
+        Payment.status == "подтвержден",
+        Payment.comment.ilike("%комисси%")
+    ).scalar() or 0
+    
+    # 10% от суммы комиссий
+    salary = float(commission_payments) * 0.1
+    return round(salary, 2)
 
 
 # Добавление нового студента

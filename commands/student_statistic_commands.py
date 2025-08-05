@@ -198,7 +198,7 @@ async def handle_period_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Вспомогательная функция, принимающая объекты date
 def calc_total_salaries_for_dates(start_date, end_date, session) -> float:
-    from data_base.models import Payment, Student
+    from data_base.models import Payment, Student, CareerConsultant
 
     mentor_salaries = {}
 
@@ -279,6 +279,35 @@ def calc_total_salaries_for_dates(start_date, end_date, session) -> float:
         m_id = p.mentor_id
         mentor_salaries.setdefault(m_id, 0)
         mentor_salaries[m_id] += float(p.amount)
+
+    # Расчет зарплат карьерных консультантов
+    career_consultant_salaries = {}
+    all_consultants = session.query(CareerConsultant).filter(CareerConsultant.is_active == True).all()
+    
+    for consultant in all_consultants:
+        # Получаем всех студентов, закрепленных за консультантом
+        students = session.query(Student).filter(Student.career_consultant_id == consultant.id).all()
+        student_ids = [student.id for student in students]
+        
+        if not student_ids:
+            continue
+        
+        # Получаем все подтвержденные платежи с комментарием "Комиссия" за период
+        commission_payments = session.query(func.sum(Payment.amount)).filter(
+            Payment.student_id.in_(student_ids),
+            Payment.payment_date >= start_date,
+            Payment.payment_date <= end_date,
+            Payment.status == "подтвержден",
+            Payment.comment.ilike("%комисси%")
+        ).scalar() or 0
+        
+        # 10% от суммы комиссий
+        salary = float(commission_payments) * 0.1
+        career_consultant_salaries[consultant.id] = round(salary, 2)
+
+    # Добавляем зарплаты карьерных консультантов к общему фонду
+    total_career_consultant_salary = sum(career_consultant_salaries.values())
+    mentor_salaries['career_consultants'] = total_career_consultant_salary
 
     return round(sum(mentor_salaries.values()), 2)
 

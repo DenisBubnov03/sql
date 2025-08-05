@@ -1,10 +1,13 @@
 import os
 import tracemalloc
 
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 
+from bot.handlers.career_consultant_handlers import  show_career_consultant_statistics, \
+    show_assign_student_menu, handle_student_selection, handle_assignment_confirmation, CONFIRM_ASSIGNMENT, SELECT_STUDENT
 from commands.mentor_bonus_commands import start_bonus_process, handle_mentor_tg, handle_bonus_amount
 from commands.start_commands import start, exit_to_main_menu
+from commands.career_consultant_commands import add_career_consultant_handler, list_career_consultants
 from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
     CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
     EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, WAIT_FOR_NEW_VALUE
@@ -134,7 +137,7 @@ def main():
         states={
             "WAIT_FOR_SALARY_DATES": [MessageHandler(filters.TEXT & ~filters.COMMAND, calculate_salary)]
         },
-        fallbacks=[]
+        fallbacks=[MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu)]
     )
 
     bonus_handler = ConversationHandler(
@@ -164,10 +167,30 @@ def main():
         fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)],
     )
     
+    # Обработчик карьерных консультантов с исправленными настройками
+    career_consultant_handler = ConversationHandler(
+        entry_points=[],
+        states={
+            SELECT_STUDENT: [CallbackQueryHandler(handle_student_selection)],
+            CONFIRM_ASSIGNMENT: [CallbackQueryHandler(handle_assignment_confirmation)],
+        },
+        fallbacks=[],
+        per_message=True,  # Добавляем этот параметр для исправления предупреждения
+    )
+    
     application.add_handler(contract_signing_handler)
     application.add_handler(bonus_handler)
     application.add_handler(expense_handler)
-
+    
+    # Обработчики карьерных консультантов
+    application.add_handler(MessageHandler(filters.Regex("^🔗 Закрепить КК$"), show_assign_student_menu))
+    application.add_handler(MessageHandler(filters.Regex("^📊 Моя статистика$"), show_career_consultant_statistics))
+    application.add_handler(career_consultant_handler)
+    
+    # Обработчики управления карьерными консультантами
+    application.add_handler(add_career_consultant_handler)
+    application.add_handler(MessageHandler(filters.Regex("^📋 Список КК$"), list_career_consultants))
+    
     # Регистрация обработчиков
     application.add_handler(salary_handler)
     application.add_handler(CommandHandler("start", start))

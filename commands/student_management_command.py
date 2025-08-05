@@ -12,7 +12,7 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
 from data_base.db import session
-from data_base.models import Payment, Mentor, Student
+from data_base.models import Payment, Mentor, Student, CareerConsultant
 from data_base.operations import  get_student_by_fio_or_telegram
 from student_management.student_management import add_student
 logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
@@ -359,14 +359,31 @@ async def calculate_salary(update: Update, context):
         logger.info(f"📅 Полученный диапазон дат: {date_range}")
 
         if " - " not in date_range:
-            raise ValueError("Формат должен быть ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
+            await update.message.reply_text(
+                "❌ Неверный формат! Используйте формат: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ\n"
+                "Пример: 01.03.2025 - 31.03.2025"
+            )
+            return "WAIT_FOR_SALARY_DATES"
 
         start_date_str, end_date_str = map(str.strip, date_range.split("-"))
-        start_date = datetime.strptime(start_date_str, "%d.%m.%Y").date()
-        end_date = datetime.strptime(end_date_str, "%d.%m.%Y").date()
+        
+        try:
+            start_date = datetime.strptime(start_date_str, "%d.%m.%Y").date()
+            end_date = datetime.strptime(end_date_str, "%d.%m.%Y").date()
+        except ValueError as e:
+            await update.message.reply_text(
+                f"❌ Ошибка в формате даты: {e}\n"
+                "Используйте формат ДД.ММ.ГГГГ\n"
+                "Пример: 01.03.2025 - 31.03.2025"
+            )
+            return "WAIT_FOR_SALARY_DATES"
 
         if start_date > end_date:
-            raise ValueError("Дата начала не может быть позже даты окончания.")
+            await update.message.reply_text(
+                "❌ Дата начала не может быть позже даты окончания.\n"
+                "Попробуйте снова:"
+            )
+            return "WAIT_FOR_SALARY_DATES"
 
         logger.info(f"📊 Запрашиваем всех менторов...")
         all_mentors = {mentor.id: mentor for mentor in session.query(Mentor).all()}
@@ -401,6 +418,8 @@ async def calculate_salary(update: Update, context):
             Payment.status == "подтвержден",
             ~Payment.comment.ilike("%преми%")  # исключаем премии из основного расчёта
         ).all()
+
+        logger.info(f"📊 Найдено детальных платежей: {len(detailed_payments)}")
 
         for payment in detailed_payments:
             mentor_id = payment.mentor_id
@@ -529,34 +548,104 @@ async def calculate_salary(update: Update, context):
                 f"🎁 Премия {payment.amount} руб. | {payment.payment_date} | +{bonus_amount} руб."
             )
 
+        # 💼 Расчет зарплат карьерных консультантов
+        career_consultant_salaries = {}
+        all_consultants = session.query(CareerConsultant).filter(CareerConsultant.is_active == True).all()
+        
+        for consultant in all_consultants:
+            # Получаем всех студентов, закрепленных за консультантом
+            students = session.query(Student).filter(Student.career_consultant_id == consultant.id).all()
+            student_ids = [student.id for student in students]
+            
+            if not student_ids:
+                continue
+            
+            # Получаем все подтвержденные платежи с комментарием "Комиссия" за период
+            commission_payments = session.query(Payment).filter(
+                Payment.student_id.in_(student_ids),
+                Payment.payment_date >= start_date,
+                Payment.payment_date <= end_date,
+                Payment.status == "подтвержден",
+                Payment.comment.ilike("%комисси%")
+            ).all()
+            
+            # 10% от суммы комиссий
+            total_commission = sum(float(p.amount) for p in commission_payments)
+            salary = total_commission * 0.1
+            career_consultant_salaries[consultant.id] = round(salary, 2)
+            
+            # Логируем зарплату карьерного консультанта
+            if salary > 0:
+                detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
+                    f"💼 Карьерный консультант {consultant.full_name} | "
+                    f"Комиссии: {total_commission} руб. | 10% = {salary} руб."
+                )
+
         # Вывод логов в файл
         for mentor_id, logs in detailed_logs.items():
-            mentor = all_mentors.get(mentor_id)
-            logger.info(f"\n📘 Ментор: {mentor.full_name} ({mentor.telegram})")
-            for log in logs:
-                logger.info(f"— {log}")
-            logger.info(f"Итог: {round(mentor_salaries[mentor_id], 2)} руб.")
+            if isinstance(mentor_id, str) and mentor_id.startswith("cc_"):
+                # Логи для карьерных консультантов
+                consultant_id = int(mentor_id.split("_")[1])
+                consultant = next((c for c in all_consultants if c.id == consultant_id), None)
+                if consultant:
+                    logger.info(f"\n📘 Карьерный консультант: {consultant.full_name} ({consultant.telegram})")
+                    for log in logs:
+                        logger.info(f"— {log}")
+                    logger.info(f"Итог: {career_consultant_salaries.get(consultant_id, 0)} руб.")
+            else:
+                # Логи для менторов
+                mentor = all_mentors.get(mentor_id)
+                if mentor:
+                    logger.info(f"\n📘 Ментор: {mentor.full_name} ({mentor.telegram})")
+                    for log in logs:
+                        logger.info(f"— {log}")
+                    logger.info(f"Итог: {round(mentor_salaries[mentor_id], 2)} руб.")
 
-        # Вычисляем общий бюджет на зарплаты
-        total_salaries = sum(mentor_salaries.values())
+        # Вычисляем общий бюджет на зарплаты (включая карьерных консультантов)
+        total_mentor_salaries = sum(mentor_salaries.values())
+        total_career_consultant_salaries = sum(career_consultant_salaries.values())
+        total_salaries = total_mentor_salaries + total_career_consultant_salaries
+        
         # Сохраняем для последующего использования
         context.user_data['total_salaries'] = total_salaries
+        context.user_data['total_mentor_salaries'] = total_mentor_salaries
+        context.user_data['total_career_consultant_salaries'] = total_career_consultant_salaries
+        
         # Формируем отчет
         salary_report = f"📊 Расчёт зарплат за {start_date_str} - {end_date_str}\n"
         salary_report += f"💸 Всего на зарплаты: {int(total_salaries):,} руб.\n\n"
+        
+        # Отчет по менторам
+        salary_report += "👨‍🏫 Менторы:\n"
         for mentor in all_mentors.values():
             salary = round(mentor_salaries.get(mentor.id, 0), 2)
             if salary > 0:
                 salary_report += f"💰 {mentor.full_name} ({mentor.telegram}): {salary} руб.\n"
             else:
                 salary_report += f"❌ {mentor.full_name} ({mentor.telegram}): У ментора нет платежей за этот период\n"
+        
+        # Отчет по карьерным консультантам
+        if career_consultant_salaries:
+            salary_report += "\n💼 Карьерные консультанты:\n"
+            for consultant in all_consultants:
+                salary = career_consultant_salaries.get(consultant.id, 0)
+                if salary > 0:
+                    salary_report += f"💰 {consultant.full_name} ({consultant.telegram}): {salary} руб.\n"
+                else:
+                    salary_report += f"❌ {consultant.full_name} ({consultant.telegram}): У консультанта нет комиссий за этот период\n"
+        
+        salary_report += f"\n📈 Итого:\n"
+        salary_report += f"👨‍🏫 Менторы: {int(total_mentor_salaries):,} руб.\n"
+        salary_report += f"💼 Карьерные консультанты: {int(total_career_consultant_salaries):,} руб.\n"
 
         await update.message.reply_text(salary_report)
-        return ConversationHandler.END
-
+        return await exit_to_main_menu(update, context)
     except ValueError as e:
-        logger.error(f"❌ Ошибка ввода даты: {e}")
-        await update.message.reply_text(f"❌ Ошибка: {e}\nВведите период в формате 'ДД.ММ.ГГГГ - ДД.ММ.ГГГГ'.")
+        await update.message.reply_text(f"❌ Ошибка: {e}")
+        return "WAIT_FOR_SALARY_DATES"
+    except Exception as e:
+        logger.error(f"❌ Неожиданная ошибка при расчете зарплаты: {e}")
+        await update.message.reply_text(f"❌ Произошла ошибка при расчете зарплаты: {str(e)}")
         return "WAIT_FOR_SALARY_DATES"
 
 

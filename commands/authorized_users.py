@@ -10,6 +10,13 @@ AUTHORIZED_USERS = [
     7807939544
 ]
 NOT_ADMINS = [257886520, 461785798, 7807939544]
+
+# Список карьерных консультантов (КК)
+CAREER_CONSULTANTS = [
+    # Добавьте сюда ID карьерных консультантов
+    # Например: 123456789,
+]
+
 # import os
 # AUTHORIZED_USERS = os.getenv("AUTHORIZED_USERS")
 
