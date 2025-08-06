@@ -5,11 +5,28 @@ from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from commands.start_commands import exit_to_main_menu
 from data_base.db import session
 from data_base.models import Payment
+import logging
+from sqlalchemy import text
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Состояния для ConversationHandler
 EXPENSE_TYPE = "EXPENSE_TYPE"
 EXPENSE_AMOUNT = "EXPENSE_AMOUNT"
 EXPENSE_DATE = "EXPENSE_DATE"
+
+def reset_session_if_needed():
+    """
+    Сбрасывает состояние сессии если она в нерабочем состоянии.
+    """
+    try:
+        # Проверяем состояние сессии
+        session.execute(text("SELECT 1"))
+    except Exception as e:
+        logger.warning(f"Сессия в нерабочем состоянии, делаем rollback: {e}")
+        session.rollback()
 
 async def start_expense_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -90,6 +107,9 @@ async def handle_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE
     """
     Обрабатывает ввод даты расхода и сохраняет расход в базу.
     """
+    # Сбрасываем сессию если нужно
+    reset_session_if_needed()
+    
     date_text = update.message.text.strip()
     
     if date_text == "Назад":
@@ -115,15 +135,20 @@ async def handle_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE
             status="подтвержден"
         )
         
-        session.add(expense_payment)
-        session.commit()
-        
-        await update.message.reply_text(
-            f"✅ Расход успешно добавлен:\n"
-            f"💰 Тип: {expense_type}\n"
-            f"💸 Сумма: {expense_amount} руб.\n"
-            f"📅 Дата: {expense_date.strftime('%d.%m.%Y')}"
-        )
+        try:
+            session.add(expense_payment)
+            session.commit()
+            
+            await update.message.reply_text(
+                f"✅ Расход успешно добавлен:\n"
+                f"💰 Тип: {expense_type}\n"
+                f"💸 Сумма: {expense_amount} руб.\n"
+                f"📅 Дата: {expense_date.strftime('%d.%m.%Y')}"
+            )
+        except Exception as commit_error:
+            session.rollback()
+            await update.message.reply_text(f"❌ Ошибка при сохранении расхода: {commit_error}")
+            return await exit_to_main_menu(update, context)
         
         # Очищаем данные
         context.user_data.pop("expense_type", None)
@@ -141,6 +166,8 @@ async def handle_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return EXPENSE_DATE
     except Exception as e:
+        # Делаем rollback в случае ошибки
+        session.rollback()
         await update.message.reply_text(f"❌ Ошибка при сохранении расхода: {e}")
         return await exit_to_main_menu(update, context)
 
