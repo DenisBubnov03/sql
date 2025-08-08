@@ -107,9 +107,9 @@ async def handle_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE
         expense_amount = context.user_data.get("expense_amount")
         
         # Создаем запись о расходе в таблице Payment
-        # mentor_id = None для расходов без привязки к ментору
+        # student_id = None для расходов без привязки к студенту
         expense_payment = Payment(
-            student_id=1,  # Используем ID 1 как заглушку для расходов
+            student_id=None,  # Нет привязки к студенту для доп расходов
             mentor_id=None,  # Нет привязки к ментору
             amount=expense_amount,
             payment_date=expense_date,
@@ -162,6 +162,7 @@ def get_additional_expenses_for_period(start_date, end_date, session):
         Payment.payment_date <= end_date,
         Payment.status == "подтвержден",
         Payment.comment.ilike("%Доп расход%"),
+        Payment.student_id.is_(None),  # Только расходы без студента
         Payment.mentor_id.is_(None)  # Только расходы без ментора
     ).all()
     
