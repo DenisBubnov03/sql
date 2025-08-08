@@ -356,7 +356,6 @@ async def calculate_salary(update: Update, context):
     """
     try:
         date_range = update.message.text.strip()
-        logger.info(f"📅 Полученный диапазон дат: {date_range}")
 
         if " - " not in date_range:
             await update.message.reply_text(
@@ -438,6 +437,8 @@ async def calculate_salary(update: Update, context):
                 percent = 0.2
 
             payout = float(payment.amount) * percent
+            if mentor_id not in mentor_salaries:
+                mentor_salaries[mentor_id] = 0
             mentor_salaries[mentor_id] += payout
 
             line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., {int(percent*100)}%, {round(payout, 2)} руб."
@@ -463,6 +464,8 @@ async def calculate_salary(update: Update, context):
             # 🔹 Ментор 1 получает 10% за всех чужих студентов (только ручное тестирование)
             if payment.mentor_id != 1 and student.training_type.lower().strip() == "ручное тестирование":
                 bonus = float(payment.amount) * 0.1
+                if 1 not in mentor_salaries:
+                    mentor_salaries[1] = 0
                 mentor_salaries[1] += bonus
                 detailed_logs[1].append(
                     f"🔁 10% бонус ментору 1 за чужого ученика {student.fio} ({student.training_type}) | "
@@ -475,6 +478,8 @@ async def calculate_salary(update: Update, context):
                     and payment.mentor_id != 3
             ):
                 bonus = float(payment.amount) * 0.1
+                if 3 not in mentor_salaries:
+                    mentor_salaries[3] = 0
                 mentor_salaries[3] += bonus
                 detailed_logs[3].append(
                     f"🔁 10% бонус ментору 3 за чужого автотест ученика {student.fio} | "
@@ -491,6 +496,8 @@ async def calculate_salary(update: Update, context):
 
         if fullstack_students:
             bonus = len(fullstack_students) * 5000
+            if 1 not in mentor_salaries:
+                mentor_salaries[1] = 0
             mentor_salaries[1] += bonus
             for student in fullstack_students:
                 log_line = f"Бонус за фуллстек: {student.fio} (ID {student.id}) | +5000 руб."
@@ -511,6 +518,8 @@ async def calculate_salary(update: Update, context):
             # 🔹 Ментор 3 получает:
             if mentor_id == 3:
                 bonus = amount * 0.3
+                if 3 not in mentor_salaries:
+                    mentor_salaries[3] = 0
                 mentor_salaries[3] += bonus
                 detailed_logs.setdefault(3, []).append(
                     f"💼 30% ментору 3 за своего фуллстек ученика {student.fio} | "
@@ -518,6 +527,8 @@ async def calculate_salary(update: Update, context):
                 )
             else:
                 bonus_3 = amount * 0.1
+                if 3 not in mentor_salaries:
+                    mentor_salaries[3] = 0
                 mentor_salaries[3] += bonus_3
                 detailed_logs.setdefault(3, []).append(
                     f"🔁 10% ментору 3 за чужого фуллстек ученика {student.fio} | "
@@ -525,6 +536,8 @@ async def calculate_salary(update: Update, context):
                 )
 
                 bonus_other = amount * 0.2
+                if mentor_id not in mentor_salaries:
+                    mentor_salaries[mentor_id] = 0
                 mentor_salaries[mentor_id] += bonus_other
                 detailed_logs.setdefault(mentor_id, []).append(
                     f"💼 20% ментору {mentor_id} за фуллстек ученика {student.fio} | "
@@ -542,6 +555,8 @@ async def calculate_salary(update: Update, context):
         for payment in premium_payments:
             bonus_amount = float(payment.amount)
             mentor_id = payment.mentor_id
+            if mentor_id not in mentor_salaries:
+                mentor_salaries[mentor_id] = 0
             mentor_salaries[mentor_id] += bonus_amount
 
             detailed_logs.setdefault(mentor_id, []).append(
@@ -553,6 +568,9 @@ async def calculate_salary(update: Update, context):
         all_consultants = session.query(CareerConsultant).filter(CareerConsultant.is_active == True).all()
         
         for consultant in all_consultants:
+            salary = 0
+            total_commission = 0
+            
             # Получаем всех студентов, закрепленных за консультантом
             students = session.query(Student).filter(Student.career_consultant_id == consultant.id).all()
             student_ids = [student.id for student in students]
@@ -561,13 +579,15 @@ async def calculate_salary(update: Update, context):
                 continue
             
             # Получаем все подтвержденные платежи с комментарием "Комиссия" за период
-            commission_payments = session.query(Payment).filter(
+            all_student_payments = session.query(Payment).filter(
                 Payment.student_id.in_(student_ids),
                 Payment.payment_date >= start_date,
                 Payment.payment_date <= end_date,
-                Payment.status == "подтвержден",
-                Payment.comment.ilike("%комисси%")
+                Payment.status == "подтвержден"
             ).all()
+            
+            # Фильтруем по комиссии
+            commission_payments = [p for p in all_student_payments if "комисси" in p.comment.lower()]
             
             # 10% от суммы комиссий
             total_commission = sum(float(p.amount) for p in commission_payments)
@@ -600,6 +620,11 @@ async def calculate_salary(update: Update, context):
                     for log in logs:
                         logger.info(f"— {log}")
                     logger.info(f"Итог: {round(mentor_salaries[mentor_id], 2)} руб.")
+                else:
+                    logger.info(f"\n📘 Ментор ID {mentor_id}:")
+                    for log in logs:
+                        logger.info(f"— {log}")
+                    logger.info(f"Итог: {round(mentor_salaries.get(mentor_id, 0), 2)} руб.")
 
         # Вычисляем общий бюджет на зарплаты (включая карьерных консультантов)
         total_mentor_salaries = sum(mentor_salaries.values())
@@ -645,6 +670,8 @@ async def calculate_salary(update: Update, context):
         return "WAIT_FOR_SALARY_DATES"
     except Exception as e:
         logger.error(f"❌ Неожиданная ошибка при расчете зарплаты: {e}")
+        logger.error(f"❌ Тип ошибки: {type(e).__name__}")
+        logger.error(f"❌ Детали ошибки: {str(e)}")
         await update.message.reply_text(f"❌ Произошла ошибка при расчете зарплаты: {str(e)}")
         return "WAIT_FOR_SALARY_DATES"
 

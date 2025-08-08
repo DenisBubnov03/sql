@@ -4,13 +4,15 @@ import tracemalloc
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 
 from bot.handlers.career_consultant_handlers import  show_career_consultant_statistics, \
-    show_assign_student_menu, handle_student_selection, handle_assignment_confirmation, CONFIRM_ASSIGNMENT, SELECT_STUDENT
+    show_assign_student_menu, handle_student_selection, handle_assignment_confirmation, CONFIRM_ASSIGNMENT, SELECT_STUDENT, \
+    career_consultant_start, exit_career_consultant_menu
 from commands.mentor_bonus_commands import start_bonus_process, handle_mentor_tg, handle_bonus_amount
 from commands.start_commands import start, exit_to_main_menu
-from commands.career_consultant_commands import add_career_consultant_handler, list_career_consultants
+from commands.career_consultant_commands import add_career_consultant_handler
 from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
     CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
-    EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, WAIT_FOR_NEW_VALUE
+    EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, WAIT_FOR_NEW_VALUE, \
+    CONFIRM_ASSIGNMENT
 from commands.student_commands import (
     edit_student, edit_student_field, handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
@@ -167,15 +169,14 @@ def main():
         fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)],
     )
     
-    # Обработчик карьерных консультантов с исправленными настройками
+    # Обработчик карьерных консультантов
     career_consultant_handler = ConversationHandler(
-        entry_points=[],
+        entry_points=[MessageHandler(filters.Regex("^🔗 Закрепить КК$"), show_assign_student_menu)],
         states={
-            SELECT_STUDENT: [CallbackQueryHandler(handle_student_selection)],
-            CONFIRM_ASSIGNMENT: [CallbackQueryHandler(handle_assignment_confirmation)],
+            SELECT_STUDENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_student_selection)],
+            CONFIRM_ASSIGNMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_assignment_confirmation)],
         },
-        fallbacks=[],
-        per_message=True,  # Добавляем этот параметр для исправления предупреждения
+        fallbacks=[MessageHandler(filters.Regex("^🔙 Назад$"), exit_to_main_menu)],
     )
     
     application.add_handler(contract_signing_handler)
@@ -183,13 +184,14 @@ def main():
     application.add_handler(expense_handler)
     
     # Обработчики карьерных консультантов
-    application.add_handler(MessageHandler(filters.Regex("^🔗 Закрепить КК$"), show_assign_student_menu))
     application.add_handler(MessageHandler(filters.Regex("^📊 Моя статистика$"), show_career_consultant_statistics))
+    application.add_handler(MessageHandler(filters.Regex("^💼 Карьерный консультант$"), career_consultant_start))
+    application.add_handler(MessageHandler(filters.Regex("^🔙 Назад$"), exit_career_consultant_menu))
     application.add_handler(career_consultant_handler)
     
     # Обработчики управления карьерными консультантами
     application.add_handler(add_career_consultant_handler)
-    application.add_handler(MessageHandler(filters.Regex("^📋 Список КК$"), list_career_consultants))
+    application.add_handler(MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu))
     
     # Регистрация обработчиков
     application.add_handler(salary_handler)

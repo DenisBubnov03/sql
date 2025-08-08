@@ -6,8 +6,7 @@ def get_career_consultant_main_keyboard():
     return ReplyKeyboardMarkup(
         [
             ["🔗 Закрепить КК"],
-            ["📊 Моя статистика"],
-            ["🔙 Главное меню"]
+            ["📊 Моя статистика"]
         ],
         one_time_keyboard=True,
         resize_keyboard=True

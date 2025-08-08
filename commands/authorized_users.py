@@ -4,18 +4,12 @@ AUTHORIZED_USERS = os.getenv("AUTHORIZED_USERS")
 NOT_ADMINS = os.getenv("NOT_ADMINS")
 
 AUTHORIZED_USERS = [
-    1257163820,
+1257163820,
     325531224,
     402854743,
     7807939544
 ]
 NOT_ADMINS = [257886520, 461785798, 7807939544]
-
-# Список карьерных консультантов (КК)
-CAREER_CONSULTANTS = [
-    # Добавьте сюда ID карьерных консультантов
-    # Например: 123456789,
-]
 
 # import os
 # AUTHORIZED_USERS = os.getenv("AUTHORIZED_USERS")
