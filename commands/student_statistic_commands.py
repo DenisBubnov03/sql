@@ -197,7 +197,7 @@ async def handle_period_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # Вспомогательная функция, принимающая объекты date
-def calc_total_salaries_for_dates(start_date, end_date, session) -> float:
+def calc_total_salaries_for_dates(start_date, end_date, session) -> tuple:
     from data_base.models import Payment, Student, CareerConsultant
 
     mentor_salaries = {}
@@ -305,11 +305,11 @@ def calc_total_salaries_for_dates(start_date, end_date, session) -> float:
         salary = float(commission_payments) * 0.1
         career_consultant_salaries[consultant.id] = round(salary, 2)
 
-    # Добавляем зарплаты карьерных консультантов к общему фонду
+    # Вычисляем общую зарплату менторов (исключая карьерных консультантов)
+    total_mentor_salary = sum(mentor_salaries.values())
     total_career_consultant_salary = sum(career_consultant_salaries.values())
-    mentor_salaries['career_consultants'] = total_career_consultant_salary
 
-    return round(sum(mentor_salaries.values()), 2)
+    return (round(total_mentor_salary, 2), round(total_career_consultant_salary, 2))
 
 
 async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -377,7 +377,8 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
             )
 
         # где-то в вашем хэндлере, после расчёта всех чисел
-        total_salaries = calc_total_salaries_for_dates(start_date, end_date, session)
+        mentor_salaries, career_consultant_salaries = calc_total_salaries_for_dates(start_date, end_date, session)
+        total_salaries = mentor_salaries + career_consultant_salaries
         
         # Получаем доп расходы за период
         additional_expenses = get_additional_expenses_for_period(start_date, end_date, session)
@@ -390,6 +391,8 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
             f"📚 Общая стоимость обучения: {int(total_cost):,} руб.\n"
             f"➕ Общая сумма доплат: {int(additional_payments):,} руб.\n"
             f"💸 Общая сумма комиссии: {int(additional_commission):,} руб.\n"
+            f"👥 Зарплаты менторов: {int(mentor_salaries):,} руб.\n"
+            f"👥 Зарплаты КК: {int(career_consultant_salaries):,} руб.\n"
             f"👥 Всего на зарплаты: {int(total_salaries):,} руб.\n"
             f"💵 Оборот: {int(total_paid):,} руб.\n"
             f"💸 Доп расходы: {int(additional_expenses):,} руб.\n"

@@ -142,6 +142,8 @@ def main():
         fallbacks=[MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu)]
     )
 
+
+
     bonus_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Премия куратору$"), start_bonus_process)],
         states={

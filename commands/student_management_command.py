@@ -637,11 +637,10 @@ async def calculate_salary(update: Update, context):
         context.user_data['total_career_consultant_salaries'] = total_career_consultant_salaries
         
         # Формируем отчет
-        salary_report = f"📊 Расчёт зарплат за {start_date_str} - {end_date_str}\n"
-        salary_report += f"💸 Всего на зарплаты: {int(total_salaries):,} руб.\n\n"
+        salary_report = f"📊 Расчёт зарплат за {start_date_str} - {end_date_str}\n\n"
         
         # Отчет по менторам
-        salary_report += "👨‍🏫 Менторы:\n"
+        salary_report += "👨‍🏫 Зарплата менторов:\n"
         for mentor in all_mentors.values():
             salary = round(mentor_salaries.get(mentor.id, 0), 2)
             if salary > 0:
@@ -649,19 +648,21 @@ async def calculate_salary(update: Update, context):
             else:
                 salary_report += f"❌ {mentor.full_name} ({mentor.telegram}): У ментора нет платежей за этот период\n"
         
+        salary_report += f"📈 Итого менторов: {int(total_mentor_salaries):,} руб.\n\n"
+        
         # Отчет по карьерным консультантам
         if career_consultant_salaries:
-            salary_report += "\n💼 Карьерные консультанты:\n"
+            salary_report += "💼 Зарплата карьерных консультантов:\n"
             for consultant in all_consultants:
                 salary = career_consultant_salaries.get(consultant.id, 0)
                 if salary > 0:
                     salary_report += f"💰 {consultant.full_name} ({consultant.telegram}): {salary} руб.\n"
                 else:
                     salary_report += f"❌ {consultant.full_name} ({consultant.telegram}): У консультанта нет комиссий за этот период\n"
+            
+            salary_report += f"📈 Итого КК: {int(total_career_consultant_salaries):,} руб.\n\n"
         
-        salary_report += f"\n📈 Итого:\n"
-        salary_report += f"👨‍🏫 Менторы: {int(total_mentor_salaries):,} руб.\n"
-        salary_report += f"💼 Карьерные консультанты: {int(total_career_consultant_salaries):,} руб.\n"
+        salary_report += f"💸 Общий итог: {int(total_salaries):,} руб.\n"
 
         await update.message.reply_text(salary_report)
         return await exit_to_main_menu(update, context)
