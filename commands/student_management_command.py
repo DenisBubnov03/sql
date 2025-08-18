@@ -594,8 +594,24 @@ async def calculate_salary(update: Update, context):
             salary = total_commission * 0.1
             career_consultant_salaries[consultant.id] = round(salary, 2)
             
-            # Логируем зарплату карьерного консультанта
-            if salary > 0:
+            # Подробное логирование каждого платежа комиссии
+            if commission_payments:
+                detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
+                    f"💼 Карьерный консультант {consultant.full_name} | "
+                    f"Комиссии: {total_commission} руб. | 10% = {salary} руб."
+                )
+                
+                # Логируем каждый платеж комиссии отдельно
+                for payment in commission_payments:
+                    student = session.query(Student).filter(Student.id == payment.student_id).first()
+                    if student:
+                        detailed_logs[f"cc_{consultant.id}"].append(
+                            f"  📄 Студент {student.fio} ({student.telegram}) | "
+                            f"Платеж: {payment.amount} руб. | "
+                            f"Дата: {payment.payment_date} | "
+                            f"Комментарий: {payment.comment}"
+                        )
+            elif salary > 0:
                 detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
                     f"💼 Карьерный консультант {consultant.full_name} | "
                     f"Комиссии: {total_commission} руб. | 10% = {salary} руб."

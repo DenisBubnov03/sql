@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from sqlalchemy import func
@@ -10,6 +11,8 @@ from data_base.db import session
 from data_base.models import Student, Payment
 from data_base.operations import get_general_statistics, get_students_by_period, get_students_by_training_type
 from commands.additional_expenses_commands import get_additional_expenses_for_period
+
+logger = logging.getLogger(__name__)
 
 
 async def show_statistics_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -293,17 +296,30 @@ def calc_total_salaries_for_dates(start_date, end_date, session) -> tuple:
             continue
         
         # Получаем все подтвержденные платежи с комментарием "Комиссия" за период
-        commission_payments = session.query(func.sum(Payment.amount)).filter(
+        commission_payments = session.query(Payment).filter(
             Payment.student_id.in_(student_ids),
             Payment.payment_date >= start_date,
             Payment.payment_date <= end_date,
             Payment.status == "подтвержден",
             Payment.comment.ilike("%комисси%")
-        ).scalar() or 0
+        ).all()
         
         # 10% от суммы комиссий
-        salary = float(commission_payments) * 0.1
+        total_commission = sum(float(p.amount) for p in commission_payments)
+        salary = total_commission * 0.1
         career_consultant_salaries[consultant.id] = round(salary, 2)
+        
+        # Подробное логирование для карьерных консультантов
+        if commission_payments:
+            logger.info(f"📘 Карьерный консультант: {consultant.full_name} ({consultant.telegram})")
+            logger.info(f"💼 Карьерный консультант {consultant.full_name} | Комиссии: {total_commission} руб. | 10% = {salary} руб.")
+            
+            # Логируем каждый платеж комиссии отдельно
+            for payment in commission_payments:
+                student = session.query(Student).filter(Student.id == payment.student_id).first()
+                if student:
+                    logger.info(f"  📄 Студент {student.fio} ({student.telegram}) | Платеж: {payment.amount} руб. | Дата: {payment.payment_date} | Комментарий: {payment.comment}")
+            logger.info(f"Итог: {salary} руб.")
 
     # Вычисляем общую зарплату менторов (исключая карьерных консультантов)
     total_mentor_salary = sum(mentor_salaries.values())
