@@ -78,39 +78,41 @@ async def handle_salary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return SALARY
 
     context.user_data["salary"] = int(salary_text)
-    await update.message.reply_text("Введите данные комиссии в формате: количество выплат, процент (например, 2, 50%):")
-    return COMMISSION
-
-
-async def handle_commission(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Обрабатывает ввод данных о комиссии.
-    """
-    commission_text = update.message.text.strip()
-    try:
-        payments, percentage = map(str.strip, commission_text.split(","))
-        if not payments.isdigit() or not percentage.endswith("%") or not percentage[:-1].isdigit():
-            raise ValueError("Некорректный формат комиссии.")
-
-        context.user_data["commission"] = f"{payments}, {percentage}"
-        student = context.user_data.get("student")
-
-        # Обновляем данные студента
+    
+    # Проверяем, есть ли уже комиссия у студента
+    student = context.user_data.get("student")
+    if student and student.commission:
+        # Если комиссия уже заполнена, используем её
+        context.user_data["commission"] = student.commission
+        await update.message.reply_text(f"Комиссия уже установлена: {student.commission}")
+        
+        # Обновляем данные студента без изменения комиссии
+        updates = {
+            "company": context.user_data["company_name"],
+            "salary": context.user_data["salary"]
+        }
+        update_student(student.id, updates)
+        
+        await update.message.reply_text("Данные успешно обновлены! Возвращаемся в главное меню...")
+        return await exit_to_main_menu(update, context)
+    else:
+        # Если комиссии нет, устанавливаем хардкод "2, 50%"
+        context.user_data["commission"] = "2, 50%"
+        await update.message.reply_text("Комиссия установлена автоматически: 2, 50%")
+        
+        # Обновляем данные студента с хардкодной комиссией
         updates = {
             "company": context.user_data["company_name"],
             "salary": context.user_data["salary"],
             "commission": context.user_data["commission"]
         }
         update_student(student.id, updates)
-
+        
         await update.message.reply_text("Данные успешно обновлены! Возвращаемся в главное меню...")
         return await exit_to_main_menu(update, context)
 
-    except ValueError:
-        await update.message.reply_text(
-            "Некорректный формат комиссии. Введите данные в формате: количество выплат, процент (например, 2, 50%)."
-        )
-        return COMMISSION
+
+
 
 
 async def handle_employment_date(update: Update, context: ContextTypes.DEFAULT_TYPE):

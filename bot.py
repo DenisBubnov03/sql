@@ -52,7 +52,7 @@ def main():
             SELECT_MENTOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mentor_selection)],
             TOTAL_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_total_payment)],
             PAID_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_paid_amount)],
-            COMMISSION: [MessageHandler(filters.TEXT, add_student_commission)],
+
         },
         fallbacks=[],
     )
