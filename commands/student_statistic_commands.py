@@ -312,14 +312,16 @@ def calc_total_salaries_for_dates(start_date, end_date, session) -> tuple:
         # Подробное логирование для карьерных консультантов
         if commission_payments:
             logger.info(f"📘 Карьерный консультант: {consultant.full_name} ({consultant.telegram})")
-            logger.info(f"💼 Карьерный консультант {consultant.full_name} | Комиссии: {total_commission} руб. | 10% = {salary} руб.")
+            # Расчет с учетом НДФЛ 6%
+            salary_with_tax = round(salary * 1.06, 2)
+            logger.info(f"💼 Карьерный консультант {consultant.full_name} | Комиссии: {total_commission} руб. | 10% = {salary} руб. (с НДФЛ {salary_with_tax})")
             
             # Логируем каждый платеж комиссии отдельно
             for payment in commission_payments:
                 student = session.query(Student).filter(Student.id == payment.student_id).first()
                 if student:
                     logger.info(f"  📄 Студент {student.fio} ({student.telegram}) | Платеж: {payment.amount} руб. | Дата: {payment.payment_date} | Комментарий: {payment.comment}")
-            logger.info(f"Итог: {salary} руб.")
+            logger.info(f"Итог: {salary} руб. (с НДФЛ {salary_with_tax})")
 
     # Вычисляем общую зарплату менторов (исключая карьерных консультантов)
     total_mentor_salary = sum(mentor_salaries.values())
@@ -402,14 +404,19 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
         # Чистая прибыль с учетом доп расходов
         net_profit = int(total_paid) - int(total_salaries) - int(additional_expenses)
         
+        # Расчет с учетом НДФЛ 6%
+        mentor_salaries_with_tax = round(mentor_salaries * 1.06, 2)
+        career_consultant_salaries_with_tax = round(career_consultant_salaries * 1.06, 2)
+        total_salaries_with_tax = round(total_salaries * 1.06, 2)
+        
         response += (
             f"\n💰 Оплачено за обучение: {int(payment_amount):,} руб.\n"
             f"📚 Общая стоимость обучения: {int(total_cost):,} руб.\n"
             f"➕ Общая сумма доплат: {int(additional_payments):,} руб.\n"
             f"💸 Общая сумма комиссии: {int(additional_commission):,} руб.\n"
-            f"👥 Зарплаты менторов: {int(mentor_salaries):,} руб.\n"
-            f"👥 Зарплаты КК: {int(career_consultant_salaries):,} руб.\n"
-            f"👥 Всего на зарплаты: {int(total_salaries):,} руб.\n"
+            f"👥 Зарплаты менторов: {int(mentor_salaries):,} руб. (с НДФЛ {int(mentor_salaries_with_tax):,})\n"
+            f"👥 Зарплаты КК: {int(career_consultant_salaries):,} руб. (с НДФЛ {int(career_consultant_salaries_with_tax):,})\n"
+            f"👥 Всего на зарплаты: {int(total_salaries):,} руб. (с НДФЛ {int(total_salaries_with_tax):,})\n"
             f"💵 Оборот: {int(total_paid):,} руб.\n"
             f"💸 Доп расходы: {int(additional_expenses):,} руб.\n"
             f"👥 Чистая прибыль: {net_profit:,} руб.\n"

@@ -12,7 +12,7 @@ from commands.career_consultant_commands import add_career_consultant_handler
 from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
     CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
     EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, WAIT_FOR_NEW_VALUE, \
-    CONFIRM_ASSIGNMENT
+    CONFIRM_ASSIGNMENT, WAIT_FOR_DETAILED_SALARY
 from commands.student_commands import (
     edit_student, edit_student_field, handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
@@ -21,6 +21,7 @@ from commands.student_commands import (
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
 from commands.student_management_command import *
+from commands.student_management_command import handle_detailed_salary_request
 from commands.student_notifications import check_call_notifications, check_payment_notifications, \
     check_all_notifications, show_notifications_menu
 from commands.student_selection import find_student, handle_multiple_students
@@ -137,7 +138,8 @@ def main():
     salary_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^📊 Рассчитать зарплату$"), request_salary_period)],
         states={
-            "WAIT_FOR_SALARY_DATES": [MessageHandler(filters.TEXT & ~filters.COMMAND, calculate_salary)]
+            "WAIT_FOR_SALARY_DATES": [MessageHandler(filters.TEXT & ~filters.COMMAND, calculate_salary)],
+            WAIT_FOR_DETAILED_SALARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_detailed_salary_request)]
         },
         fallbacks=[MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu)]
     )
