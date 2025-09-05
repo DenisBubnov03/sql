@@ -5,7 +5,7 @@ from sqlalchemy import select
 from commands.authorized_users import AUTHORIZED_USERS
 from commands.logger import custom_logger
 from commands.start_commands import exit_to_main_menu
-from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, COMMISSION, \
+from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, \
     SELECT_MENTOR, MAIN_MENU
 
 from telegram import Update, ReplyKeyboardMarkup
@@ -243,99 +243,6 @@ async def add_student_total_payment(update: Update, context: ContextTypes.DEFAUL
         return TOTAL_PAYMENT
 
 
-# Шаг добавления комиссии
-async def add_student_commission(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Завершение добавления студента с введением комиссии и записью платежа.
-    """
-    try:
-        commission_input = update.message.text
-        payments, percentage = map(str.strip, commission_input.split(","))
-        payments, percentage = int(payments), int(percentage.strip('%'))
-
-        if payments <= 0 or percentage <= 0:
-            raise ValueError("Комиссия должна быть положительным числом.")
-
-        context.user_data["commission"] = f"{payments}, {percentage}%"
-        mentor_id = context.user_data.get("mentor_id", 1)
-
-        # Обработка даты
-        from datetime import datetime
-        start_date_str = context.user_data["start_date"]
-        if isinstance(start_date_str, str):
-            try:
-                start_date = datetime.strptime(start_date_str, "%d.%m.%Y").date()
-            except Exception:
-                start_date = None
-        else:
-            start_date = start_date_str
-        student_id = add_student(
-            fio=context.user_data["fio"],
-            telegram=context.user_data["telegram"],
-            start_date=start_date,
-            training_type=context.user_data["course_type"],
-            total_cost=context.user_data["total_payment"],
-            payment_amount=context.user_data.get("paid_amount", 0),
-            fully_paid="Да" if context.user_data.get("paid_amount", 0) == context.user_data["total_payment"] else "Нет",
-            commission=context.user_data["commission"],
-            mentor_id=context.user_data.get("mentor_id"),
-            auto_mentor_id=context.user_data.get("auto_mentor_id")
-        )
-
-        if not student_id:
-            await update.message.reply_text("❌ Ошибка: студент не был создан.")
-            return ConversationHandler.END
-
-        context.user_data["id"] = student_id  # ✅ Теперь сохраняем `id`
-        print(f"✅ DEBUG: student_id сохранён в context: {context.user_data['id']}")
-
-        # ✅ Теперь записываем платёж
-        course_type = context.user_data.get("course_type")
-        mentor_id = context.user_data.get("mentor_id")
-        auto_mentor_id = context.user_data.get("auto_mentor_id")
-        if course_type == "Фуллстек":
-            payment_mentor_id = auto_mentor_id
-        else:
-            payment_mentor_id = mentor_id if mentor_id else auto_mentor_id
-        if payment_mentor_id is not None:
-            record_initial_payment(student_id, context.user_data.get("paid_amount", 0), payment_mentor_id)
-        else:
-            print(f"❌ DEBUG: Не выбран ни один ментор для платежа студента {student_id}")
-
-        # ✅ Получаем имена менторов
-        from data_base.db import session
-        from data_base.models import Mentor
-
-        mentor_id = context.user_data.get("mentor_id")
-        auto_mentor_id = context.user_data.get("auto_mentor_id")
-        mentor_name = None
-        auto_mentor_name = None
-        if mentor_id:
-            mentor = session.query(Mentor).filter(Mentor.id == mentor_id).first()
-            mentor_name = mentor.full_name if mentor else f"ID {mentor_id}"
-        if auto_mentor_id:
-            auto_mentor = session.query(Mentor).filter(Mentor.id == auto_mentor_id).first()
-            auto_mentor_name = auto_mentor.full_name if auto_mentor else f"ID {auto_mentor_id}"
-
-        # ✅ Финальное сообщение
-        msg = f"✅ Студент {context.user_data['fio']} добавлен!\n"
-        if mentor_name and auto_mentor_name:
-            msg += f"Ручной ментор: {mentor_name}\nАвто-ментор: {auto_mentor_name}"
-        elif mentor_name:
-            msg += f"Ручной ментор: {mentor_name}"
-        elif auto_mentor_name:
-            msg += f"Авто-ментор: {auto_mentor_name}"
-        else:
-            msg += "Ментор не выбран."
-
-        await update.message.reply_text(msg)
-
-        await exit_to_main_menu(update, context)  # ✅ Сначала выполняем меню
-        return ConversationHandler.END  # ✅ Завершаем процесс корректно
-
-    except ValueError:
-        await update.message.reply_text("❌ Введите корректные данные о комиссии.")
-        return COMMISSION
 
 
 
@@ -350,10 +257,82 @@ async def add_student_paid_amount(update: Update, context: ContextTypes.DEFAULT_
 
         if 0 <= paid_amount <= total_payment:
             context.user_data["paid_amount"] = paid_amount
-            await update.message.reply_text(
-                "Введите данные о комиссии (в формате: Количество выплат, Процент). Например: '2, 50%'",
+            # Хардкодим комиссию "2, 50%"
+            context.user_data["commission"] = "2, 50%"
+            
+            # Сразу создаем студента и записываем платеж
+            mentor_id = context.user_data.get("mentor_id", 1)
+
+            # Обработка даты
+            from datetime import datetime
+            start_date_str = context.user_data["start_date"]
+            if isinstance(start_date_str, str):
+                try:
+                    start_date = datetime.strptime(start_date_str, "%d.%m.%Y").date()
+                except Exception:
+                    start_date = None
+            else:
+                start_date = start_date_str
+                
+            student_id = add_student(
+                fio=context.user_data["fio"],
+                telegram=context.user_data["telegram"],
+                start_date=start_date,
+                training_type=context.user_data["course_type"],
+                total_cost=context.user_data["total_payment"],
+                payment_amount=context.user_data.get("paid_amount", 0),
+                fully_paid="Да" if context.user_data.get("paid_amount", 0) == context.user_data["total_payment"] else "Нет",
+                commission=context.user_data["commission"],
+                mentor_id=context.user_data.get("mentor_id"),
+                auto_mentor_id=context.user_data.get("auto_mentor_id")
             )
-            return COMMISSION
+
+            if not student_id:
+                await update.message.reply_text("❌ Ошибка: студент не был создан.")
+                return ConversationHandler.END
+
+            context.user_data["id"] = student_id
+
+            # Записываем платёж
+            course_type = context.user_data.get("course_type")
+            mentor_id = context.user_data.get("mentor_id")
+            auto_mentor_id = context.user_data.get("auto_mentor_id")
+            if course_type == "Фуллстек":
+                payment_mentor_id = auto_mentor_id
+            else:
+                payment_mentor_id = mentor_id if mentor_id else auto_mentor_id
+            if payment_mentor_id is not None:
+                record_initial_payment(student_id, context.user_data.get("paid_amount", 0), payment_mentor_id)
+
+            # Получаем имена менторов
+            from data_base.db import session
+            from data_base.models import Mentor
+
+            mentor_id = context.user_data.get("mentor_id")
+            auto_mentor_id = context.user_data.get("auto_mentor_id")
+            mentor_name = None
+            auto_mentor_name = None
+            if mentor_id:
+                mentor = session.query(Mentor).filter(Mentor.id == mentor_id).first()
+                mentor_name = mentor.full_name if mentor else f"ID {mentor_id}"
+            if auto_mentor_id:
+                auto_mentor = session.query(Mentor).filter(Mentor.id == auto_mentor_id).first()
+                auto_mentor_name = auto_mentor.full_name if auto_mentor else f"ID {auto_mentor_id}"
+
+            # Финальное сообщение
+            msg = f"✅ Студент {context.user_data['fio']} добавлен!\n"
+            if mentor_name and auto_mentor_name:
+                msg += f"Ручной ментор: {mentor_name}\nАвто-ментор: {auto_mentor_name}"
+            elif mentor_name:
+                msg += f"Ручной ментор: {mentor_name}"
+            elif auto_mentor_name:
+                msg += f"Авто-ментор: {auto_mentor_name}"
+            else:
+                msg += "Ментор не выбран."
+
+            await update.message.reply_text(msg)
+            await exit_to_main_menu(update, context)
+            return ConversationHandler.END
         else:
             await update.message.reply_text(
                 f"Сумма оплаты должна быть в пределах от 0 до {total_payment}. Попробуйте ещё раз."
