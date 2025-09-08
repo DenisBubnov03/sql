@@ -35,7 +35,7 @@ async def handle_bonus_amount(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         mentor_id = context.user_data["mentor_id"]
         new_payment = Payment(
-            student_id=0,
+            student_id=None,  # Премия не привязана к конкретному студенту
             mentor_id=mentor_id,
             amount=amount,
             payment_date=datetime.now().date(),
