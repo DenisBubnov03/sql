@@ -1039,6 +1039,16 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
         total_postpayment = round(total_commission, 2)
         tax_amount = round(salary * 0.06, 2)
 
+        # Вычисляем составляющие зарплаты (20% от сумм)
+        from_students = round(total_prepayment * 0.2, 2)  # с учеников (первоначальный + доплата)
+        from_offers = round(total_postpayment * 0.2, 2)   # с оффера (комиссия)
+        
+        # Добавляем разбивку зарплаты после итоговой зарплаты
+        report += f"📊 Составляющие зарплаты:\n"
+        report += f"| с учеников {from_students} руб. |\n"
+        report += f"| с оффера {from_offers} руб. |\n"
+        report += f"| налог {tax_amount} руб. |\n\n"
+
         # Показываем 20% от сумм
         prepayment_20_percent = round(total_prepayment * 0.2, 2)
         postpayment_20_percent = round(total_postpayment * 0.2, 2)
