@@ -1,5 +1,6 @@
 import json
 import asyncio
+import os
 from datetime import datetime, timedelta
 from sqlalchemy import desc
 from telegram import Bot
@@ -12,6 +13,7 @@ ADMIN_CHAT_ID = 325531224
 # ADMIN_CHAT_ID = 1257163820
 DEBT_DAYS_THRESHOLD = 30
 STATE_FILE = "prev_debtors.json"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 
 def get_current_debtors():
@@ -50,13 +52,13 @@ def save_current_debtors(debtors):
 
 
 async def notify_new_debtors(new_debtors):
-    bot = Bot(token="7581276969:AAFWv3w4Tj8inRWZIkR43Yfg-bYWTtPbIRU")
+    bot = Bot(token=TELEGRAM_TOKEN)
     message = "❗️ Новые должники:\n" + "\n".join(new_debtors)
     await bot.send_message(chat_id=ADMIN_CHAT_ID, text=message)
 
 async def notify_cron_job_completed():
     """Отправляет уведомление о выполнении cron job."""
-    bot = Bot(token="7581276969:AAFWv3w4Tj8inRWZIkR43Yfg-bYWTtPbIRU")
+    bot = Bot(token=TELEGRAM_TOKEN)
     message = "✅ Cron job выполнена: проверка должников"
     await bot.send_message(chat_id=1257163820, text=message)
 
