@@ -54,12 +54,11 @@ async def notify_new_debtors(new_debtors):
     message = "❗️ Новые должники:\n" + "\n".join(new_debtors)
     await bot.send_message(chat_id=ADMIN_CHAT_ID, text=message)
 
-#
-# async def notify_cron_job_completed():
-#     """Отправляет уведомление о выполнении cron job."""
-#     bot = Bot(token="7581276969:AAFWv3w4Tj8inRWZIkR43Yfg-bYWTtPbIRU")
-#     message = "✅ Cron job выполнена: проверка должников"
-#     await bot.send_message(chat_id=ADMIN_CHAT_ID, text=message)
+async def notify_cron_job_completed():
+    """Отправляет уведомление о выполнении cron job."""
+    bot = Bot(token="7581276969:AAFWv3w4Tj8inRWZIkR43Yfg-bYWTtPbIRU")
+    message = "✅ Cron job выполнена: проверка должников"
+    await bot.send_message(chat_id=1257163820, text=message)
 
 
 async def check_new_debtors():
