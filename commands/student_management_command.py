@@ -791,7 +791,7 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
         context.user_data["mentors_list"]["Не назначен"] = None
         
         await update.message.reply_text(
-            "Сначала выберите ментора для ручного направления (Ручное тестирование):",
+            "Выберите ручного ментора для фуллстек направления (Ручное тестирование):",
             reply_markup=ReplyKeyboardMarkup(
                 [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
                 one_time_keyboard=True
@@ -810,7 +810,7 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
         context.user_data["mentors_list"]["Не назначен"] = None
         
         await update.message.reply_text(
-            "Теперь выберите ментора для авто-направления (Автотестирование):",
+            "Теперь выберите авто ментора для фуллстек направления (Автотестирование):",
             reply_markup=ReplyKeyboardMarkup(
                 [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
                 one_time_keyboard=True
@@ -874,7 +874,7 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
             context.user_data["mentors_list"]["Не назначен"] = None
             
             await update.message.reply_text(
-                "Теперь выберите ментора для авто-направления (Автотестирование):",
+                "Теперь выберите авто ментора для фуллстек направления (Автотестирование):",
                 reply_markup=ReplyKeyboardMarkup(
                     [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
                     one_time_keyboard=True
@@ -884,7 +884,7 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
         else:
             # Сейчас выбираем авто-ментора
             context.user_data["auto_mentor_id"] = mentors_list[selected]
-            await update.message.reply_text("Оба ментора выбраны. Введите общую стоимость обучения:")
+            await update.message.reply_text("✅ Ручной и авто менторы выбраны для фуллстек направления. Введите общую стоимость обучения:")
             return TOTAL_PAYMENT
     elif course_type == "Автотестирование":
         context.user_data["auto_mentor_id"] = mentors_list[selected]
