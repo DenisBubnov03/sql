@@ -12,10 +12,48 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
 from data_base.db import session
-from data_base.models import Payment, Mentor, Student, CareerConsultant
+from data_base.models import Payment, Mentor, Student, CareerConsultant, FullstackTopicAssign
 from data_base.operations import  get_student_by_fio_or_telegram
 from student_management.student_management import add_student
+from commands.fullstack_salary_calculator import calculate_fullstack_salary
 logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
+
+def debug_fullstack_data():
+    """Отладочная функция для проверки данных фуллстеков"""
+    try:
+        # Проверяем фуллстек студентов
+        fullstack_students = session.query(Student).filter(Student.training_type == "Фуллстек").all()
+        logger.info(f"🔍 DEBUG: Всего фуллстек студентов: {len(fullstack_students)}")
+        
+        # Проверяем записи принятых тем
+        all_topics = session.query(FullstackTopicAssign).all()
+        logger.info(f"🔍 DEBUG: Всего записей принятых тем: {len(all_topics)}")
+        
+        # Проверяем ручные темы
+        manual_topics = session.query(FullstackTopicAssign).filter(
+            FullstackTopicAssign.topic_manual.isnot(None)
+        ).all()
+        logger.info(f"🔍 DEBUG: Всего ручных тем: {len(manual_topics)}")
+        
+        # Проверяем авто темы
+        auto_topics = session.query(FullstackTopicAssign).filter(
+            FullstackTopicAssign.topic_auto.isnot(None)
+        ).all()
+        logger.info(f"🔍 DEBUG: Всего авто тем: {len(auto_topics)}")
+        
+        # Показываем примеры данных
+        if manual_topics:
+            logger.info("🔍 DEBUG: Примеры ручных тем:")
+            for topic in manual_topics[:5]:  # Первые 5
+                logger.info(f"  • Студент {topic.student_id}, Ментор {topic.mentor_id}: {topic.topic_manual}")
+        
+        if auto_topics:
+            logger.info("🔍 DEBUG: Примеры авто тем:")
+            for topic in auto_topics[:5]:  # Первые 5
+                logger.info(f"  • Студент {topic.student_id}, Ментор {topic.mentor_id}: {topic.topic_auto}")
+                
+    except Exception as e:
+        logger.error(f"❌ Ошибка при отладке данных фуллстеков: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -516,63 +554,27 @@ async def calculate_salary(update: Update, context):
                     f"{payment.payment_date}, {payment.amount} руб. | +{round(bonus, 2)} руб."
                 )
 
-        # Фуллстек бонусы
-        fullstack_students = session.query(Student).filter(
-            Student.training_type == "Фуллстек",
-            Student.total_cost >= 50000,
-            Student.start_date >= start_date,
-            Student.start_date <= end_date
-        ).all()
-
-        if fullstack_students:
-            bonus = len(fullstack_students) * 5000
-            if 1 not in mentor_salaries:
-                mentor_salaries[1] = 0
-            mentor_salaries[1] += bonus
-            for student in fullstack_students:
-                log_line = f"Бонус за фуллстек: {student.fio} (ID {student.id}) | +5000 руб."
-                if 1 not in detailed_logs:
-                    detailed_logs[1] = []
-                detailed_logs[1].append(log_line)
-
-        # Fullstack доля для ментора 3
-        # 🔁 Новый расчёт по Фуллстек: распределение 30%/10%/20%
-        for payment in detailed_payments:
-            student = session.query(Student).filter(Student.id == payment.student_id).first()
-            if not student or student.training_type != "Фуллстек":
-                continue
-
-            amount = float(payment.amount)
-            mentor_id = payment.mentor_id
-
-            # 🔹 Ментор 3 получает:
-            if mentor_id == 3:
-                bonus = amount * 0.3
-                if 3 not in mentor_salaries:
-                    mentor_salaries[3] = 0
-                mentor_salaries[3] += bonus
-                detailed_logs.setdefault(3, []).append(
-                    f"💼 30% ментору 3 за своего фуллстек ученика {student.fio} | "
-                    f"{payment.payment_date}, {amount} руб. | +{round(bonus, 2)} руб."
-                )
-            else:
-                bonus_3 = amount * 0.1
-                if 3 not in mentor_salaries:
-                    mentor_salaries[3] = 0
-                mentor_salaries[3] += bonus_3
-                detailed_logs.setdefault(3, []).append(
-                    f"🔁 10% ментору 3 за чужого фуллстек ученика {student.fio} | "
-                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_3, 2)} руб."
-                )
-
-                bonus_other = amount * 0.2
-                if mentor_id not in mentor_salaries:
-                    mentor_salaries[mentor_id] = 0
-                mentor_salaries[mentor_id] += bonus_other
-                detailed_logs.setdefault(mentor_id, []).append(
-                    f"💼 20% ментору {mentor_id} за фуллстек ученика {student.fio} | "
-                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_other, 2)} руб."
-                )
+        # 💻 НОВАЯ СИСТЕМА РАСЧЕТА ЗП ДИРЕКТОРОВ НАПРАВЛЕНИЯ ЗА ФУЛЛСТЕК
+        logger.info("💻 Запускаем новую систему расчета ЗП директоров направления за фуллстек")
+        
+        # Отладочная информация
+        debug_fullstack_data()
+        
+        fullstack_salary_result = calculate_fullstack_salary(start_date, end_date)
+        
+        # Интегрируем ЗП директоров направления в общий расчет для каждого директора
+        for director_id, salary in fullstack_salary_result['salaries'].items():
+            if salary > 0:
+                if director_id not in mentor_salaries:
+                    mentor_salaries[director_id] = 0
+                mentor_salaries[director_id] += salary
+                
+                # Добавляем логи фуллстеков в общие логи директора
+                if director_id not in detailed_logs:
+                    detailed_logs[director_id] = []
+                detailed_logs[director_id].extend(fullstack_salary_result['logs'][director_id])
+        
+        logger.info(f"💻 Новая система фуллстеков: обработано {fullstack_salary_result['students_processed']} студентов")
 
         # 🎁 Учет премий (выплаты с комментарием "Премия")
         premium_payments = session.query(Payment).filter(

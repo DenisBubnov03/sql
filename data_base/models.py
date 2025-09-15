@@ -76,6 +76,28 @@ class Payment(Base):
         return f"<Payment(id={self.id}, student_id={self.student_id}, mentor_id={self.mentor_id}, amount={self.amount}, date={self.payment_date})>"
 
 
+class FullstackTopicAssign(Base):
+    """
+    Модель для отслеживания принятых тем по фуллстек курсу.
+    """
+    __tablename__ = "fullstack_topic_assignments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    mentor_id = Column(Integer, ForeignKey("mentors.id", ondelete="CASCADE"), nullable=False)  # ID директора направления (1 или 3)
+    topic_manual = Column(String(255), nullable=True)  # Название ручной темы
+    topic_auto = Column(String(255), nullable=True)    # Название авто темы
+    assigned_at = Column(Date, nullable=False)  # Дата принятия темы
+
+    # Отношения
+    student = relationship("Student")
+    mentor = relationship("Mentor")
+
+    def __repr__(self):
+        topic_info = f"manual: {self.topic_manual}" if self.topic_manual else f"auto: {self.topic_auto}"
+        return f"<FullstackTopicAssign(id={self.id}, student_id={self.student_id}, mentor_id={self.mentor_id}, {topic_info})>"
+
+
 Student.payments = relationship("Payment", back_populates="student", cascade="all, delete-orphan")
 Mentor.payments = relationship("Payment", back_populates="mentor", cascade="all, delete-orphan")
 
