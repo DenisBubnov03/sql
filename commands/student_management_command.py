@@ -563,7 +563,7 @@ async def calculate_salary(update: Update, context):
         fullstack_salary_result = calculate_fullstack_salary(start_date, end_date)
         
         # Интегрируем ЗП директоров направления в общий расчет для каждого директора
-        for director_id, salary in fullstack_salary_result['salaries'].items():
+        for director_id, salary in fullstack_salary_result['director_salaries'].items():
             if salary > 0:
                 if director_id not in mentor_salaries:
                     mentor_salaries[director_id] = 0
@@ -573,6 +573,18 @@ async def calculate_salary(update: Update, context):
                 if director_id not in detailed_logs:
                     detailed_logs[director_id] = []
                 detailed_logs[director_id].extend(fullstack_salary_result['logs'][director_id])
+        
+        # Интегрируем ЗП кураторов в общий расчет
+        for curator_id, salary in fullstack_salary_result['curator_salaries'].items():
+            if salary > 0:
+                if curator_id not in mentor_salaries:
+                    mentor_salaries[curator_id] = 0
+                mentor_salaries[curator_id] += salary
+                
+                # Добавляем логи кураторов
+                if curator_id not in detailed_logs:
+                    detailed_logs[curator_id] = []
+                detailed_logs[curator_id].append(f"💼 Куратор фуллстек: +{round(salary, 2)} руб.")
         
         logger.info(f"💻 Новая система фуллстеков: обработано {fullstack_salary_result['students_processed']} студентов")
 
