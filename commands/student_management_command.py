@@ -12,7 +12,7 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
 from data_base.db import session, debug_fullstack_data
-from data_base.models import Payment, Mentor, Student, CareerConsultant
+from data_base.models import Payment, Mentor, Student, CareerConsultant, FullstackTopicAssign
 from data_base.operations import  get_student_by_fio_or_telegram
 from student_management.student_management import add_student
 from commands.fullstack_salary_calculator import calculate_fullstack_salary
@@ -386,13 +386,6 @@ async def calculate_salary(update: Update, context):
     Рассчитывает зарплату менторов за указанный период.
     """
     try:
-        # Сбрасываем любые незавершенные транзакции
-        try:
-            session.rollback()
-            logger.info("✅ Транзакция сброшена в начале функции")
-        except Exception as e:
-            logger.warning(f"⚠️ Не удалось сбросить транзакцию: {e}")
-        
         date_range = update.message.text.strip()
 
         if " - " not in date_range:
@@ -423,12 +416,7 @@ async def calculate_salary(update: Update, context):
             return "WAIT_FOR_SALARY_DATES"
 
         logger.info(f"📊 Запрашиваем всех менторов...")
-        try:
-            all_mentors = {mentor.id: mentor for mentor in session.query(Mentor).all()}
-        except Exception as e:
-            logger.error(f"❌ Ошибка при запросе менторов: {e}")
-            session.rollback()
-            raise
+        all_mentors = {mentor.id: mentor for mentor in session.query(Mentor).all()}
 
         if not all_mentors:
             logger.warning("⚠️ ВНИМАНИЕ: mentors не загружены! Проверь БД или session.commit()")
@@ -439,17 +427,12 @@ async def calculate_salary(update: Update, context):
 
         # Выбираем платежи за период
         logger.info(f"📊 Выполняем запрос к payments...")
-        try:
-            payments = session.query(
-                Payment.mentor_id, func.sum(Payment.amount)
-            ).filter(
-                Payment.payment_date >= start_date,
-                Payment.payment_date <= end_date
-            ).group_by(Payment.mentor_id).all()
-        except Exception as e:
-            logger.error(f"❌ Ошибка при запросе платежей: {e}")
-            session.rollback()
-            raise
+        payments = session.query(
+            Payment.mentor_id, func.sum(Payment.amount)
+        ).filter(
+            Payment.payment_date >= start_date,
+            Payment.payment_date <= end_date
+        ).group_by(Payment.mentor_id).all()
 
         logger.info(f"📊 Найдено платежей: {len(payments)}")
 
@@ -459,17 +442,12 @@ async def calculate_salary(update: Update, context):
         # Подробный лог для каждого ментора
         detailed_logs = {}
 
-        try:
-            detailed_payments = session.query(Payment).filter(
-                Payment.payment_date >= start_date,
-                Payment.payment_date <= end_date,
-                Payment.status == "подтвержден",
-                ~Payment.comment.ilike("%преми%")  # исключаем премии из основного расчёта
-            ).all()
-        except Exception as e:
-            logger.error(f"❌ Ошибка при запросе детальных платежей: {e}")
-            session.rollback()
-            raise
+        detailed_payments = session.query(Payment).filter(
+            Payment.payment_date >= start_date,
+            Payment.payment_date <= end_date,
+            Payment.status == "подтвержден",
+            ~Payment.comment.ilike("%преми%")  # исключаем премии из основного расчёта
+        ).all()
 
         logger.info(f"📊 Найдено детальных платежей: {len(detailed_payments)}")
 
@@ -574,17 +552,12 @@ async def calculate_salary(update: Update, context):
         logger.info(f"💻 Новая система фуллстеков: обработано {fullstack_salary_result['students_processed']} студентов")
 
         # 🎁 Учет премий (выплаты с комментарием "Премия")
-        try:
-            premium_payments = session.query(Payment).filter(
-                Payment.payment_date >= start_date,
-                Payment.payment_date <= end_date,
-                Payment.status == "подтвержден",
-                Payment.comment.ilike("%преми%")  # ловим "Премия", "премия", "ПРЕМИЯ" и т.д.
-            ).all()
-        except Exception as e:
-            logger.error(f"❌ Ошибка при запросе премий: {e}")
-            session.rollback()
-            raise
+        premium_payments = session.query(Payment).filter(
+            Payment.payment_date >= start_date,
+            Payment.payment_date <= end_date,
+            Payment.status == "подтвержден",
+            Payment.comment.ilike("%преми%")  # ловим "Премия", "премия", "ПРЕМИЯ" и т.д.
+        ).all()
 
         for payment in premium_payments:
             bonus_amount = float(payment.amount)
@@ -759,14 +732,6 @@ async def calculate_salary(update: Update, context):
         logger.error(f"❌ Неожиданная ошибка при расчете зарплаты: {e}")
         logger.error(f"❌ Тип ошибки: {type(e).__name__}")
         logger.error(f"❌ Детали ошибки: {str(e)}")
-        
-        # Сбрасываем транзакцию при ошибке
-        try:
-            session.rollback()
-            logger.info("✅ Транзакция сброшена после ошибки")
-        except Exception as rollback_error:
-            logger.error(f"❌ Ошибка при сбросе транзакции: {rollback_error}")
-        
         await update.message.reply_text(f"❌ Произошла ошибка при расчете зарплаты: {str(e)}")
         return "WAIT_FOR_SALARY_DATES"
 
@@ -791,7 +756,7 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
         context.user_data["mentors_list"]["Не назначен"] = None
         
         await update.message.reply_text(
-            "Выберите ручного ментора для фуллстек направления (Ручное тестирование):",
+            "Сначала выберите ментора для ручного направления (Ручное тестирование):",
             reply_markup=ReplyKeyboardMarkup(
                 [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
                 one_time_keyboard=True
@@ -810,7 +775,7 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
         context.user_data["mentors_list"]["Не назначен"] = None
         
         await update.message.reply_text(
-            "Теперь выберите авто ментора для фуллстек направления (Автотестирование):",
+            "Теперь выберите ментора для авто-направления (Автотестирование):",
             reply_markup=ReplyKeyboardMarkup(
                 [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
                 one_time_keyboard=True
@@ -874,7 +839,7 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
             context.user_data["mentors_list"]["Не назначен"] = None
             
             await update.message.reply_text(
-                "Теперь выберите авто ментора для фуллстек направления (Автотестирование):",
+                "Теперь выберите ментора для авто-направления (Автотестирование):",
                 reply_markup=ReplyKeyboardMarkup(
                     [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
                     one_time_keyboard=True
@@ -884,7 +849,7 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
         else:
             # Сейчас выбираем авто-ментора
             context.user_data["auto_mentor_id"] = mentors_list[selected]
-            await update.message.reply_text("✅ Ручной и авто менторы выбраны для фуллстек направления. Введите общую стоимость обучения:")
+            await update.message.reply_text("Оба ментора выбраны. Введите общую стоимость обучения:")
             return TOTAL_PAYMENT
     elif course_type == "Автотестирование":
         context.user_data["auto_mentor_id"] = mentors_list[selected]
@@ -1064,66 +1029,22 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
         total_postpayment = round(total_commission, 2)
         tax_amount = round(salary * 0.06, 2)
 
-        # Правильно вычисляем составляющие зарплаты на основе реальной зарплаты
-        # Разбиваем итоговую зарплату на составляющие на основе логов
-        
-        from_students = 0.0
-        from_offers = 0.0
-        fullstack_salary = 0.0
-        bonus_salary = 0.0
-        
-        # Анализируем логи для правильного распределения зарплаты
-        if logs:
-            for log in logs:
-                log_lower = log.lower()
-                if "первоначальный" in log_lower or "доплата" in log_lower:
-                    # Извлекаем сумму из лога
-                    if "+" in log:
-                        amount_str = log.split("+")[-1].split("руб")[0].strip()
-                        try:
-                            from_students += float(amount_str)
-                        except:
-                            pass
-                elif "комисси" in log_lower:
-                    if "+" in log:
-                        amount_str = log.split("+")[-1].split("руб")[0].strip()
-                        try:
-                            from_offers += float(amount_str)
-                        except:
-                            pass
-                elif "авто директор принял" in log_lower or "ручной директор принял" in log_lower:
-                    if "+" in log:
-                        amount_str = log.split("+")[-1].split("руб")[0].strip()
-                        try:
-                            fullstack_salary += float(amount_str)
-                        except:
-                            pass
-                elif "бонус" in log_lower:
-                    if "+" in log:
-                        amount_str = log.split("+")[-1].split("руб")[0].strip()
-                        try:
-                            bonus_salary += float(amount_str)
-                        except:
-                            pass
-        
-        # Если не удалось разобрать логи, используем приблизительный расчет
-        if from_students == 0 and from_offers == 0:
-            # Берем 80% от зарплаты как "с учеников" и 20% как "с оффера"
-            from_students = round(salary * 0.8, 2)
-            from_offers = round(salary * 0.2, 2)
+        # Вычисляем составляющие зарплаты (20% от сумм)
+        from_students = round(total_prepayment * 0.2, 2)  # с учеников (первоначальный + доплата)
+        from_offers = round(total_postpayment * 0.2, 2)   # с оффера (комиссия)
         
         # Добавляем разбивку зарплаты после итоговой зарплаты
         report += f"📊 Составляющие зарплаты:\n"
-        report += f"| с учеников {round(from_students, 2)} руб. |\n"
-        report += f"| с оффера {round(from_offers, 2)} руб. |\n"
+        report += f"| с учеников {from_students} руб. |\n"
+        report += f"| с оффера {from_offers} руб. |\n"
         report += f"| налог {tax_amount} руб. |\n\n"
 
-        # Показываем детализацию
-        if fullstack_salary > 0:
-            report += f"Фуллстек модули: {round(fullstack_salary, 2)} руб.\n"
-        if bonus_salary > 0:
-            report += f"Бонусы за чужих студентов: {round(bonus_salary, 2)} руб.\n"
-        
+        # Показываем 20% от сумм
+        prepayment_20_percent = round(total_prepayment * 0.2, 2)
+        postpayment_20_percent = round(total_postpayment * 0.2, 2)
+
+        report += f"Предоплата (первоначальный + доплата): {prepayment_20_percent} руб. (20% от {total_prepayment} руб.)\n"
+        report += f"Постоплата (комиссия): {postpayment_20_percent} руб. (20% от {total_postpayment} руб.)\n"
         report += f"Налог 6% к уплате: {tax_amount} руб.\n\n"
 
         if logs:

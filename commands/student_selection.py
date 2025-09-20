@@ -53,7 +53,7 @@ async def find_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Что вы хотите отредактировать?",
         reply_markup=ReplyKeyboardMarkup(
             [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты", "Статус обучения", "Получил работу",
-              "Комиссия выплачено", "Удалить ученика"],
+              "Комиссия выплачено", "Куратор", "Удалить ученика"],
              ["Назад"]],
             one_time_keyboard=True
         )
