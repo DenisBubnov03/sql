@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from commands.logger import log_student_change
 from commands.start_commands import exit_to_main_menu
-from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM, WAIT_FOR_PAYMENT_DATE, SIGN_CONTRACT
+from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM, WAIT_FOR_PAYMENT_DATE, SIGN_CONTRACT, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR
 from commands.student_info_commands import calculate_commission
 from data_base.db import session
 from data_base.models import Student, Payment
@@ -86,6 +86,10 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data["employment_step"] = "company"
         await update.message.reply_text("Введите название компании:")
         return WAIT_FOR_NEW_VALUE
+
+    if field_to_edit == "Куратор":
+        # Обработка редактирования куратора
+        return await edit_curator(update, context)
 
     if field_to_edit in FIELD_MAPPING:
         context.user_data["field_to_edit"] = field_to_edit
@@ -560,3 +564,144 @@ async def smart_edit_student_field(update: Update, context: ContextTypes.DEFAULT
     else:
         await update.message.reply_text("Извините, у вас нет доступа.")
         return ConversationHandler.END
+
+
+async def edit_curator(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Редактирование куратора студента.
+    """
+    student = context.user_data.get("student")
+    
+    if not student:
+        await update.message.reply_text("❌ Студент не найден.")
+        return ConversationHandler.END
+    
+    # Определяем тип обучения и показываем соответствующие опции
+    if student.training_type == "Ручное тестирование":
+        await update.message.reply_text(
+            f"Редактирование ручного куратора для студента {student.fio}",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Изменить ручного куратора"], ["Главное меню"]],
+                one_time_keyboard=True
+            )
+        )
+        context.user_data["curator_type"] = "manual"
+        return SELECT_CURATOR_TYPE
+        
+    elif student.training_type == "Автотестирование":
+        await update.message.reply_text(
+            f"Редактирование авто куратора для студента {student.fio}",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Изменить авто куратора"], ["Главное меню"]],
+                one_time_keyboard=True
+            )
+        )
+        context.user_data["curator_type"] = "auto"
+        return SELECT_CURATOR_TYPE
+        
+    elif student.training_type == "Фуллстек":
+        await update.message.reply_text(
+            f"Редактирование кураторов для фуллстек студента {student.fio}",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Изменить ручного куратора", "Изменить авто куратора"], ["Главное меню"]],
+                one_time_keyboard=True
+            )
+        )
+        return SELECT_CURATOR_TYPE
+    
+    else:
+        await update.message.reply_text("❌ Неизвестный тип обучения.")
+        return ConversationHandler.END
+
+
+async def handle_curator_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обработка выбора типа куратора для редактирования.
+    """
+    selected = update.message.text.strip()
+    
+    # Обработка кнопки "Главное меню"
+    if selected == "Главное меню":
+        return await exit_to_main_menu(update, context)
+    
+    student = context.user_data.get("student")
+    
+    if selected == "Изменить ручного куратора":
+        context.user_data["curator_type"] = "manual"
+        return await show_curator_mentors(update, context, "Ручное тестирование")
+    elif selected == "Изменить авто куратора":
+        context.user_data["curator_type"] = "auto"
+        return await show_curator_mentors(update, context, "Автотестирование")
+    else:
+        await update.message.reply_text("❌ Пожалуйста, выберите один из предложенных вариантов.")
+        return SELECT_CURATOR_TYPE
+
+
+async def show_curator_mentors(update: Update, context: ContextTypes.DEFAULT_TYPE, direction: str):
+    """
+    Показывает список менторов для выбора куратора.
+    """
+    from data_base.models import Mentor
+    
+    mentors = session.query(Mentor).filter(Mentor.direction == direction).all()
+    if not mentors:
+        await update.message.reply_text(f"❌ Нет менторов для направления {direction}.")
+        return ConversationHandler.END
+    
+    mentors_list = {m.full_name: m.id for m in mentors}
+    # Добавляем опцию "Не назначен"
+    mentors_list["Не назначен"] = None
+    
+    context.user_data["mentors_list"] = mentors_list
+    
+    await update.message.reply_text(
+        f"Выберите нового куратора для направления {direction}:",
+        reply_markup=ReplyKeyboardMarkup(
+            [[name] for name in mentors_list.keys()] + [["Главное меню"]],
+            one_time_keyboard=True
+        )
+    )
+    return SELECT_CURATOR_MENTOR
+
+
+async def handle_curator_mentor_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обработка выбора нового куратора.
+    """
+    selected = update.message.text.strip()
+    mentors_list = context.user_data.get("mentors_list", {})
+    
+    # Обработка кнопки "Главное меню"
+    if selected == "Главное меню":
+        return await exit_to_main_menu(update, context)
+    
+    if selected not in mentors_list:
+        await update.message.reply_text("❌ Пожалуйста, выберите одного из предложенных.")
+        return SELECT_CURATOR_MENTOR
+    
+    student = context.user_data.get("student")
+    curator_type = context.user_data.get("curator_type")
+    new_mentor_id = mentors_list[selected]
+    
+    # Обновляем куратора в базе данных
+    try:
+        if curator_type == "manual":
+            student.mentor_id = new_mentor_id
+        elif curator_type == "auto":
+            student.auto_mentor_id = new_mentor_id
+        
+        session.commit()
+        
+        mentor_name = selected if selected != "Не назначен" else "Не назначен"
+        await update.message.reply_text(
+            f"✅ Куратор успешно изменен!\n"
+            f"Студент: {student.fio}\n"
+            f"Новый куратор: {mentor_name}"
+        )
+        
+        # Возвращаемся в главное меню после успешного обновления
+        return await exit_to_main_menu(update, context)
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка при обновлении куратора: {str(e)}")
+        return await exit_to_main_menu(update, context)

@@ -11,49 +11,12 @@ from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMEN
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from data_base.db import session
+from data_base.db import session, debug_fullstack_data
 from data_base.models import Payment, Mentor, Student, CareerConsultant, FullstackTopicAssign
 from data_base.operations import  get_student_by_fio_or_telegram
 from student_management.student_management import add_student
 from commands.fullstack_salary_calculator import calculate_fullstack_salary
 logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
-
-def debug_fullstack_data():
-    """Отладочная функция для проверки данных фуллстеков"""
-    try:
-        # Проверяем фуллстек студентов
-        fullstack_students = session.query(Student).filter(Student.training_type == "Фуллстек").all()
-        logger.info(f"🔍 DEBUG: Всего фуллстек студентов: {len(fullstack_students)}")
-        
-        # Проверяем записи принятых тем
-        all_topics = session.query(FullstackTopicAssign).all()
-        logger.info(f"🔍 DEBUG: Всего записей принятых тем: {len(all_topics)}")
-        
-        # Проверяем ручные темы
-        manual_topics = session.query(FullstackTopicAssign).filter(
-            FullstackTopicAssign.topic_manual.isnot(None)
-        ).all()
-        logger.info(f"🔍 DEBUG: Всего ручных тем: {len(manual_topics)}")
-        
-        # Проверяем авто темы
-        auto_topics = session.query(FullstackTopicAssign).filter(
-            FullstackTopicAssign.topic_auto.isnot(None)
-        ).all()
-        logger.info(f"🔍 DEBUG: Всего авто тем: {len(auto_topics)}")
-        
-        # Показываем примеры данных
-        if manual_topics:
-            logger.info("🔍 DEBUG: Примеры ручных тем:")
-            for topic in manual_topics[:5]:  # Первые 5
-                logger.info(f"  • Студент {topic.student_id}, Ментор {topic.mentor_id}: {topic.topic_manual}")
-        
-        if auto_topics:
-            logger.info("🔍 DEBUG: Примеры авто тем:")
-            for topic in auto_topics[:5]:  # Первые 5
-                logger.info(f"  • Студент {topic.student_id}, Ментор {topic.mentor_id}: {topic.topic_auto}")
-                
-    except Exception as e:
-        logger.error(f"❌ Ошибка при отладке данных фуллстеков: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -789,10 +752,13 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text("❌ Нет менторов для выбранного направления.")
             return COURSE_TYPE
         context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
+        # Добавляем опцию "Не назначен"
+        context.user_data["mentors_list"]["Не назначен"] = None
+        
         await update.message.reply_text(
             "Сначала выберите ментора для ручного направления (Ручное тестирование):",
             reply_markup=ReplyKeyboardMarkup(
-                [[name] for name in context.user_data["mentors_list"].keys()],
+                [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
                 one_time_keyboard=True
             )
         )
@@ -805,10 +771,13 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text("❌ Нет менторов для автотестирования.")
             return COURSE_TYPE
         context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
+        # Добавляем опцию "Не назначен"
+        context.user_data["mentors_list"]["Не назначен"] = None
+        
         await update.message.reply_text(
             "Теперь выберите ментора для авто-направления (Автотестирование):",
             reply_markup=ReplyKeyboardMarkup(
-                [[name] for name in context.user_data["mentors_list"].keys()],
+                [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
                 one_time_keyboard=True
             )
         )
@@ -845,6 +814,10 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
     selected = update.message.text.strip()
     mentors_list = context.user_data.get("mentors_list", {})
 
+    # Обработка кнопки "Главное меню"
+    if selected == "Главное меню":
+        return await exit_to_main_menu(update, context)
+
     if selected not in mentors_list:
         await update.message.reply_text("❌ Пожалуйста, выберите одного из предложенных.")
         return SELECT_MENTOR
@@ -862,10 +835,13 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
                 await update.message.reply_text("❌ Нет менторов для автотестирования.")
                 return COURSE_TYPE
             context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
+            # Добавляем опцию "Не назначен"
+            context.user_data["mentors_list"]["Не назначен"] = None
+            
             await update.message.reply_text(
                 "Теперь выберите ментора для авто-направления (Автотестирование):",
                 reply_markup=ReplyKeyboardMarkup(
-                    [[name] for name in context.user_data["mentors_list"].keys()],
+                    [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
                     one_time_keyboard=True
                 )
             )

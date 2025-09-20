@@ -12,11 +12,11 @@ from commands.career_consultant_commands import add_career_consultant_handler
 from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
     CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
     EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, WAIT_FOR_NEW_VALUE, \
-    CONFIRM_ASSIGNMENT, WAIT_FOR_DETAILED_SALARY
+    CONFIRM_ASSIGNMENT, WAIT_FOR_DETAILED_SALARY, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR
 from commands.student_commands import (
     edit_student, edit_student_field, handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
-    smart_edit_student, smart_edit_student_field
+    smart_edit_student, smart_edit_student_field, handle_curator_type_selection, handle_curator_mentor_selection
 )
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
@@ -84,6 +84,14 @@ def main():
             WAIT_FOR_PAYMENT_DATE: [  # Добавляем этот шаг
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_date),
                 MessageHandler(filters.Regex("^Сегодня$"), handle_payment_date),  # Кнопка "Сегодня"
+            ],
+            SELECT_CURATOR_TYPE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_curator_type_selection),
+                MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
+            ],
+            SELECT_CURATOR_MENTOR: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_curator_mentor_selection),
+                MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
             ]
         },
         fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)]
