@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean, ForeignKey, Numeric, Text
+from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean, ForeignKey, Numeric, Text, TIMESTAMP
 from sqlalchemy.orm import relationship
 
 
@@ -79,3 +79,12 @@ class Payment(Base):
 Student.payments = relationship("Payment", back_populates="student", cascade="all, delete-orphan")
 Mentor.payments = relationship("Payment", back_populates="mentor", cascade="all, delete-orphan")
 
+class FullstackTopicAssign(Base):
+    __tablename__ = "fullstack_topic_assignments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    mentor_id = Column(Integer, ForeignKey("mentors.id"), nullable=False)
+    topic_manual = Column(String(255), nullable=True)
+    topic_auto = Column(String(255), nullable=True)
+    assigned_at = Column(TIMESTAMP, nullable=False)
