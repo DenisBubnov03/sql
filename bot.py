@@ -9,7 +9,7 @@ from bot.handlers.career_consultant_handlers import  show_career_consultant_stat
 from commands.mentor_bonus_commands import start_bonus_process, handle_mentor_tg, handle_bonus_amount
 from commands.start_commands import start, exit_to_main_menu
 from commands.career_consultant_commands import add_career_consultant_handler
-from commands.states import NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
+from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
     CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
     EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, WAIT_FOR_NEW_VALUE, \
     CONFIRM_ASSIGNMENT, WAIT_FOR_DETAILED_SALARY, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR
@@ -23,7 +23,7 @@ from commands.student_info_commands import *
 from commands.student_management_command import *
 from commands.student_management_command import handle_detailed_salary_request
 from commands.student_notifications import check_call_notifications, check_payment_notifications, \
-    check_all_notifications, show_notifications_menu
+    check_prepayment_notifications, check_postpayment_notifications, check_all_notifications, show_notifications_menu
 from commands.student_selection import find_student, handle_multiple_students
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
@@ -134,6 +134,11 @@ def main():
                 MessageHandler(filters.Regex("^По звонкам$"), check_call_notifications),
                 MessageHandler(filters.Regex("^По оплате$"), check_payment_notifications),
                 MessageHandler(filters.Regex("^Все$"), check_all_notifications),
+            ],
+            PAYMENT_NOTIFICATION_MENU: [
+                MessageHandler(filters.Regex("^По предоплате$"), check_prepayment_notifications),
+                MessageHandler(filters.Regex("^По постоплате$"), check_postpayment_notifications),
+                MessageHandler(filters.Regex("^🔙 Назад$"), show_notifications_menu),
             ],
             "NOTIFICATION_PROCESS": [
                 MessageHandler(filters.Regex("^🔙 Назад$"), show_notifications_menu),

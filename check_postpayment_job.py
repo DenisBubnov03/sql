@@ -199,6 +199,8 @@ async def notify_new_issues(new_issues):
             logger.info(f"    💰 Комиссия: {issue['paid_commission']}/{issue['total_commission']} руб.")
             if issue['last_commission_date']:
                 logger.info(f"    💳 Последний платеж комиссии: {issue['last_commission_date']}")
+            elif issue['paid_commission'] and issue['paid_commission'] > 0:
+                logger.info(f"    💳 Есть выплаты, но нет платежей комиссии")
             else:
                 logger.info(f"    💳 Платежей комиссии: НЕТ")
             for reason in issue['reasons']:
@@ -222,6 +224,8 @@ async def notify_new_issues(new_issues):
             
             if issue['last_commission_date']:
                 message += f"   💳 Последний платеж комиссии: {issue['last_commission_date']}\n"
+            elif issue['paid_commission'] and issue['paid_commission'] > 0:
+                message += f"   💳 Есть выплаты, но нет платежей комиссии\n"
             else:
                 message += f"   💳 Платежей комиссии: НЕТ\n"
             
@@ -238,6 +242,56 @@ async def notify_new_issues(new_issues):
         logger.error(f"❌ Ошибка при отправке уведомления в Telegram: {e}")
     except Exception as e:
         logger.error(f"❌ Неожиданная ошибка при отправке уведомления: {e}")
+
+async def notify_resolved_issues(resolved_issues):
+    """
+    Уведомляет о решенных проблемах с постоплатой.
+    """
+    if not resolved_issues:
+        return
+    
+    logger.info(f"✅ Решено проблем с постоплатой: {len(resolved_issues)}")
+    logger.info("📋 Решенные проблемы:")
+    for issue in resolved_issues:
+        logger.info(f"  • {issue['student_name']} ({issue['student_telegram']})")
+        logger.info(f"    💰 Комиссия: {issue['paid_commission']}/{issue['total_commission']} руб.")
+        if issue['last_commission_date']:
+            logger.info(f"    💳 Последний платеж комиссии: {issue['last_commission_date']}")
+        elif issue['paid_commission'] and issue['paid_commission'] > 0:
+            logger.info(f"    💳 Есть выплаты, но нет платежей комиссии")
+        else:
+            logger.info(f"    💳 Платежей комиссии: НЕТ")
+        for reason in issue['reasons']:
+            logger.info(f"    ✅ {reason}")
+    
+    try:
+        bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        message = "✅ Решены проблемы с постоплатой:\n\n"
+        
+        for i, issue in enumerate(resolved_issues, 1):
+            message += f"{i}. {issue['student_name']} ({issue['student_telegram']})\n"
+            message += f"   💰 Комиссия: {issue['paid_commission']}/{issue['total_commission']} руб.\n"
+            
+            if issue['employment_date']:
+                message += f"   📅 Устроился: {issue['employment_date']}\n"
+            
+            if issue['last_commission_date']:
+                message += f"   💳 Последний платеж комиссии: {issue['last_commission_date']}\n"
+            elif issue['paid_commission'] and issue['paid_commission'] > 0:
+                message += f"   💳 Есть выплаты, но нет платежей комиссии\n"
+            else:
+                message += f"   💳 Платежей комиссии: НЕТ\n"
+            
+            message += f"   ✅ Проблемы решены:\n"
+            for reason in issue['reasons']:
+                message += f"      • {reason}\n"
+            
+            message += "\n"
+        
+        await bot.send_message(chat_id=ADMIN_CHAT_ID, text=message)
+        logger.info(f"📤 Отправлено уведомление о {len(resolved_issues)} решенных проблемах")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при отправке уведомления о решенных проблемах: {e}")
 
 async def notify_cron_job_completed():
     """Отправляет уведомление о выполнении cron job."""
@@ -268,14 +322,26 @@ async def check_new_issues():
         if student_id not in previous_dict:
             new_issues.append(issue)
     
+    # Находим решенные проблемы (были в списке, но больше нет)
+    resolved_issues = []
+    for student_id, issue in previous_dict.items():
+        if student_id not in current_dict:
+            resolved_issues.append(issue)
+    
     # Уведомляем о новых проблемах
     if new_issues:
         await notify_new_issues(new_issues)
+    
+    # Уведомляем о решенных проблемах
+    if resolved_issues:
+        await notify_resolved_issues(resolved_issues)
     
     # Сохраняем текущее состояние, если есть изменения
     if sorted(current_issues, key=lambda x: x['student_id']) != sorted(previous_issues, key=lambda x: x['student_id']):
         save_current_issues(current_issues)
         logger.info(f"📊 Состояние обновлено: {len(current_issues)} проблем")
+        if resolved_issues:
+            logger.info(f"✅ Решено проблем: {len(resolved_issues)}")
     
     # Отправляем уведомление о завершении
     await notify_cron_job_completed()
