@@ -11,11 +11,13 @@ from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMEN
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from data_base.db import session, debug_fullstack_data
-from data_base.models import Payment, Mentor, Student, CareerConsultant, FullstackTopicAssign
+from data_base.db import session
+# from data_base.db import debug_fullstack_data  # НОВАЯ СИСТЕМА ФУЛЛСТЕК
+from data_base.models import Payment, Mentor, Student, CareerConsultant
+# from data_base.models import FullstackTopicAssign  # НОВАЯ СИСТЕМА ФУЛЛСТЕК
 from data_base.operations import  get_student_by_fio_or_telegram
 from student_management.student_management import add_student
-from commands.fullstack_salary_calculator import calculate_fullstack_salary
+# from commands.fullstack_salary_calculator import calculate_fullstack_salary  # НОВАЯ СИСТЕМА ФУЛЛСТЕК
 logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
 
 logger = logging.getLogger(__name__)
@@ -518,25 +520,27 @@ async def calculate_salary(update: Update, context):
                 )
 
         # 💻 НОВАЯ СИСТЕМА РАСЧЕТА ЗП ДИРЕКТОРОВ НАПРАВЛЕНИЯ ЗА ФУЛЛСТЕК
+        # ВРЕМЕННО ОТКЛЮЧЕНО - используется старая система расчета
+        """
         logger.info("💻 Запускаем новую систему расчета ЗП директоров направления за фуллстек")
         
         # Отладочная информация
         debug_fullstack_data()
         
         fullstack_salary_result = calculate_fullstack_salary(start_date, end_date)
-        
+
         # Интегрируем ЗП директоров направления в общий расчет для каждого директора
         for director_id, salary in fullstack_salary_result['director_salaries'].items():
             if salary > 0:
                 if director_id not in mentor_salaries:
                     mentor_salaries[director_id] = 0
                 mentor_salaries[director_id] += salary
-                
+
                 # Добавляем логи фуллстеков в общие логи директора
                 if director_id not in detailed_logs:
                     detailed_logs[director_id] = []
                 detailed_logs[director_id].extend(fullstack_salary_result['logs'][director_id])
-        
+
         # Интегрируем ЗП кураторов в общий расчет
         for curator_id, salary in fullstack_salary_result['curator_salaries'].items():
             if salary > 0:
@@ -550,6 +554,7 @@ async def calculate_salary(update: Update, context):
                 detailed_logs[curator_id].append(f"💼 Куратор фуллстек: +{round(salary, 2)} руб.")
         
         logger.info(f"💻 Новая система фуллстеков: обработано {fullstack_salary_result['students_processed']} студентов")
+        """
 
         # 🎁 Учет премий (выплаты с комментарием "Премия")
         premium_payments = session.query(Payment).filter(
