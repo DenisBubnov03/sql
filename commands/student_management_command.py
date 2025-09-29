@@ -6,20 +6,19 @@ from commands.authorized_users import AUTHORIZED_USERS
 from commands.logger import custom_logger
 from commands.start_commands import exit_to_main_menu
 from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, \
-    SELECT_MENTOR, MAIN_MENU
+    SELECT_MENTOR, MAIN_MENU, IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE
 
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from data_base.db import session
-from data_base.models import Payment, Mentor, Student, CareerConsultant
-from data_base.operations import get_student_by_fio_or_telegram
+from data_base.db import session, debug_fullstack_data
+from data_base.models import Payment, Mentor, Student, CareerConsultant, FullstackTopicAssign
+from data_base.operations import  get_student_by_fio_or_telegram
 from student_management.student_management import add_student
-
+from commands.fullstack_salary_calculator import calculate_fullstack_salary
 logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
 
 logger = logging.getLogger(__name__)
-
 
 def split_long_message(text, max_length=4000):
     """
@@ -27,15 +26,15 @@ def split_long_message(text, max_length=4000):
     """
     if len(text) <= max_length:
         return [text]
-
+    
     logger.info(f"Сообщение слишком длинное ({len(text)} символов), разбиваю на части...")
-
+    
     parts = []
     current_part = ""
-
+    
     # Разбиваем по строкам
     lines = text.split('\n')
-
+    
     for line in lines:
         # Если добавление строки превысит лимит
         if len(current_part) + len(line) + 1 > max_length:
@@ -65,13 +64,12 @@ def split_long_message(text, max_length=4000):
                     current_part = line + '\n'
         else:
             current_part += line + '\n'
-
+    
     if current_part.strip():
         parts.append(current_part.strip())
-
+    
     logger.info(f"Сообщение разбито на {len(parts)} частей")
     return parts
-
 
 # Добавление студента: шаг 1 - ввод ФИО
 async def add_student_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -98,7 +96,7 @@ async def add_student_fio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     # Если пользователь нажал "Главное меню"
     if update.message.text.strip() == "Главное меню":
-        return await exit_to_main_menu(update, context)
+            return await exit_to_main_menu(update, context)
 
     # Сохранение ФИО
     context.user_data["fio"] = update.message.text.strip()
@@ -168,6 +166,7 @@ async def add_student_telegram(update: Update, context: ContextTypes.DEFAULT_TYP
     return START_DATE
 
 
+
 # Добавление студента: шаг 4 - выбор типа обучения
 async def add_student_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -195,8 +194,6 @@ async def add_student_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Дата должна быть в формате ДД.ММ.ГГГГ или нажмите 'Сегодня'. Попробуйте ещё раз:"
         )
         return START_DATE
-
-
 async def handle_mentor_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected = update.message.text.strip()
     mentors_dict = context.user_data.get("mentors_list", {})
@@ -209,6 +206,7 @@ async def handle_mentor_choice(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data["mentor_id"] = mentor_id
     await update.message.reply_text("Введите общую стоимость обучения:")
     return TOTAL_PAYMENT
+
 
 
 # Добавление студента: шаг 5 - выбор стоимости обучения
@@ -246,6 +244,10 @@ async def add_student_total_payment(update: Update, context: ContextTypes.DEFAUL
         return TOTAL_PAYMENT
 
 
+
+
+
+
 async def add_student_paid_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Запрос данных о внесённой оплате.
@@ -258,81 +260,16 @@ async def add_student_paid_amount(update: Update, context: ContextTypes.DEFAULT_
             context.user_data["paid_amount"] = paid_amount
             # Хардкодим комиссию "2, 50%"
             context.user_data["commission"] = "2, 50%"
-
-            # Сразу создаем студента и записываем платеж
-            mentor_id = context.user_data.get("mentor_id", 1)
-
-            # Обработка даты
-            from datetime import datetime
-            start_date_str = context.user_data["start_date"]
-            if isinstance(start_date_str, str):
-                try:
-                    start_date = datetime.strptime(start_date_str, "%d.%m.%Y").date()
-                except Exception:
-                    start_date = None
-            else:
-                start_date = start_date_str
-
-            student_id = add_student(
-                fio=context.user_data["fio"],
-                telegram=context.user_data["telegram"],
-                start_date=start_date,
-                training_type=context.user_data["course_type"],
-                total_cost=context.user_data["total_payment"],
-                payment_amount=context.user_data.get("paid_amount", 0),
-                fully_paid="Да" if context.user_data.get("paid_amount", 0) == context.user_data[
-                    "total_payment"] else "Нет",
-                commission=context.user_data["commission"],
-                mentor_id=context.user_data.get("mentor_id"),
-                auto_mentor_id=context.user_data.get("auto_mentor_id")
+            
+            # Переходим к вопросу о рефералке
+            await update.message.reply_text(
+                "По реферальной ли системе пришел студент?",
+                reply_markup=ReplyKeyboardMarkup(
+                    [["Да", "Нет"]],
+                    one_time_keyboard=True
+                )
             )
-
-            if not student_id:
-                await update.message.reply_text("❌ Ошибка: студент не был создан.")
-                return ConversationHandler.END
-
-            context.user_data["id"] = student_id
-
-            # Записываем платёж
-            course_type = context.user_data.get("course_type")
-            mentor_id = context.user_data.get("mentor_id")
-            auto_mentor_id = context.user_data.get("auto_mentor_id")
-            if course_type == "Фуллстек":
-                payment_mentor_id = auto_mentor_id
-            else:
-                payment_mentor_id = mentor_id if mentor_id else auto_mentor_id
-            if payment_mentor_id is not None:
-                record_initial_payment(student_id, context.user_data.get("paid_amount", 0), payment_mentor_id)
-
-            # Получаем имена менторов
-            from data_base.db import session
-            from data_base.models import Mentor
-
-            mentor_id = context.user_data.get("mentor_id")
-            auto_mentor_id = context.user_data.get("auto_mentor_id")
-            mentor_name = None
-            auto_mentor_name = None
-            if mentor_id:
-                mentor = session.query(Mentor).filter(Mentor.id == mentor_id).first()
-                mentor_name = mentor.full_name if mentor else f"ID {mentor_id}"
-            if auto_mentor_id:
-                auto_mentor = session.query(Mentor).filter(Mentor.id == auto_mentor_id).first()
-                auto_mentor_name = auto_mentor.full_name if auto_mentor else f"ID {auto_mentor_id}"
-
-            # Финальное сообщение
-            msg = f"✅ Студент {context.user_data['fio']} добавлен!\n"
-            if mentor_name and auto_mentor_name:
-                msg += f"Ручной ментор: {mentor_name}\nАвто-ментор: {auto_mentor_name}"
-            elif mentor_name:
-                msg += f"Ручной ментор: {mentor_name}"
-            elif auto_mentor_name:
-                msg += f"Авто-ментор: {auto_mentor_name}"
-            else:
-                msg += "Ментор не выбран."
-
-            await update.message.reply_text(msg)
-            await exit_to_main_menu(update, context)
-            return ConversationHandler.END
+            return IS_REFERRAL
         else:
             await update.message.reply_text(
                 f"Сумма оплаты должна быть в пределах от 0 до {total_payment}. Попробуйте ещё раз."
@@ -342,6 +279,212 @@ async def add_student_paid_amount(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text("Введите корректное число. Попробуйте ещё раз.")
         return PAID_AMOUNT
 
+
+# Обработчик вопроса о рефералке
+async def add_student_is_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обработка вопроса о том, является ли студент реферальным.
+    """
+    response = update.message.text.strip()
+    
+    if response == "Да":
+        context.user_data["is_referral"] = True
+        await update.message.reply_text(
+            "Введите Telegram того, кто зарефералил студента:",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Главное меню"]],
+                one_time_keyboard=True
+            )
+        )
+        return REFERRER_TELEGRAM
+    elif response == "Нет":
+        context.user_data["is_referral"] = False
+        context.user_data["referrer_telegram"] = None
+        # Переходим к вопросу об источнике
+        await update.message.reply_text(
+            "Откуда пришел студент?",
+            reply_markup=ReplyKeyboardMarkup(
+                [["ОМ", "Ютуб", "Инстаграм"], ["Авито", "Сайт", "Через знакомых"], ["Пусто"]],
+                one_time_keyboard=True
+            )
+        )
+        return STUDENT_SOURCE
+    else:
+        await update.message.reply_text(
+            "Пожалуйста, выберите 'Да' или 'Нет'.",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Да", "Нет"]],
+                one_time_keyboard=True
+            )
+        )
+        return IS_REFERRAL
+
+
+# Обработчик ввода Telegram реферера
+async def add_student_referrer_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обработка ввода Telegram реферера.
+    """
+    referrer_telegram = update.message.text.strip()
+    
+    # Обработка кнопки "Главное меню"
+    if referrer_telegram == "Главное меню":
+        return await exit_to_main_menu(update, context)
+    
+    # Проверка корректности введенного Telegram
+    if not referrer_telegram.startswith("@") or len(referrer_telegram) <= 1:
+        await update.message.reply_text(
+            "Некорректный Telegram. Убедитесь, что он начинается с @. Попробуйте ещё раз.",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Главное меню"]],
+                one_time_keyboard=True
+            )
+        )
+        return REFERRER_TELEGRAM
+    
+    context.user_data["referrer_telegram"] = referrer_telegram
+    
+    # Переходим к вопросу об источнике
+    await update.message.reply_text(
+        "Откуда пришел студент?",
+        reply_markup=ReplyKeyboardMarkup(
+            [["ОМ", "Ютуб", "Инстаграм"], ["Авито", "Сайт", "Через знакомых"], ["Пусто"]],
+            one_time_keyboard=True
+        )
+    )
+    return STUDENT_SOURCE
+
+
+# Обработчик выбора источника
+async def add_student_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обработка выбора источника привлечения студента.
+    """
+    source = update.message.text.strip()
+    valid_sources = ["ОМ", "Ютуб", "Инстаграм", "Авито", "Сайт", "Через знакомых", "Пусто"]
+    
+    if source not in valid_sources:
+        await update.message.reply_text(
+            f"Пожалуйста, выберите один из предложенных вариантов: {', '.join(valid_sources)}",
+            reply_markup=ReplyKeyboardMarkup(
+                [["ОМ", "Ютуб", "Инстаграм"], ["Авито", "Сайт", "Через знакомых"], ["Пусто"]],
+                one_time_keyboard=True
+            )
+        )
+        return STUDENT_SOURCE
+    
+    context.user_data["source"] = source
+    
+    # Теперь создаем студента с мета-данными
+    return await create_student_with_meta(update, context)
+
+
+# Функция создания студента с мета-данными
+async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Создает студента и его мета-данные в базе данных.
+    """
+    try:
+        # Импорты
+        from datetime import datetime, date
+        from data_base.db import session
+        from data_base.models import StudentMeta, Mentor
+        
+        # Обработка даты
+        start_date_str = context.user_data["start_date"]
+        if isinstance(start_date_str, str):
+            try:
+                start_date = datetime.strptime(start_date_str, "%d.%m.%Y").date()
+            except Exception:
+                start_date = None
+        else:
+            start_date = start_date_str
+            
+        # Создаем студента
+        student_id = add_student(
+            fio=context.user_data["fio"],
+            telegram=context.user_data["telegram"],
+            start_date=start_date,
+            training_type=context.user_data["course_type"],
+            total_cost=context.user_data["total_payment"],
+            payment_amount=context.user_data.get("paid_amount", 0),
+            fully_paid="Да" if context.user_data.get("paid_amount", 0) == context.user_data["total_payment"] else "Нет",
+            commission=context.user_data["commission"],
+            mentor_id=context.user_data.get("mentor_id"),
+            auto_mentor_id=context.user_data.get("auto_mentor_id")
+        )
+
+        if not student_id:
+            await update.message.reply_text("❌ Ошибка: студент не был создан.")
+            return ConversationHandler.END
+
+        context.user_data["id"] = student_id
+
+        # Создаем мета-данные студента
+        
+        student_meta = StudentMeta(
+            student_id=student_id,
+            is_referral=context.user_data.get("is_referral", False),
+            referrer_telegram=context.user_data.get("referrer_telegram"),
+            source=context.user_data.get("source"),
+            created_at=date.today()
+        )
+        
+        session.add(student_meta)
+        session.commit()
+
+        # Записываем платёж
+        course_type = context.user_data.get("course_type")
+        mentor_id = context.user_data.get("mentor_id")
+        auto_mentor_id = context.user_data.get("auto_mentor_id")
+        if course_type == "Фуллстек":
+            payment_mentor_id = auto_mentor_id
+        else:
+            payment_mentor_id = mentor_id if mentor_id else auto_mentor_id
+        if payment_mentor_id is not None:
+            record_initial_payment(student_id, context.user_data.get("paid_amount", 0), payment_mentor_id)
+
+        # Получаем имена менторов
+
+        mentor_id = context.user_data.get("mentor_id")
+        auto_mentor_id = context.user_data.get("auto_mentor_id")
+        mentor_name = None
+        auto_mentor_name = None
+        if mentor_id:
+            mentor = session.query(Mentor).filter(Mentor.id == mentor_id).first()
+            mentor_name = mentor.full_name if mentor else f"ID {mentor_id}"
+        if auto_mentor_id:
+            auto_mentor = session.query(Mentor).filter(Mentor.id == auto_mentor_id).first()
+            auto_mentor_name = auto_mentor.full_name if auto_mentor else f"ID {auto_mentor_id}"
+
+        # Финальное сообщение
+        msg = f"✅ Студент {context.user_data['fio']} добавлен!\n"
+        if mentor_name and auto_mentor_name:
+            msg += f"Ручной ментор: {mentor_name}\nАвто-ментор: {auto_mentor_name}"
+        elif mentor_name:
+            msg += f"Ручной ментор: {mentor_name}"
+        elif auto_mentor_name:
+            msg += f"Авто-ментор: {auto_mentor_name}"
+        else:
+            msg += "Ментор не выбран."
+        
+        # Добавляем информацию о рефералке и источнике
+        if context.user_data.get("is_referral"):
+            msg += f"\n\n📋 Реферальная система: Да\n👤 Реферер: {context.user_data.get('referrer_telegram')}"
+        else:
+            msg += f"\n\n📋 Реферальная система: Нет"
+        
+        if context.user_data.get("source"):
+            msg += f"\n📊 Источник: {context.user_data.get('source')}"
+
+        await update.message.reply_text(msg)
+        await exit_to_main_menu(update, context)
+        return ConversationHandler.END
+        
+    except Exception as e:
+        logger.error(f"Ошибка при создании студента с мета-данными: {e}")
+        await update.message.reply_text("❌ Произошла ошибка при создании студента.")
+        return ConversationHandler.END
 
 def record_initial_payment(student_id, paid_amount, mentor_id):
     """
@@ -368,7 +511,6 @@ def record_initial_payment(student_id, paid_amount, mentor_id):
     except Exception as e:
         session.rollback()
         print(f"❌ DEBUG: Ошибка при записи платежа: {e}")
-
 
 async def request_salary_period(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -397,7 +539,7 @@ async def calculate_salary(update: Update, context):
             return "WAIT_FOR_SALARY_DATES"
 
         start_date_str, end_date_str = map(str.strip, date_range.split("-"))
-
+        
         try:
             start_date = datetime.strptime(start_date_str, "%d.%m.%Y").date()
             end_date = datetime.strptime(end_date_str, "%d.%m.%Y").date()
@@ -473,7 +615,7 @@ async def calculate_salary(update: Update, context):
                 mentor_salaries[mentor_id] = 0
             mentor_salaries[mentor_id] += payout
 
-            line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., {int(percent * 100)}%, {round(payout, 2)} руб."
+            line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., {int(percent*100)}%, {round(payout, 2)} руб."
 
             if mentor_id not in detailed_logs:
                 detailed_logs[mentor_id] = []
@@ -518,63 +660,39 @@ async def calculate_salary(update: Update, context):
                     f"{payment.payment_date}, {payment.amount} руб. | +{round(bonus, 2)} руб."
                 )
 
-        # Фуллстек бонусы
-        fullstack_students = session.query(Student).filter(
-            Student.training_type == "Фуллстек",
-            Student.total_cost >= 50000,
-            Student.start_date >= start_date,
-            Student.start_date <= end_date
-        ).all()
-
-        if fullstack_students:
-            bonus = len(fullstack_students) * 5000
-            if 1 not in mentor_salaries:
-                mentor_salaries[1] = 0
-            mentor_salaries[1] += bonus
-            for student in fullstack_students:
-                log_line = f"Бонус за фуллстек: {student.fio} (ID {student.id}) | +5000 руб."
-                if 1 not in detailed_logs:
-                    detailed_logs[1] = []
-                detailed_logs[1].append(log_line)
-
-        # Fullstack доля для ментора 3
-        # 🔁 Новый расчёт по Фуллстек: распределение 30%/10%/20%
-        for payment in detailed_payments:
-            student = session.query(Student).filter(Student.id == payment.student_id).first()
-            if not student or student.training_type != "Фуллстек":
-                continue
-
-            amount = float(payment.amount)
-            mentor_id = payment.mentor_id
-
-            # 🔹 Ментор 3 получает:
-            if mentor_id == 3:
-                bonus = amount * 0.3
-                if 3 not in mentor_salaries:
-                    mentor_salaries[3] = 0
-                mentor_salaries[3] += bonus
-                detailed_logs.setdefault(3, []).append(
-                    f"💼 30% ментору 3 за своего фуллстек ученика {student.fio} | "
-                    f"{payment.payment_date}, {amount} руб. | +{round(bonus, 2)} руб."
-                )
-            else:
-                bonus_3 = amount * 0.1
-                if 3 not in mentor_salaries:
-                    mentor_salaries[3] = 0
-                mentor_salaries[3] += bonus_3
-                detailed_logs.setdefault(3, []).append(
-                    f"🔁 10% ментору 3 за чужого фуллстек ученика {student.fio} | "
-                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_3, 2)} руб."
-                )
-
-                bonus_other = amount * 0.2
-                if mentor_id not in mentor_salaries:
-                    mentor_salaries[mentor_id] = 0
-                mentor_salaries[mentor_id] += bonus_other
-                detailed_logs.setdefault(mentor_id, []).append(
-                    f"💼 20% ментору {mentor_id} за фуллстек ученика {student.fio} | "
-                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_other, 2)} руб."
-                )
+        # 💻 НОВАЯ СИСТЕМА РАСЧЕТА ЗП ДИРЕКТОРОВ НАПРАВЛЕНИЯ ЗА ФУЛЛСТЕК
+        logger.info("💻 Запускаем новую систему расчета ЗП директоров направления за фуллстек")
+        
+        # Отладочная информация
+        debug_fullstack_data()
+        
+        fullstack_salary_result = calculate_fullstack_salary(start_date, end_date)
+        
+        # Интегрируем ЗП директоров направления в общий расчет для каждого директора
+        for director_id, salary in fullstack_salary_result['director_salaries'].items():
+            if salary > 0:
+                if director_id not in mentor_salaries:
+                    mentor_salaries[director_id] = 0
+                mentor_salaries[director_id] += salary
+                
+                # Добавляем логи фуллстеков в общие логи директора
+                if director_id not in detailed_logs:
+                    detailed_logs[director_id] = []
+                detailed_logs[director_id].extend(fullstack_salary_result['logs'][director_id])
+        
+        # Интегрируем ЗП кураторов в общий расчет
+        for curator_id, salary in fullstack_salary_result['curator_salaries'].items():
+            if salary > 0:
+                if curator_id not in mentor_salaries:
+                    mentor_salaries[curator_id] = 0
+                mentor_salaries[curator_id] += salary
+                
+                # Добавляем логи кураторов
+                if curator_id not in detailed_logs:
+                    detailed_logs[curator_id] = []
+                detailed_logs[curator_id].append(f"💼 Куратор фуллстек: +{round(salary, 2)} руб.")
+        
+        logger.info(f"💻 Новая система фуллстеков: обработано {fullstack_salary_result['students_processed']} студентов")
 
         # 🎁 Учет премий (выплаты с комментарием "Премия")
         premium_payments = session.query(Payment).filter(
@@ -598,18 +716,18 @@ async def calculate_salary(update: Update, context):
         # 💼 Расчет зарплат карьерных консультантов
         career_consultant_salaries = {}
         all_consultants = session.query(CareerConsultant).filter(CareerConsultant.is_active == True).all()
-
+        
         for consultant in all_consultants:
             salary = 0
             total_commission = 0
-
+            
             # Получаем всех студентов, закрепленных за консультантом
             students = session.query(Student).filter(Student.career_consultant_id == consultant.id).all()
             student_ids = [student.id for student in students]
-
+            
             if not student_ids:
                 continue
-
+            
             # Получаем все подтвержденные платежи с комментарием "Комиссия" за период
             all_student_payments = session.query(Payment).filter(
                 Payment.student_id.in_(student_ids),
@@ -617,22 +735,22 @@ async def calculate_salary(update: Update, context):
                 Payment.payment_date <= end_date,
                 Payment.status == "подтвержден"
             ).all()
-
+            
             # Фильтруем по комиссии
             commission_payments = [p for p in all_student_payments if "комисси" in p.comment.lower()]
-
+            
             # 10% от суммы комиссий
             total_commission = sum(float(p.amount) for p in commission_payments)
             salary = total_commission * 0.1
             career_consultant_salaries[consultant.id] = round(salary, 2)
-
+            
             # Подробное логирование каждого платежа комиссии
             if commission_payments:
                 detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
                     f"💼 Карьерный консультант {consultant.full_name} | "
                     f"Комиссии: {total_commission} руб. | 10% = {salary} руб."
                 )
-
+                
                 # Логируем каждый платеж комиссии отдельно
                 for payment in commission_payments:
                     student = session.query(Student).filter(Student.id == payment.student_id).first()
@@ -684,15 +802,15 @@ async def calculate_salary(update: Update, context):
         total_mentor_salaries = sum(mentor_salaries.values())
         total_career_consultant_salaries = sum(career_consultant_salaries.values())
         total_salaries = total_mentor_salaries + total_career_consultant_salaries
-
+        
         # Сохраняем для последующего использования
         context.user_data['total_salaries'] = total_salaries
         context.user_data['total_mentor_salaries'] = total_mentor_salaries
         context.user_data['total_career_consultant_salaries'] = total_career_consultant_salaries
-
+        
         # Формируем отчет
         salary_report = f"📊 Расчёт зарплат за {start_date_str} - {end_date_str}\n\n"
-
+        
         # Отчет по менторам
         salary_report += "👨‍🏫 Зарплата менторов:\n"
         for mentor in all_mentors.values():
@@ -703,11 +821,11 @@ async def calculate_salary(update: Update, context):
                 salary_report += f"💰 {mentor.full_name} ({mentor.telegram}): {salary} руб. (с НДФЛ {salary_with_tax})\n"
             else:
                 salary_report += f"❌ {mentor.full_name} ({mentor.telegram}): У ментора нет платежей за этот период\n"
-
+        
         # Итого менторов с НДФЛ
         total_mentor_salaries_with_tax = round(total_mentor_salaries * 1.06, 2)
         salary_report += f"📈 Итого менторов: {int(total_mentor_salaries):,} руб. (с НДФЛ {int(total_mentor_salaries_with_tax):,})\n\n"
-
+        
         # Отчет по карьерным консультантам
         if career_consultant_salaries:
             salary_report += "💼 Зарплата карьерных консультантов:\n"
@@ -719,18 +837,18 @@ async def calculate_salary(update: Update, context):
                     salary_report += f"💰 {consultant.full_name} ({consultant.telegram}): {salary} руб. (с НДФЛ {salary_with_tax})\n"
                 else:
                     salary_report += f"❌ {consultant.full_name} ({consultant.telegram}): У консультанта нет комиссий за этот период\n"
-
+            
             # Итого КК с НДФЛ
             total_career_consultant_salaries_with_tax = round(total_career_consultant_salaries * 1.06, 2)
             salary_report += f"📈 Итого КК: {int(total_career_consultant_salaries):,} руб. (с НДФЛ {int(total_career_consultant_salaries_with_tax):,})\n\n"
-
+        
         # Общий итог с НДФЛ
         total_salaries_with_tax = round(total_salaries * 1.06, 2)
         salary_report += f"💸 Общий итог: {int(total_salaries):,} руб. (с НДФЛ {int(total_salaries_with_tax):,})\n"
 
         # Добавляем кнопку для подробной информации
         salary_report += "\n🔍 Хотите увидеть подробное формирование зарплаты по каждому сотруднику?"
-
+        
         # Сохраняем данные для подробного отчета
         context.user_data['detailed_salary_data'] = {
             'mentor_salaries': mentor_salaries,
@@ -777,10 +895,13 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text("❌ Нет менторов для выбранного направления.")
             return COURSE_TYPE
         context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
+        # Добавляем опцию "Не назначен"
+        context.user_data["mentors_list"]["Не назначен"] = None
+        
         await update.message.reply_text(
             "Сначала выберите ментора для ручного направления (Ручное тестирование):",
             reply_markup=ReplyKeyboardMarkup(
-                [[name] for name in context.user_data["mentors_list"].keys()],
+                [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
                 one_time_keyboard=True
             )
         )
@@ -793,10 +914,13 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text("❌ Нет менторов для автотестирования.")
             return COURSE_TYPE
         context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
+        # Добавляем опцию "Не назначен"
+        context.user_data["mentors_list"]["Не назначен"] = None
+        
         await update.message.reply_text(
             "Теперь выберите ментора для авто-направления (Автотестирование):",
             reply_markup=ReplyKeyboardMarkup(
-                [[name] for name in context.user_data["mentors_list"].keys()],
+                [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
                 one_time_keyboard=True
             )
         )
@@ -829,10 +953,13 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
     )
     return SELECT_MENTOR
 
-
 async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected = update.message.text.strip()
     mentors_list = context.user_data.get("mentors_list", {})
+
+    # Обработка кнопки "Главное меню"
+    if selected == "Главное меню":
+        return await exit_to_main_menu(update, context)
 
     if selected not in mentors_list:
         await update.message.reply_text("❌ Пожалуйста, выберите одного из предложенных.")
@@ -851,10 +978,13 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
                 await update.message.reply_text("❌ Нет менторов для автотестирования.")
                 return COURSE_TYPE
             context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
+            # Добавляем опцию "Не назначен"
+            context.user_data["mentors_list"]["Не назначен"] = None
+            
             await update.message.reply_text(
                 "Теперь выберите ментора для авто-направления (Автотестирование):",
                 reply_markup=ReplyKeyboardMarkup(
-                    [[name] for name in context.user_data["mentors_list"].keys()],
+                    [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
                     one_time_keyboard=True
                 )
             )
@@ -875,48 +1005,47 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text("Введите общую стоимость обучения:")
         return TOTAL_PAYMENT
 
-
 async def handle_detailed_salary_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Обрабатывает запрос на подробную информацию о зарплатах.
     """
     user_choice = update.message.text.strip()
-
+    
     if user_choice == "Нет, достаточно":
         await update.message.reply_text(
             "Хорошо! Возвращаемся в главное меню.",
             reply_markup=ReplyKeyboardMarkup([["🔙 Главное меню"]], one_time_keyboard=True)
         )
         return await exit_to_main_menu(update, context)
-
+    
     elif user_choice == "Да, показать подробности":
         detailed_data = context.user_data.get('detailed_salary_data')
         if not detailed_data:
             await update.message.reply_text("❌ Ошибка: данные о зарплатах не найдены.")
             return await exit_to_main_menu(update, context)
-
+        
         await update.message.reply_text("📋 Формирую подробные отчеты по каждому сотруднику...")
-
+        
         # Отправляем подробные отчеты по менторам
         mentor_salaries = detailed_data['mentor_salaries']
         detailed_logs = detailed_data['detailed_logs']
         all_mentors = detailed_data['all_mentors']
-
+        
         logger.info(f"Начинаю отправку отчетов по {len(mentor_salaries)} менторам")
-
+        
         for mentor_id, salary in mentor_salaries.items():
             if salary > 0 and mentor_id in all_mentors:
                 try:
                     mentor = all_mentors[mentor_id]
                     logger.info(f"Формирую отчет для ментора {mentor.full_name}")
-
+                    
                     detailed_report = await generate_mentor_detailed_report(
-                        mentor, salary, detailed_logs.get(mentor_id, []),
+                        mentor, salary, detailed_logs.get(mentor_id, []), 
                         detailed_data['start_date'], detailed_data['end_date']
                     )
-
+                    
                     logger.info(f"Отчет для {mentor.full_name} сформирован, отправляю...")
-
+                    
                     # Разбиваем длинное сообщение на части
                     report_parts = split_long_message(detailed_report)
                     if len(report_parts) > 1:
@@ -927,35 +1056,35 @@ async def handle_detailed_salary_request(update: Update, context: ContextTypes.D
                             await asyncio.sleep(0.3)  # Небольшая задержка между частями
                     else:
                         await update.message.reply_text(detailed_report)
-
+                    
                     logger.info(f"Отчет для {mentor.full_name} отправлен")
-
+                    
                     # Небольшая задержка между отправкой отчетов
                     import asyncio
                     await asyncio.sleep(0.5)
-
+                    
                 except Exception as e:
                     logger.error(f"Ошибка при формировании отчета для ментора {mentor_id}: {e}")
                     await update.message.reply_text(f"❌ Ошибка при формировании отчета для ментора {mentor_id}: {e}")
-
+        
         # Отправляем подробные отчеты по карьерным консультантам
         career_consultant_salaries = detailed_data['career_consultant_salaries']
         all_consultants = detailed_data['all_consultants']
-
+        
         logger.info(f"Начинаю отправку отчетов по {len(career_consultant_salaries)} карьерным консультантам")
-
+        
         for consultant_id, salary in career_consultant_salaries.items():
             if salary > 0 and consultant_id in all_consultants:
                 try:
                     consultant = all_consultants[consultant_id]
                     logger.info(f"Формирую отчет для КК {consultant.full_name}")
-
+                    
                     detailed_report = await generate_consultant_detailed_report(
                         consultant, salary, detailed_data['start_date'], detailed_data['end_date']
                     )
-
+                    
                     logger.info(f"Отчет для КК {consultant.full_name} сформирован, отправляю...")
-
+                    
                     # Разбиваем длинное сообщение на части
                     report_parts = split_long_message(detailed_report)
                     if len(report_parts) > 1:
@@ -966,22 +1095,22 @@ async def handle_detailed_salary_request(update: Update, context: ContextTypes.D
                             await asyncio.sleep(0.3)  # Небольшая задержка между частями
                     else:
                         await update.message.reply_text(detailed_report)
-
+                    
                     logger.info(f"Отчет для КК {consultant.full_name} отправлен")
-
+                    
                     # Небольшая задержка между отправкой отчетов
                     await asyncio.sleep(0.5)
-
+                    
                 except Exception as e:
                     logger.error(f"Ошибка при формировании отчета для КК {consultant_id}: {e}")
                     await update.message.reply_text(f"❌ Ошибка при формировании отчета для КК {consultant_id}: {e}")
-
+        
         await update.message.reply_text(
             "✅ Подробные отчеты по всем сотрудникам отправлены!",
             reply_markup=ReplyKeyboardMarkup([["🔙 Главное меню"]], one_time_keyboard=True)
         )
         return await exit_to_main_menu(update, context)
-
+    
     else:
         await update.message.reply_text(
             "Пожалуйста, выберите один из вариантов: 'Да, показать подробности' или 'Нет, достаточно'",
@@ -998,17 +1127,17 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
     Генерирует подробный отчет по зарплате ментора.
     """
     logger.info(f"Начинаю формирование отчета для ментора {mentor.full_name}")
-
+    
     try:
         salary_with_tax = round(salary * 1.06, 2)
-
+        
         report = f"👨‍🏫 Подробный отчет по зарплате ментора\n"
         report += f"👤 {mentor.full_name} ({mentor.telegram})\n"
         report += f"📅 Период: {start_date} - {end_date}\n"
         report += f"💰 Итоговая зарплата: {salary} руб. (с НДФЛ {salary_with_tax})\n\n"
-
+        
         logger.info(f"Базовая информация для {mentor.full_name} добавлена")
-
+        
         # Подсчёт предоплаты и постоплаты за период
         try:
             period_start = datetime.strptime(start_date, "%d.%m.%Y").date()
@@ -1043,22 +1172,138 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
         total_postpayment = round(total_commission, 2)
         tax_amount = round(salary * 0.06, 2)
 
-        # Вычисляем составляющие зарплаты (20% от сумм)
-        from_students = round(total_prepayment * 0.2, 2)  # с учеников (первоначальный + доплата)
-        from_offers = round(total_postpayment * 0.2, 2)  # с оффера (комиссия)
-
+        # Парсим составляющие зарплаты из логов
+        from_students = 0.0
+        from_offers = 0.0
+        fullstack_salary = 0.0
+        bonus_salary = 0.0
+        
+        # Анализируем логи для извлечения реальных составляющих
+        for log in logs:
+            if "30%" in log and "руб." in log:
+                # Извлекаем сумму из лога
+                try:
+                    if "Автотестирование" in log:
+                        # Это платеж с 30% (ментор 3 + автотест)
+                        amount_str = log.split("30%, ")[1].split(" руб.")[0]
+                        amount = float(amount_str)
+                        from_students += amount
+                    elif "Комиссия" in log:
+                        # Это комиссия с 30%
+                        amount_str = log.split("30%, ")[1].split(" руб.")[0]
+                        amount = float(amount_str)
+                        from_offers += amount
+                    elif "фуллстек" in log.lower():
+                        # Это фуллстек платеж с 30%
+                        amount_str = log.split("30%, ")[1].split(" руб.")[0]
+                        amount = float(amount_str)
+                        fullstack_salary += amount
+                except:
+                    pass
+            elif "20%" in log and "руб." in log:
+                # Извлекаем сумму из лога
+                try:
+                    if "Автотестирование" in log or "Ручное тестирование" in log:
+                        # Это обычный платеж с 20%
+                        amount_str = log.split("20%, ")[1].split(" руб.")[0]
+                        amount = float(amount_str)
+                        from_students += amount
+                    elif "Комиссия" in log:
+                        # Это комиссия с 20%
+                        amount_str = log.split("20%, ")[1].split(" руб.")[0]
+                        amount = float(amount_str)
+                        from_offers += amount
+                except:
+                    pass
+            elif "10% бонус" in log or "10% ментору" in log:
+                # Это бонус
+                try:
+                    amount_str = log.split("+")[1].split(" руб.")[0]
+                    amount = float(amount_str)
+                    bonus_salary += amount
+                except:
+                    pass
+            elif "Куратор фуллстек" in log:
+                # Это фуллстек куратор
+                try:
+                    amount_str = log.split("+")[1].split(" руб.")[0]
+                    amount = float(amount_str)
+                    fullstack_salary += amount
+                except:
+                    pass
+            elif "10% бонус" in log and "фуллстек ученика" in log:
+                # Это бонус 10% за чужих фуллстек учеников
+                try:
+                    amount_str = log.split("+")[1].split(" руб.")[0]
+                    amount = float(amount_str)
+                    fullstack_salary += amount
+                except:
+                    pass
+            elif "Авто директор принял" in log or "Ручной директор принял" in log:
+                # Это фуллстек бонус
+                try:
+                    amount_str = log.split("ЗП: +")[1].split(" руб.")[0]
+                    amount = float(amount_str)
+                    fullstack_salary += amount
+                except:
+                    pass
+            elif "Комиссия от чужого ученика" in log or "Комиссия от своего ученика" in log:
+                # Это комиссия - извлекаем сумму из нового формата
+                try:
+                    if "30% = +" in log:
+                        amount_str = log.split("30% = +")[1].split(" руб.")[0]
+                        amount = float(amount_str)
+                        from_offers += amount
+                    elif "10% = +" in log:
+                        amount_str = log.split("10% = +")[1].split(" руб.")[0]
+                        amount = float(amount_str)
+                        from_offers += amount
+                except:
+                    pass
+        
+        # Дополнительная проверка для фуллстек платежей в формате "30% ментору 3 за своего фуллстек"
+        for log in logs:
+            if "30% ментору" in log and "фуллстек" in log.lower() and "руб." in log:
+                try:
+                    # Ищем сумму после "| +" и до " руб."
+                    if "| +" in log:
+                        amount_str = log.split("| +")[1].split(" руб.")[0]
+                        amount = float(amount_str)
+                        fullstack_salary += amount
+                except:
+                    pass
+            elif "10% ментору" in log and "фуллстек" in log.lower() and "руб." in log:
+                try:
+                    # Ищем сумму после "| +" и до " руб."
+                    if "| +" in log:
+                        amount_str = log.split("| +")[1].split(" руб.")[0]
+                        amount = float(amount_str)
+                        fullstack_salary += amount
+                except:
+                    pass
+        
+        # Если не удалось извлечь из логов, используем старый метод
+        if from_students == 0 and from_offers == 0:
+            from_students = round(total_prepayment * 0.2, 2)
+            from_offers = round(total_postpayment * 0.2, 2)
+        
         # Добавляем разбивку зарплаты после итоговой зарплаты
         report += f"📊 Составляющие зарплаты:\n"
         report += f"| с учеников {from_students} руб. |\n"
         report += f"| с оффера {from_offers} руб. |\n"
+        if fullstack_salary > 0:
+            report += f"| фуллстек {fullstack_salary} руб. |\n"
+        if bonus_salary > 0:
+            report += f"| бонусы {bonus_salary} руб. |\n"
         report += f"| налог {tax_amount} руб. |\n\n"
 
-        # Показываем 20% от сумм
-        prepayment_20_percent = round(total_prepayment * 0.2, 2)
-        postpayment_20_percent = round(total_postpayment * 0.2, 2)
-
-        report += f"Предоплата (первоначальный + доплата): {prepayment_20_percent} руб. (20% от {total_prepayment} руб.)\n"
-        report += f"Постоплата (комиссия): {postpayment_20_percent} руб. (20% от {total_postpayment} руб.)\n"
+        # Показываем детализацию
+        report += f"Предоплата (первоначальный + доплата): {from_students} руб. (от {total_prepayment} руб.)\n"
+        report += f"Постоплата (комиссия): {from_offers} руб. (от {total_postpayment} руб.)\n"
+        if fullstack_salary > 0:
+            report += f"Фуллстек бонусы: {fullstack_salary} руб.\n"
+        if bonus_salary > 0:
+            report += f"Бонусы за чужих студентов: {bonus_salary} руб.\n"
         report += f"Налог 6% к уплате: {tax_amount} руб.\n\n"
 
         if logs:
@@ -1069,10 +1314,10 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
                 report += f"• {clean_log}\n"
         else:
             report += "📋 Детализация выплат не найдена.\n"
-
+        
         logger.info(f"Отчет для {mentor.full_name} полностью сформирован")
         return report
-
+        
     except Exception as e:
         logger.error(f"Ошибка при формировании отчета для ментора {mentor.full_name}: {e}")
         return f"❌ Ошибка при формировании отчета: {e}"
@@ -1083,19 +1328,19 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
     Генерирует подробный отчет по зарплате карьерного консультанта.
     """
     logger.info(f"Начинаю формирование отчета для КК {consultant.full_name}")
-
+    
     salary_with_tax = round(salary * 1.06, 2)
-
+    
     report = f"💼 Подробный отчет по зарплате карьерного консультанта\n"
     report += f"👤 {consultant.full_name} ({consultant.telegram})\n"
     report += f"📅 Период: {start_date} - {end_date}\n"
     report += f"💰 Итоговая зарплата: {salary} руб. (с НДФЛ {salary_with_tax})\n\n"
-
+    
     logger.info(f"Базовая информация для КК {consultant.full_name} добавлена")
-
+    
     # Получаем детали по комиссиям
     from data_base.models import Payment, Student
-
+    
     commission_payments = session.query(Payment).filter(
         Payment.student_id.in_(
             session.query(Student.id).filter(Student.career_consultant_id == consultant.id)
@@ -1105,7 +1350,7 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
         Payment.status == "подтвержден",
         Payment.comment.ilike("%комисси%")
     ).all()
-
+    
     # Подсчёт предоплаты и постоплаты за период (для справки)
     try:
         period_start = datetime.strptime(start_date, "%d.%m.%Y").date()
@@ -1159,5 +1404,5 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
                 report += f"  📅 {payment.payment_date} | 💬 {payment.comment}\n"
     else:
         report += "📋 Детализация комиссий не найдена.\n"
-
+    
     return report

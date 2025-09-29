@@ -12,7 +12,8 @@ from commands.career_consultant_commands import add_career_consultant_handler
 from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
     CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
     EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, WAIT_FOR_NEW_VALUE, \
-    CONFIRM_ASSIGNMENT, WAIT_FOR_DETAILED_SALARY, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR
+    CONFIRM_ASSIGNMENT, WAIT_FOR_DETAILED_SALARY, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR, \
+    IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE
 from commands.student_commands import (
     edit_student, edit_student_field, handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
@@ -53,6 +54,9 @@ def main():
             SELECT_MENTOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mentor_selection)],
             TOTAL_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_total_payment)],
             PAID_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_paid_amount)],
+            IS_REFERRAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_is_referral)],
+            REFERRER_TELEGRAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_referrer_telegram)],
+            STUDENT_SOURCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_source)],
 
         },
         fallbacks=[],

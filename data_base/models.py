@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean, ForeignKey, Numeric, Text, TIMESTAMP
+from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean, ForeignKey, Numeric, Text
 from sqlalchemy.orm import relationship
 
 
@@ -76,15 +76,49 @@ class Payment(Base):
         return f"<Payment(id={self.id}, student_id={self.student_id}, mentor_id={self.mentor_id}, amount={self.amount}, date={self.payment_date})>"
 
 
-Student.payments = relationship("Payment", back_populates="student", cascade="all, delete-orphan")
-Mentor.payments = relationship("Payment", back_populates="mentor", cascade="all, delete-orphan")
-
 class FullstackTopicAssign(Base):
+    """
+    Модель для отслеживания принятых тем по фуллстек курсу.
+    """
     __tablename__ = "fullstack_topic_assignments"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
-    mentor_id = Column(Integer, ForeignKey("mentors.id"), nullable=False)
-    topic_manual = Column(String(255), nullable=True)
-    topic_auto = Column(String(255), nullable=True)
-    assigned_at = Column(TIMESTAMP, nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    mentor_id = Column(Integer, ForeignKey("mentors.id", ondelete="CASCADE"), nullable=False)  # ID директора направления (1 или 3)
+    topic_manual = Column(String(255), nullable=True)  # Название ручной темы
+    topic_auto = Column(String(255), nullable=True)    # Название авто темы
+    assigned_at = Column(Date, nullable=False)  # Дата принятия темы
+
+    # Отношения
+    student = relationship("Student")
+    mentor = relationship("Mentor")
+
+    def __repr__(self):
+        topic_info = f"manual: {self.topic_manual}" if self.topic_manual else f"auto: {self.topic_auto}"
+        return f"<FullstackTopicAssign(id={self.id}, student_id={self.student_id}, mentor_id={self.mentor_id}, {topic_info})>"
+
+
+class StudentMeta(Base):
+    """
+    Модель мета-данных студентов для реферальной системы и отслеживания источников.
+    """
+    __tablename__ = "student_meta"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    is_referral = Column(Boolean, default=False, server_default="false")
+    referrer_telegram = Column(String(50), nullable=True)
+    source = Column(String(50), nullable=True)  # ОМ, Ютуб, Инстаграм, Авито, Сайт, Через знакомых, пусто
+    created_at = Column(Date, nullable=True)
+
+    # Отношения
+    student = relationship("Student", back_populates="meta")
+
+    def __repr__(self):
+        return f"<StudentMeta(id={self.id}, student_id={self.student_id}, is_referral={self.is_referral}, source={self.source})>"
+
+
+Student.payments = relationship("Payment", back_populates="student", cascade="all, delete-orphan")
+Student.meta = relationship("StudentMeta", back_populates="student", cascade="all, delete-orphan", uselist=False)
+Mentor.payments = relationship("Payment", back_populates="mentor", cascade="all, delete-orphan")
+
