@@ -11,14 +11,20 @@ from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMEN
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from data_base.db import session, debug_fullstack_data
-from data_base.models import Payment, Mentor, Student, CareerConsultant, FullstackTopicAssign
-from data_base.operations import  get_student_by_fio_or_telegram
+from data_base.db import session
+from data_base.models import Payment, Mentor, Student, CareerConsultant
+from data_base.operations import get_student_by_fio_or_telegram
 from student_management.student_management import add_student
-from commands.fullstack_salary_calculator import calculate_fullstack_salary
+
+# Импорты
+from datetime import datetime, date
+from data_base.db import session
+from data_base.models import StudentMeta, Mentor
+
 logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
 
 logger = logging.getLogger(__name__)
+
 
 def split_long_message(text, max_length=4000):
     """
@@ -70,6 +76,7 @@ def split_long_message(text, max_length=4000):
     
     logger.info(f"Сообщение разбито на {len(parts)} частей")
     return parts
+
 
 # Добавление студента: шаг 1 - ввод ФИО
 async def add_student_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -166,7 +173,6 @@ async def add_student_telegram(update: Update, context: ContextTypes.DEFAULT_TYP
     return START_DATE
 
 
-
 # Добавление студента: шаг 4 - выбор типа обучения
 async def add_student_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -194,6 +200,8 @@ async def add_student_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Дата должна быть в формате ДД.ММ.ГГГГ или нажмите 'Сегодня'. Попробуйте ещё раз:"
         )
         return START_DATE
+
+
 async def handle_mentor_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected = update.message.text.strip()
     mentors_dict = context.user_data.get("mentors_list", {})
@@ -206,7 +214,6 @@ async def handle_mentor_choice(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data["mentor_id"] = mentor_id
     await update.message.reply_text("Введите общую стоимость обучения:")
     return TOTAL_PAYMENT
-
 
 
 # Добавление студента: шаг 5 - выбор стоимости обучения
@@ -242,10 +249,6 @@ async def add_student_total_payment(update: Update, context: ContextTypes.DEFAUL
     except ValueError:
         await update.message.reply_text("Введите корректное число. Попробуйте ещё раз.")
         return TOTAL_PAYMENT
-
-
-
-
 
 
 async def add_student_paid_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -385,11 +388,6 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
     Создает студента и его мета-данные в базе данных.
     """
     try:
-        # Импорты
-        from datetime import datetime, date
-        from data_base.db import session
-        from data_base.models import StudentMeta, Mentor
-        
         # Обработка даты
         start_date_str = context.user_data["start_date"]
         if isinstance(start_date_str, str):
@@ -399,7 +397,7 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
                 start_date = None
         else:
             start_date = start_date_str
-            
+                
         # Создаем студента
         student_id = add_student(
             fio=context.user_data["fio"],
@@ -421,7 +419,6 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
         context.user_data["id"] = student_id
 
         # Создаем мета-данные студента
-        
         student_meta = StudentMeta(
             student_id=student_id,
             is_referral=context.user_data.get("is_referral", False),
@@ -445,7 +442,6 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
             record_initial_payment(student_id, context.user_data.get("paid_amount", 0), payment_mentor_id)
 
         # Получаем имена менторов
-
         mentor_id = context.user_data.get("mentor_id")
         auto_mentor_id = context.user_data.get("auto_mentor_id")
         mentor_name = None
@@ -486,6 +482,7 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text("❌ Произошла ошибка при создании студента.")
         return ConversationHandler.END
 
+
 def record_initial_payment(student_id, paid_amount, mentor_id):
     """
     Записывает первоначальный платёж в `payments`.
@@ -511,6 +508,7 @@ def record_initial_payment(student_id, paid_amount, mentor_id):
     except Exception as e:
         session.rollback()
         print(f"❌ DEBUG: Ошибка при записи платежа: {e}")
+
 
 async def request_salary_period(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -615,7 +613,7 @@ async def calculate_salary(update: Update, context):
                 mentor_salaries[mentor_id] = 0
             mentor_salaries[mentor_id] += payout
 
-            line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., {int(percent*100)}%, {round(payout, 2)} руб."
+            line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., {int(percent * 100)}%, {round(payout, 2)} руб."
 
             if mentor_id not in detailed_logs:
                 detailed_logs[mentor_id] = []
@@ -660,39 +658,63 @@ async def calculate_salary(update: Update, context):
                     f"{payment.payment_date}, {payment.amount} руб. | +{round(bonus, 2)} руб."
                 )
 
-        # 💻 НОВАЯ СИСТЕМА РАСЧЕТА ЗП ДИРЕКТОРОВ НАПРАВЛЕНИЯ ЗА ФУЛЛСТЕК
-        logger.info("💻 Запускаем новую систему расчета ЗП директоров направления за фуллстек")
-        
-        # Отладочная информация
-        debug_fullstack_data()
-        
-        fullstack_salary_result = calculate_fullstack_salary(start_date, end_date)
-        
-        # Интегрируем ЗП директоров направления в общий расчет для каждого директора
-        for director_id, salary in fullstack_salary_result['director_salaries'].items():
-            if salary > 0:
-                if director_id not in mentor_salaries:
-                    mentor_salaries[director_id] = 0
-                mentor_salaries[director_id] += salary
-                
-                # Добавляем логи фуллстеков в общие логи директора
-                if director_id not in detailed_logs:
-                    detailed_logs[director_id] = []
-                detailed_logs[director_id].extend(fullstack_salary_result['logs'][director_id])
-        
-        # Интегрируем ЗП кураторов в общий расчет
-        for curator_id, salary in fullstack_salary_result['curator_salaries'].items():
-            if salary > 0:
-                if curator_id not in mentor_salaries:
-                    mentor_salaries[curator_id] = 0
-                mentor_salaries[curator_id] += salary
-                
-                # Добавляем логи кураторов
-                if curator_id not in detailed_logs:
-                    detailed_logs[curator_id] = []
-                detailed_logs[curator_id].append(f"💼 Куратор фуллстек: +{round(salary, 2)} руб.")
-        
-        logger.info(f"💻 Новая система фуллстеков: обработано {fullstack_salary_result['students_processed']} студентов")
+        # Фуллстек бонусы
+        fullstack_students = session.query(Student).filter(
+            Student.training_type == "Фуллстек",
+            Student.total_cost >= 50000,
+            Student.start_date >= start_date,
+            Student.start_date <= end_date
+        ).all()
+
+        if fullstack_students:
+            bonus = len(fullstack_students) * 5000
+            if 1 not in mentor_salaries:
+                mentor_salaries[1] = 0
+            mentor_salaries[1] += bonus
+            for student in fullstack_students:
+                log_line = f"Бонус за фуллстек: {student.fio} (ID {student.id}) | +5000 руб."
+                if 1 not in detailed_logs:
+                    detailed_logs[1] = []
+                detailed_logs[1].append(log_line)
+
+        # Fullstack доля для ментора 3
+        # 🔁 Новый расчёт по Фуллстек: распределение 30%/10%/20%
+        for payment in detailed_payments:
+            student = session.query(Student).filter(Student.id == payment.student_id).first()
+            if not student or student.training_type != "Фуллстек":
+                continue
+
+            amount = float(payment.amount)
+            mentor_id = payment.mentor_id
+
+            # 🔹 Ментор 3 получает:
+            if mentor_id == 3:
+                bonus = amount * 0.3
+                if 3 not in mentor_salaries:
+                    mentor_salaries[3] = 0
+                mentor_salaries[3] += bonus
+                detailed_logs.setdefault(3, []).append(
+                    f"💼 30% ментору 3 за своего фуллстек ученика {student.fio} | "
+                    f"{payment.payment_date}, {amount} руб. | +{round(bonus, 2)} руб."
+                )
+            else:
+                bonus_3 = amount * 0.1
+                if 3 not in mentor_salaries:
+                    mentor_salaries[3] = 0
+                mentor_salaries[3] += bonus_3
+                detailed_logs.setdefault(3, []).append(
+                    f"🔁 10% ментору 3 за чужого фуллстек ученика {student.fio} | "
+                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_3, 2)} руб."
+                )
+
+                bonus_other = amount * 0.2
+                if mentor_id not in mentor_salaries:
+                    mentor_salaries[mentor_id] = 0
+                mentor_salaries[mentor_id] += bonus_other
+                detailed_logs.setdefault(mentor_id, []).append(
+                    f"💼 20% ментору {mentor_id} за фуллстек ученика {student.fio} | "
+                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_other, 2)} руб."
+                )
 
         # 🎁 Учет премий (выплаты с комментарием "Премия")
         premium_payments = session.query(Payment).filter(
@@ -895,13 +917,10 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text("❌ Нет менторов для выбранного направления.")
             return COURSE_TYPE
         context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
-        # Добавляем опцию "Не назначен"
-        context.user_data["mentors_list"]["Не назначен"] = None
-        
         await update.message.reply_text(
             "Сначала выберите ментора для ручного направления (Ручное тестирование):",
             reply_markup=ReplyKeyboardMarkup(
-                [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
+                [[name] for name in context.user_data["mentors_list"].keys()],
                 one_time_keyboard=True
             )
         )
@@ -914,13 +933,10 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text("❌ Нет менторов для автотестирования.")
             return COURSE_TYPE
         context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
-        # Добавляем опцию "Не назначен"
-        context.user_data["mentors_list"]["Не назначен"] = None
-        
         await update.message.reply_text(
             "Теперь выберите ментора для авто-направления (Автотестирование):",
             reply_markup=ReplyKeyboardMarkup(
-                [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
+                [[name] for name in context.user_data["mentors_list"].keys()],
                 one_time_keyboard=True
             )
         )
@@ -953,13 +969,10 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
     )
     return SELECT_MENTOR
 
+
 async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected = update.message.text.strip()
     mentors_list = context.user_data.get("mentors_list", {})
-
-    # Обработка кнопки "Главное меню"
-    if selected == "Главное меню":
-        return await exit_to_main_menu(update, context)
 
     if selected not in mentors_list:
         await update.message.reply_text("❌ Пожалуйста, выберите одного из предложенных.")
@@ -978,13 +991,10 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
                 await update.message.reply_text("❌ Нет менторов для автотестирования.")
                 return COURSE_TYPE
             context.user_data["mentors_list"] = {m.full_name: m.id for m in mentors}
-            # Добавляем опцию "Не назначен"
-            context.user_data["mentors_list"]["Не назначен"] = None
-            
             await update.message.reply_text(
                 "Теперь выберите ментора для авто-направления (Автотестирование):",
                 reply_markup=ReplyKeyboardMarkup(
-                    [[name] for name in context.user_data["mentors_list"].keys()] + [["Главное меню"]],
+                    [[name] for name in context.user_data["mentors_list"].keys()],
                     one_time_keyboard=True
                 )
             )
@@ -1004,6 +1014,7 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
         context.user_data["auto_mentor_id"] = None
         await update.message.reply_text("Введите общую стоимость обучения:")
         return TOTAL_PAYMENT
+
 
 async def handle_detailed_salary_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -1172,138 +1183,22 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
         total_postpayment = round(total_commission, 2)
         tax_amount = round(salary * 0.06, 2)
 
-        # Парсим составляющие зарплаты из логов
-        from_students = 0.0
-        from_offers = 0.0
-        fullstack_salary = 0.0
-        bonus_salary = 0.0
-        
-        # Анализируем логи для извлечения реальных составляющих
-        for log in logs:
-            if "30%" in log and "руб." in log:
-                # Извлекаем сумму из лога
-                try:
-                    if "Автотестирование" in log:
-                        # Это платеж с 30% (ментор 3 + автотест)
-                        amount_str = log.split("30%, ")[1].split(" руб.")[0]
-                        amount = float(amount_str)
-                        from_students += amount
-                    elif "Комиссия" in log:
-                        # Это комиссия с 30%
-                        amount_str = log.split("30%, ")[1].split(" руб.")[0]
-                        amount = float(amount_str)
-                        from_offers += amount
-                    elif "фуллстек" in log.lower():
-                        # Это фуллстек платеж с 30%
-                        amount_str = log.split("30%, ")[1].split(" руб.")[0]
-                        amount = float(amount_str)
-                        fullstack_salary += amount
-                except:
-                    pass
-            elif "20%" in log and "руб." in log:
-                # Извлекаем сумму из лога
-                try:
-                    if "Автотестирование" in log or "Ручное тестирование" in log:
-                        # Это обычный платеж с 20%
-                        amount_str = log.split("20%, ")[1].split(" руб.")[0]
-                        amount = float(amount_str)
-                        from_students += amount
-                    elif "Комиссия" in log:
-                        # Это комиссия с 20%
-                        amount_str = log.split("20%, ")[1].split(" руб.")[0]
-                        amount = float(amount_str)
-                        from_offers += amount
-                except:
-                    pass
-            elif "10% бонус" in log or "10% ментору" in log:
-                # Это бонус
-                try:
-                    amount_str = log.split("+")[1].split(" руб.")[0]
-                    amount = float(amount_str)
-                    bonus_salary += amount
-                except:
-                    pass
-            elif "Куратор фуллстек" in log:
-                # Это фуллстек куратор
-                try:
-                    amount_str = log.split("+")[1].split(" руб.")[0]
-                    amount = float(amount_str)
-                    fullstack_salary += amount
-                except:
-                    pass
-            elif "10% бонус" in log and "фуллстек ученика" in log:
-                # Это бонус 10% за чужих фуллстек учеников
-                try:
-                    amount_str = log.split("+")[1].split(" руб.")[0]
-                    amount = float(amount_str)
-                    fullstack_salary += amount
-                except:
-                    pass
-            elif "Авто директор принял" in log or "Ручной директор принял" in log:
-                # Это фуллстек бонус
-                try:
-                    amount_str = log.split("ЗП: +")[1].split(" руб.")[0]
-                    amount = float(amount_str)
-                    fullstack_salary += amount
-                except:
-                    pass
-            elif "Комиссия от чужого ученика" in log or "Комиссия от своего ученика" in log:
-                # Это комиссия - извлекаем сумму из нового формата
-                try:
-                    if "30% = +" in log:
-                        amount_str = log.split("30% = +")[1].split(" руб.")[0]
-                        amount = float(amount_str)
-                        from_offers += amount
-                    elif "10% = +" in log:
-                        amount_str = log.split("10% = +")[1].split(" руб.")[0]
-                        amount = float(amount_str)
-                        from_offers += amount
-                except:
-                    pass
-        
-        # Дополнительная проверка для фуллстек платежей в формате "30% ментору 3 за своего фуллстек"
-        for log in logs:
-            if "30% ментору" in log and "фуллстек" in log.lower() and "руб." in log:
-                try:
-                    # Ищем сумму после "| +" и до " руб."
-                    if "| +" in log:
-                        amount_str = log.split("| +")[1].split(" руб.")[0]
-                        amount = float(amount_str)
-                        fullstack_salary += amount
-                except:
-                    pass
-            elif "10% ментору" in log and "фуллстек" in log.lower() and "руб." in log:
-                try:
-                    # Ищем сумму после "| +" и до " руб."
-                    if "| +" in log:
-                        amount_str = log.split("| +")[1].split(" руб.")[0]
-                        amount = float(amount_str)
-                        fullstack_salary += amount
-                except:
-                    pass
-        
-        # Если не удалось извлечь из логов, используем старый метод
-        if from_students == 0 and from_offers == 0:
-            from_students = round(total_prepayment * 0.2, 2)
-            from_offers = round(total_postpayment * 0.2, 2)
+        # Вычисляем составляющие зарплаты (20% от сумм)
+        from_students = round(total_prepayment * 0.2, 2)  # с учеников (первоначальный + доплата)
+        from_offers = round(total_postpayment * 0.2, 2)  # с оффера (комиссия)
         
         # Добавляем разбивку зарплаты после итоговой зарплаты
         report += f"📊 Составляющие зарплаты:\n"
         report += f"| с учеников {from_students} руб. |\n"
         report += f"| с оффера {from_offers} руб. |\n"
-        if fullstack_salary > 0:
-            report += f"| фуллстек {fullstack_salary} руб. |\n"
-        if bonus_salary > 0:
-            report += f"| бонусы {bonus_salary} руб. |\n"
         report += f"| налог {tax_amount} руб. |\n\n"
 
-        # Показываем детализацию
-        report += f"Предоплата (первоначальный + доплата): {from_students} руб. (от {total_prepayment} руб.)\n"
-        report += f"Постоплата (комиссия): {from_offers} руб. (от {total_postpayment} руб.)\n"
-        if fullstack_salary > 0:
-            report += f"Фуллстек бонусы: {fullstack_salary} руб.\n"
-        if bonus_salary > 0:
-            report += f"Бонусы за чужих студентов: {bonus_salary} руб.\n"
+        # Показываем 20% от сумм
+        prepayment_20_percent = round(total_prepayment * 0.2, 2)
+        postpayment_20_percent = round(total_postpayment * 0.2, 2)
+
+        report += f"Предоплата (первоначальный + доплата): {prepayment_20_percent} руб. (20% от {total_prepayment} руб.)\n"
+        report += f"Постоплата (комиссия): {postpayment_20_percent} руб. (20% от {total_postpayment} руб.)\n"
         report += f"Налог 6% к уплате: {tax_amount} руб.\n\n"
 
         if logs:
