@@ -10,7 +10,7 @@ from commands.start_commands import exit_to_main_menu
 from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM, WAIT_FOR_PAYMENT_DATE, SIGN_CONTRACT, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR
 from commands.student_info_commands import calculate_commission
 from data_base.db import session
-from data_base.models import Student, Payment
+from data_base.models import Student, Payment, CuratorInsuranceBalance, Mentor, ManualProgress
 from data_base.operations import get_all_students, update_student, get_student_by_fio_or_telegram, delete_student
 
 
@@ -108,7 +108,7 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text(
                 "Выберите новый статус обучения:",
                 reply_markup=ReplyKeyboardMarkup(
-                    [["Не учится", "Учится", "Устроился"], ["Назад"]],
+                    [["Не учится", "Учится", "Получил 5 модуль"], ["Устроился", "Назад"]],
                     one_time_keyboard=True
                 )
             )
@@ -170,7 +170,7 @@ async def edit_student_field_limited(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text(
                 "Выберите новый статус обучения:",
                 reply_markup=ReplyKeyboardMarkup(
-                    [["Не учится", "Учится", "Устроился"], ["Назад"]],
+                    [["Не учится", "Учится", "Получил 5 модуль"], ["Устроился", "Назад"]],
                     one_time_keyboard=True
                 )
             )
@@ -349,6 +349,9 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         "training_status": "Устроился"  # Обновляем статус обучения
                     }
                 )
+
+                # 🛡️ ОБРАБОТКА СТРАХОВКИ ПРИ УСТРОЙСТВЕ СТУДЕНТА
+                await process_insurance_on_employment(student.id)
                 await update.message.reply_text(
                     f"Данные о трудоустройстве успешно обновлены:\n"
                     f"Компания: {context.user_data['company_name']}\n"
@@ -425,6 +428,12 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Обновляем данные
         update_student(student.id, {db_field: new_value})
+
+        # 🛡️ ОБРАБОТКА СТРАХОВКИ ПРИ ИЗМЕНЕНИИ СТАТУСА ОБУЧЕНИЯ
+        if field_to_edit == "Статус обучения" and new_value == "Получил 5 модуль":
+            # Начисляем страховку куратору за получение 5 модуля
+            if student.training_type == "Ручное тестирование" and student.mentor_id:
+                await award_insurance_for_module_5(student.id, student.mentor_id)
 
         # Отправляем сообщение об успехе
         await update.message.reply_text(
@@ -566,16 +575,111 @@ async def smart_edit_student_field(update: Update, context: ContextTypes.DEFAULT
         return ConversationHandler.END
 
 
+async def process_insurance_on_employment(student_id: int):
+    """
+    Обрабатывает страховку при устройстве студента на работу.
+    Списывает активные страховки кураторов за этого студента.
+    """
+    try:
+        from datetime import date
+
+        # Получаем активные страховки за этого студента
+        active_insurance = session.query(CuratorInsuranceBalance).filter(
+            CuratorInsuranceBalance.student_id == student_id,
+            CuratorInsuranceBalance.is_active == True
+        ).all()
+
+        if not active_insurance:
+            return  # Нет активных страховок
+
+        # Деактивируем все страховки за этого студента
+        for insurance in active_insurance:
+            insurance.is_active = False
+
+        session.commit()
+
+        # Логируем списание страховки
+        total_amount = sum(float(ins.insurance_amount) for ins in active_insurance)
+        print(f"🛡️ Страховка списана при устройстве студента {student_id}: {total_amount} руб.")
+
+    except Exception as e:
+        print(f"❌ Ошибка при обработке страховки при устройстве: {e}")
+        session.rollback()
+
+
+async def award_insurance_for_module_5(student_id: int, curator_id: int):
+    """
+    Начисляет страховку куратору за студента, получившего 5 модуль.
+    Теперь проверяет дату получения 5 модуля из таблицы успеваемости.
+    """
+    try:
+        from datetime import date
+
+        # Проверяем, что студент учится на ручном тестировании
+        student = session.query(Student).filter(Student.id == student_id).first()
+        if not student or student.training_type != "Ручное тестирование":
+            return  # Не подходящий тип обучения
+
+        # Проверяем, что куратор существует
+        curator = session.query(Mentor).filter(
+            Mentor.id == curator_id,
+            Mentor.direction == "Ручное тестирование"
+        ).first()
+        if not curator:
+            return  # Куратор не найден или неактивен
+
+        # Проверяем, нет ли уже активной страховки за этого студента
+        existing_insurance = session.query(CuratorInsuranceBalance).filter(
+            CuratorInsuranceBalance.student_id == student_id,
+            CuratorInsuranceBalance.is_active == True
+        ).first()
+
+        if existing_insurance:
+            return  # Страховка уже начислена
+
+        # 🔍 ПРОВЕРЯЕМ ДАТУ ПОЛУЧЕНИЯ 5 МОДУЛЯ ИЗ ТАБЛИЦЫ MANUAL_PROGRESS
+        module_5_date = None
+
+        # Получаем прогресс студента из таблицы manual_progress
+        progress = session.query(ManualProgress).filter(
+            ManualProgress.student_id == student_id
+        ).first()
+
+        if progress and progress.m5_start_date:
+            module_5_date = progress.m5_start_date
+        else:
+            # Если дата не найдена в manual_progress, используем текущую дату
+            module_5_date = date.today()
+
+        # Создаем новую страховку
+        insurance = CuratorInsuranceBalance(
+            curator_id=curator_id,
+            student_id=student_id,
+            insurance_amount=5000.00,
+            created_at=module_5_date,
+            is_active=True
+        )
+
+        session.add(insurance)
+        session.commit()
+
+        print(f"🛡️ Начислена страховка куратору {curator_id} за студента {student_id}: 5000 руб. (дата 5 модуля: {module_5_date})")
+
+    except Exception as e:
+        print(f"❌ Ошибка при начислении страховки: {e}")
+        session.rollback()
+
+
 async def edit_curator(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Редактирование куратора студента.
     """
     student = context.user_data.get("student")
-    
+
     if not student:
         await update.message.reply_text("❌ Студент не найден.")
         return ConversationHandler.END
-    
+
     # Определяем тип обучения и показываем соответствующие опции
     if student.training_type == "Ручное тестирование":
         await update.message.reply_text(
@@ -587,7 +691,7 @@ async def edit_curator(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         context.user_data["curator_type"] = "manual"
         return SELECT_CURATOR_TYPE
-        
+
     elif student.training_type == "Автотестирование":
         await update.message.reply_text(
             f"Редактирование авто куратора для студента {student.fio}",
@@ -598,7 +702,7 @@ async def edit_curator(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         context.user_data["curator_type"] = "auto"
         return SELECT_CURATOR_TYPE
-        
+
     elif student.training_type == "Фуллстек":
         await update.message.reply_text(
             f"Редактирование кураторов для фуллстек студента {student.fio}",
@@ -608,7 +712,7 @@ async def edit_curator(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
         return SELECT_CURATOR_TYPE
-    
+
     else:
         await update.message.reply_text("❌ Неизвестный тип обучения.")
         return ConversationHandler.END
@@ -619,13 +723,13 @@ async def handle_curator_type_selection(update: Update, context: ContextTypes.DE
     Обработка выбора типа куратора для редактирования.
     """
     selected = update.message.text.strip()
-    
+
     # Обработка кнопки "Главное меню"
     if selected == "Главное меню":
         return await exit_to_main_menu(update, context)
-    
+
     student = context.user_data.get("student")
-    
+
     if selected == "Изменить ручного куратора":
         context.user_data["curator_type"] = "manual"
         return await show_curator_mentors(update, context, "Ручное тестирование")
@@ -642,18 +746,18 @@ async def show_curator_mentors(update: Update, context: ContextTypes.DEFAULT_TYP
     Показывает список менторов для выбора куратора.
     """
     from data_base.models import Mentor
-    
+
     mentors = session.query(Mentor).filter(Mentor.direction == direction).all()
     if not mentors:
         await update.message.reply_text(f"❌ Нет менторов для направления {direction}.")
         return ConversationHandler.END
-    
+
     mentors_list = {m.full_name: m.id for m in mentors}
     # Добавляем опцию "Не назначен"
     mentors_list["Не назначен"] = None
-    
+
     context.user_data["mentors_list"] = mentors_list
-    
+
     await update.message.reply_text(
         f"Выберите нового куратора для направления {direction}:",
         reply_markup=ReplyKeyboardMarkup(
@@ -670,38 +774,38 @@ async def handle_curator_mentor_selection(update: Update, context: ContextTypes.
     """
     selected = update.message.text.strip()
     mentors_list = context.user_data.get("mentors_list", {})
-    
+
     # Обработка кнопки "Главное меню"
     if selected == "Главное меню":
         return await exit_to_main_menu(update, context)
-    
+
     if selected not in mentors_list:
         await update.message.reply_text("❌ Пожалуйста, выберите одного из предложенных.")
         return SELECT_CURATOR_MENTOR
-    
+
     student = context.user_data.get("student")
     curator_type = context.user_data.get("curator_type")
     new_mentor_id = mentors_list[selected]
-    
+
     # Обновляем куратора в базе данных
     try:
         if curator_type == "manual":
             student.mentor_id = new_mentor_id
         elif curator_type == "auto":
             student.auto_mentor_id = new_mentor_id
-        
+
         session.commit()
-        
+
         mentor_name = selected if selected != "Не назначен" else "Не назначен"
         await update.message.reply_text(
             f"✅ Куратор успешно изменен!\n"
             f"Студент: {student.fio}\n"
             f"Новый куратор: {mentor_name}"
         )
-        
+
         # Возвращаемся в главное меню после успешного обновления
         return await exit_to_main_menu(update, context)
-        
+
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка при обновлении куратора: {str(e)}")
         return await exit_to_main_menu(update, context)
