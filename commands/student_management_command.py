@@ -574,6 +574,97 @@ async def calculate_salary(update: Update, context):
                     f"{payment.payment_date}, {amount} руб. | +{round(bonus_other, 2)} руб."
                 )
 
+        # 🛡️ СТРАХОВКА ДЛЯ КУРАТОРОВ РУЧНОГО НАПРАВЛЕНИЯ
+        logger.info("🛡️ Запускаем расчет страховки для кураторов ручного направления")
+        
+        # Импортируем модели
+        from data_base.models import CuratorInsuranceBalance, ManualProgress
+        
+        # Получаем всех кураторов ручного направления
+        manual_curators = session.query(Mentor).filter(
+            Mentor.direction == "Ручное тестирование"
+        ).all()
+        
+        for curator in manual_curators:
+            # Получаем активные страховки куратора за период
+            active_insurance = session.query(CuratorInsuranceBalance).filter(
+                CuratorInsuranceBalance.curator_id == curator.id,
+                CuratorInsuranceBalance.is_active == True,
+                CuratorInsuranceBalance.created_at >= start_date,
+                CuratorInsuranceBalance.created_at <= end_date
+            ).all()
+            
+            if active_insurance:
+                total_insurance = sum(float(ins.insurance_amount) for ins in active_insurance)
+                
+                # Добавляем страховку к ЗП куратора
+                if curator.id not in mentor_salaries:
+                    mentor_salaries[curator.id] = 0
+                mentor_salaries[curator.id] += total_insurance
+                
+                # Добавляем логи страховки
+                if curator.id not in detailed_logs:
+                    detailed_logs[curator.id] = []
+                
+                detailed_logs[curator.id].append(f"🛡️ Страховка за {len(active_insurance)} студентов: +{round(total_insurance, 2)} руб.")
+                
+                # Детальные логи по каждому студенту
+                for insurance in active_insurance:
+                    student = session.query(Student).filter(Student.id == insurance.student_id).first()
+                    if student:
+                        detailed_logs[curator.id].append(
+                            f"  📋 {student.fio} (ID {student.id}) - 5 модуль | +{float(insurance.insurance_amount)} руб."
+                        )
+                
+                logger.info(f"🛡️ Куратор {curator.full_name}: страховка {total_insurance} руб. за {len(active_insurance)} студентов")
+            
+            # 🔍 АВТОМАТИЧЕСКОЕ НАЧИСЛЕНИЕ СТРАХОВКИ НА ОСНОВЕ ДАТЫ 5 МОДУЛЯ ИЗ MANUAL_PROGRESS
+            # Получаем студентов куратора с прогрессом по 5 модулю
+            students_with_module_5 = session.query(Student, ManualProgress).join(
+                ManualProgress, Student.id == ManualProgress.student_id
+            ).filter(
+                Student.mentor_id == curator.id,
+                Student.training_type == "Ручное тестирование",
+                ManualProgress.m5_start_date.isnot(None),
+                ManualProgress.m5_start_date >= start_date,
+                ManualProgress.m5_start_date <= end_date
+            ).all()
+            
+            for student, progress in students_with_module_5:
+                module_5_date = progress.m5_start_date
+                
+                # Проверяем, нет ли уже страховки за этого студента
+                existing_insurance = session.query(CuratorInsuranceBalance).filter(
+                    CuratorInsuranceBalance.student_id == student.id,
+                    CuratorInsuranceBalance.is_active == True
+                ).first()
+                
+                if not existing_insurance:
+                    # Создаем новую страховку
+                    new_insurance = CuratorInsuranceBalance(
+                        curator_id=curator.id,
+                        student_id=student.id,
+                        insurance_amount=5000.00,
+                        created_at=module_5_date,
+                        is_active=True
+                    )
+                    session.add(new_insurance)
+                    session.commit()
+                    
+                    # Добавляем к ЗП куратора
+                    if curator.id not in mentor_salaries:
+                        mentor_salaries[curator.id] = 0
+                    mentor_salaries[curator.id] += 5000.00
+                    
+                    # Добавляем логи
+                    if curator.id not in detailed_logs:
+                        detailed_logs[curator.id] = []
+                    detailed_logs[curator.id].append(
+                        f"🛡️ Авто-страховка за {student.fio} (ID {student.id}) - 5 модуль {module_5_date} | +5000 руб."
+                    )
+                    
+                    logger.info(f"🛡️ Авто-начислена страховка куратору {curator.full_name} за студента {student.fio}: 5000 руб.")
+
         # 🎁 Учет премий (выплаты с комментарием "Премия")
         premium_payments = session.query(Payment).filter(
             Payment.payment_date >= start_date,
@@ -592,6 +683,59 @@ async def calculate_salary(update: Update, context):
             detailed_logs.setdefault(mentor_id, []).append(
                 f"🎁 Премия {payment.amount} руб. | {payment.payment_date} | +{bonus_amount} руб."
             )
+
+        # 🛡️ ВЫЧЕТ СТРАХОВКИ ПРИ ПОЛУЧЕНИИ КОМИССИИ
+        logger.info("🛡️ Проверяем вычет страховки при получении комиссии")
+        
+        # Получаем все платежи с комментарием "Комиссия" за период
+        commission_payments = session.query(Payment).filter(
+            Payment.payment_date >= start_date,
+            Payment.payment_date <= end_date,
+            Payment.status == "подтвержден",
+            Payment.comment == "Комиссия"
+        ).all()
+        
+        for payment in commission_payments:
+            student_id = payment.student_id
+            if not student_id:
+                continue
+                
+            # Получаем студента
+            student = session.query(Student).filter(Student.id == student_id).first()
+            if not student or student.training_type != "Ручное тестирование":
+                continue
+                
+            # Получаем куратора студента
+            curator_id = student.mentor_id
+            if not curator_id:
+                continue
+                
+            # Проверяем, есть ли активная страховка за этого студента
+            active_insurance = session.query(CuratorInsuranceBalance).filter(
+                CuratorInsuranceBalance.student_id == student_id,
+                CuratorInsuranceBalance.curator_id == curator_id,
+                CuratorInsuranceBalance.is_active == True
+            ).first()
+            
+            if active_insurance:
+                # Вычитаем страховку из ЗП куратора
+                insurance_amount = float(active_insurance.insurance_amount)
+                if curator_id not in mentor_salaries:
+                    mentor_salaries[curator_id] = 0
+                mentor_salaries[curator_id] -= insurance_amount
+                
+                # Деактивируем страховку
+                active_insurance.is_active = False
+                session.commit()
+                
+                # Добавляем логи
+                if curator_id not in detailed_logs:
+                    detailed_logs[curator_id] = []
+                detailed_logs[curator_id].append(
+                    f"🛡️ Вычет страховки за {student.fio} (ID {student_id}) - комиссия {payment.amount} руб. | -{insurance_amount} руб."
+                )
+                
+                logger.info(f"🛡️ Вычтена страховка {insurance_amount} руб. у куратора {curator_id} за студента {student.fio} при получении комиссии")
 
         # 💼 Расчет зарплат карьерных консультантов
         career_consultant_salaries = {}
