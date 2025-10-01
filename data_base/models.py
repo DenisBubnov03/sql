@@ -40,6 +40,7 @@ class Student(Base):
     mentor_id = Column(Integer, ForeignKey("mentors.id"), nullable=False)
     auto_mentor_id = Column(Integer, ForeignKey("mentors.id"), nullable=True)
     career_consultant_id = Column(Integer, ForeignKey("career_consultants.id"), nullable=True)
+    consultant_start_date = Column(Date, nullable=True)  # Дата взятия студента в работу карьерным консультантом
     # mentor = relationship("Mentor", backref="students")
     career_consultant = relationship("CareerConsultant", back_populates="students")
 
