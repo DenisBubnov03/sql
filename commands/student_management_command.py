@@ -588,7 +588,7 @@ async def calculate_salary(update: Update, context):
             Payment.payment_date <= end_date,
             Payment.status == "подтвержден",
             ~Payment.comment.ilike("%преми%")  # исключаем премии из основного расчёта
-        ).all()
+        ).order_by(Payment.payment_date.asc(), Payment.mentor_id.asc()).all()
 
         logger.info(f"📊 Найдено детальных платежей: {len(detailed_payments)}")
 
@@ -722,9 +722,10 @@ async def calculate_salary(update: Update, context):
         # Импортируем модели
         from data_base.models import CuratorInsuranceBalance, ManualProgress
         
-        # Получаем всех кураторов ручного направления
+        # Получаем всех кураторов ручного направления (кроме директора ID=1)
         manual_curators = session.query(Mentor).filter(
-            Mentor.direction == "Ручное тестирование"
+            Mentor.direction == "Ручное тестирование",
+            Mentor.id != 1  # Исключаем директора
         ).all()
         
         for curator in manual_curators:
@@ -813,7 +814,7 @@ async def calculate_salary(update: Update, context):
             Payment.payment_date <= end_date,
             Payment.status == "подтвержден",
             Payment.comment.ilike("%преми%")  # ловим "Премия", "премия", "ПРЕМИЯ" и т.д.
-        ).all()
+        ).order_by(Payment.payment_date.asc()).all()
 
         for payment in premium_payments:
             bonus_amount = float(payment.amount)
@@ -835,7 +836,7 @@ async def calculate_salary(update: Update, context):
             Payment.payment_date <= end_date,
             Payment.status == "подтвержден",
             Payment.comment == "Комиссия"
-        ).all()
+        ).order_by(Payment.payment_date.asc()).all()
         
         for payment in commission_payments:
             student_id = payment.student_id
@@ -879,6 +880,142 @@ async def calculate_salary(update: Update, context):
                 
                 logger.info(f"🛡️ Вычтена страховка {insurance_amount} руб. у куратора {curator_id} за студента {student.fio} при получении комиссии")
 
+        # 🎯 KPI ДЛЯ КУРАТОРОВ РУЧНОГО НАПРАВЛЕНИЯ (кроме директоров)
+        logger.info("🎯 Рассчитываем KPI для кураторов ручного направления")
+        
+        # Импортируем модель для отслеживания KPI студентов
+        from data_base.models import CuratorKpiStudents
+        
+        # Получаем всех кураторов ручного направления (кроме директора ID=1)
+        manual_curators_for_kpi = session.query(Mentor).filter(
+            Mentor.direction == "Ручное тестирование",
+            Mentor.id != 1  # Исключаем директора
+        ).all()
+        
+        for curator in manual_curators_for_kpi:
+            # Получаем всех студентов куратора
+            students = session.query(Student).filter(
+                Student.mentor_id == curator.id,
+                Student.training_type == "Ручное тестирование"
+            ).all()
+            student_ids = [s.id for s in students]
+            
+            if not student_ids:
+                continue
+            
+            # Получаем первоначальные платежи студентов в периоде
+            initial_payments = session.query(Payment).filter(
+                Payment.student_id.in_(student_ids),
+                Payment.payment_date >= start_date,
+                Payment.payment_date <= end_date,
+                Payment.status == "подтвержден",
+                Payment.comment == "Первоначальный платёж при регистрации"
+            ).order_by(Payment.payment_date.asc()).all()
+            
+            # Считаем уникальных студентов, купивших в периоде
+            unique_students = set(p.student_id for p in initial_payments)
+            student_count = len(unique_students)
+            
+            # Определяем процент KPI
+            kpi_percent = 0
+            if 5 <= student_count < 10:
+                kpi_percent = 0.25
+            elif student_count >= 10:
+                kpi_percent = 0.30
+            
+            if kpi_percent > 0:
+                # 📝 СОХРАНЯЕМ СТУДЕНТОВ, ПОПАВШИХ ПОД KPI
+                for student_id in unique_students:
+                    # Проверяем, нет ли уже записи для этого студента в этом периоде
+                    existing_kpi = session.query(CuratorKpiStudents).filter(
+                        CuratorKpiStudents.curator_id == curator.id,
+                        CuratorKpiStudents.student_id == student_id,
+                        CuratorKpiStudents.period_start == start_date,
+                        CuratorKpiStudents.period_end == end_date
+                    ).first()
+                    
+                    if not existing_kpi:
+                        # Создаем новую запись
+                        kpi_student = CuratorKpiStudents(
+                            curator_id=curator.id,
+                            student_id=student_id,
+                            kpi_percent=kpi_percent,
+                            period_start=start_date,
+                            period_end=end_date,
+                            created_at=datetime.now().date()
+                        )
+                        session.add(kpi_student)
+                
+                # Суммируем первоначальные платежи
+                total_initial_payments = sum(float(p.amount) for p in initial_payments)
+                
+                # Вычисляем разницу между KPI процентом и стандартным 20%
+                standard_percent = 0.20
+                kpi_bonus = total_initial_payments * (kpi_percent - standard_percent)
+                
+                # Добавляем разницу к зарплате (так как 20% уже учтены в основном расчете)
+                if curator.id not in mentor_salaries:
+                    mentor_salaries[curator.id] = 0
+                mentor_salaries[curator.id] += kpi_bonus
+                
+                # Добавляем логи
+                if curator.id not in detailed_logs:
+                    detailed_logs[curator.id] = []
+                detailed_logs[curator.id].append(
+                    f"🎯 KPI: {student_count} студентов → {int(kpi_percent * 100)}% вместо 20% (доплата +{int((kpi_percent - standard_percent) * 100)}%) | +{kpi_bonus:.2f} руб."
+                )
+                
+                logger.info(f"🎯 KPI начислен куратору {curator.full_name}: {student_count} студентов, {kpi_percent * 100}% вместо 20%, доплата {kpi_bonus:.2f} руб.")
+        
+        # 🎯 ДОПОЛНИТЕЛЬНЫЙ KPI ДЛЯ ДОПЛАТ ОТ KPI-СТУДЕНТОВ
+        logger.info("🎯 Рассчитываем дополнительный KPI для доплат от KPI-студентов")
+        
+        # Получаем всех студентов, которые попали под KPI в любом периоде
+        kpi_students = session.query(CuratorKpiStudents).all()
+        
+        for kpi_record in kpi_students:
+            curator_id = kpi_record.curator_id
+            student_id = kpi_record.student_id
+            kpi_percent = float(kpi_record.kpi_percent)
+            
+            # Получаем доплаты этого студента в текущем периоде расчета
+            additional_payments = session.query(Payment).filter(
+                Payment.student_id == student_id,
+                Payment.payment_date >= start_date,
+                Payment.payment_date <= end_date,
+                Payment.status == "подтвержден",
+                Payment.comment == "Доплата за обучение"
+            ).order_by(Payment.payment_date.asc()).all()
+            
+            if additional_payments:
+                # Суммируем доплаты
+                total_additional_payments = sum(float(p.amount) for p in additional_payments)
+                
+                # Вычисляем разницу между KPI процентом и стандартным 20%
+                standard_percent = 0.20
+                additional_kpi_bonus = total_additional_payments * (kpi_percent - standard_percent)
+                
+                # Добавляем к зарплате куратора
+                if curator_id not in mentor_salaries:
+                    mentor_salaries[curator_id] = 0
+                mentor_salaries[curator_id] += additional_kpi_bonus
+                
+                # Получаем информацию о студенте для логов
+                student = session.query(Student).filter(Student.id == student_id).first()
+                student_name = student.fio if student else f"ID {student_id}"
+                
+                # Добавляем логи
+                if curator_id not in detailed_logs:
+                    detailed_logs[curator_id] = []
+                detailed_logs[curator_id].append(
+                    f"🎯 KPI доплаты от {student_name}: {int(kpi_percent * 100)}% вместо 20% с {total_additional_payments:.2f} руб. | +{additional_kpi_bonus:.2f} руб."
+                )
+                
+                logger.info(f"🎯 Дополнительный KPI начислен куратору {curator_id} за доплаты студента {student_name}: {additional_kpi_bonus:.2f} руб.")
+        
+        # Коммитим изменения в базу данных
+        session.commit()
+
         # 💼 Расчет зарплат карьерных консультантов
         career_consultant_salaries = {}
         all_consultants = session.query(CareerConsultant).filter(CareerConsultant.is_active == True).all()
@@ -900,7 +1037,7 @@ async def calculate_salary(update: Update, context):
                 Payment.payment_date >= start_date,
                 Payment.payment_date <= end_date,
                 Payment.status == "подтвержден"
-            ).all()
+            ).order_by(Payment.payment_date.asc()).all()
             
             # Фильтруем по комиссии
             commission_payments = [p for p in all_student_payments if "комисси" in p.comment.lower()]
@@ -1331,10 +1468,40 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
         from_students = round(total_prepayment * 0.2, 2)  # с учеников (первоначальный + доплата)
         from_offers = round(total_postpayment * 0.2, 2)  # с оффера (комиссия)
         
+        # Вычисляем KPI и другие бонусы из логов
+        import re
+        kpi_amount = 0.0
+        insurance_amount = 0.0
+        premium_amount = 0.0
+        
+        if logs:
+            for log in logs:
+                if "🎯 KPI" in log:
+                    # Извлекаем сумму KPI из лога
+                    kpi_match = re.search(r'\+(\d+\.?\d*) руб\.$', log)
+                    if kpi_match:
+                        kpi_amount += float(kpi_match.group(1))
+                elif "🛡️" in log and "+" in log:
+                    # Страховка (начисления)
+                    insurance_match = re.search(r'\+(\d+\.?\d*) руб\.$', log)
+                    if insurance_match:
+                        insurance_amount += float(insurance_match.group(1))
+                elif "🎁 Премия" in log:
+                    # Премии
+                    premium_match = re.search(r'\+(\d+\.?\d*) руб\.$', log)
+                    if premium_match:
+                        premium_amount += float(premium_match.group(1))
+        
         # Добавляем разбивку зарплаты после итоговой зарплаты
         report += f"📊 Составляющие зарплаты:\n"
         report += f"| с учеников {from_students} руб. |\n"
         report += f"| с оффера {from_offers} руб. |\n"
+        if kpi_amount > 0:
+            report += f"| KPI бонус {kpi_amount} руб. |\n"
+        if insurance_amount > 0:
+            report += f"| страховка {insurance_amount} руб. |\n"
+        if premium_amount > 0:
+            report += f"| премии {premium_amount} руб. |\n"
         report += f"| налог {tax_amount} руб. |\n\n"
 
         # Показываем 20% от сумм
@@ -1388,7 +1555,7 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
         Payment.payment_date <= datetime.strptime(end_date, "%d.%m.%Y").date(),
         Payment.status == "подтвержден",
         Payment.comment.ilike("%комисси%")
-    ).all()
+    ).order_by(Payment.payment_date.asc()).all()
     
     # Подсчёт предоплаты и постоплаты за период (для справки)
     try:
@@ -1409,7 +1576,7 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
             Payment.payment_date >= period_start,
             Payment.payment_date <= period_end,
             Payment.status == "подтвержден",
-        ).all()
+        ).order_by(Payment.payment_date.asc()).all()
 
         for payment in payments_q:
             comment_lower = (payment.comment or "").lower()

@@ -51,7 +51,7 @@ class Mentor(Base):
     telegram = Column(String, unique=True, nullable=False)
     full_name = Column(String, nullable=False)
     chat_id = Column(String, nullable=True)
-    direction = Column(String, unique=True, nullable=False)
+    direction = Column(String, nullable=False)
 
 
 class Payment(Base):
@@ -189,4 +189,27 @@ class CuratorInsuranceBalance(Base):
 
     def __repr__(self):
         return f"<CuratorInsuranceBalance(id={self.id}, curator_id={self.curator_id}, student_id={self.student_id}, amount={self.insurance_amount}, active={self.is_active})>"
+
+
+class CuratorKpiStudents(Base):
+    """
+    Модель для отслеживания студентов, попавших под KPI куратора в определенном периоде.
+    Позволяет применять KPI процент не только к первоначальным платежам, но и к доплатам.
+    """
+    __tablename__ = "curator_kpi_students"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    curator_id = Column(Integer, ForeignKey("mentors.id", ondelete="CASCADE"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    kpi_percent = Column(DECIMAL(5, 2), nullable=False)  # 0.25 или 0.30
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+    created_at = Column(Date, nullable=True)
+
+    # Отношения
+    curator = relationship("Mentor", foreign_keys=[curator_id])
+    student = relationship("Student", foreign_keys=[student_id])
+
+    def __repr__(self):
+        return f"<CuratorKpiStudents(id={self.id}, curator_id={self.curator_id}, student_id={self.student_id}, kpi_percent={self.kpi_percent}, period={self.period_start}-{self.period_end})>"
 
