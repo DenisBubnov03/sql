@@ -880,24 +880,40 @@ async def calculate_salary(update: Update, context):
                 
                 logger.info(f"🛡️ Вычтена страховка {insurance_amount} руб. у куратора {curator_id} за студента {student.fio} при получении комиссии")
 
-        # 🎯 KPI ДЛЯ КУРАТОРОВ РУЧНОГО НАПРАВЛЕНИЯ (кроме директоров)
-        logger.info("🎯 Рассчитываем KPI для кураторов ручного направления")
+        # 🎯 KPI ДЛЯ ВСЕХ КУРАТОРОВ (кроме директоров)
+        logger.info("🎯 Рассчитываем KPI для всех кураторов")
         
         # Импортируем модель для отслеживания KPI студентов
         from data_base.models import CuratorKpiStudents
         
-        # Получаем всех кураторов ручного направления (кроме директора ID=1)
-        manual_curators_for_kpi = session.query(Mentor).filter(
-            Mentor.direction == "Ручное тестирование",
-            Mentor.id != 1  # Исключаем директора
+        # Получаем всех кураторов (кроме директоров ID=1,3)
+        all_curators_for_kpi = session.query(Mentor).filter(
+            ~Mentor.id.in_([1, 3])  # Исключаем директоров
         ).all()
         
-        for curator in manual_curators_for_kpi:
-            # Получаем всех студентов куратора
-            students = session.query(Student).filter(
-                Student.mentor_id == curator.id,
-                Student.training_type == "Ручное тестирование"
-            ).all()
+        for curator in all_curators_for_kpi:
+            # Определяем типы обучения для куратора (свое направление + фуллстек)
+            curator_training_types = []
+            if curator.direction == "Ручное тестирование":
+                curator_training_types = ["Ручное тестирование", "Фуллстек"]
+            elif curator.direction == "Автоматизация" or curator.direction == "Автотестирование":
+                curator_training_types = ["Автоматизация", "Автотестирование", "Фуллстек"]
+            else:
+                # Для других направлений добавляем фуллстек
+                curator_training_types = [curator.direction, "Фуллстек"]
+            
+            # Получаем студентов куратора подходящих типов
+            # Для автоматизации проверяем auto_mentor_id, для остальных - mentor_id
+            if curator.direction in ["Автоматизация", "Автотестирование"]:
+                students = session.query(Student).filter(
+                    Student.auto_mentor_id == curator.id,
+                    Student.training_type.in_(curator_training_types)
+                ).all()
+            else:
+                students = session.query(Student).filter(
+                    Student.mentor_id == curator.id,
+                    Student.training_type.in_(curator_training_types)
+                ).all()
             student_ids = [s.id for s in students]
             
             if not student_ids:
@@ -962,10 +978,10 @@ async def calculate_salary(update: Update, context):
                 if curator.id not in detailed_logs:
                     detailed_logs[curator.id] = []
                 detailed_logs[curator.id].append(
-                    f"🎯 KPI: {student_count} студентов → {int(kpi_percent * 100)}% вместо 20% (доплата +{int((kpi_percent - standard_percent) * 100)}%) | +{kpi_bonus:.2f} руб."
+                    f"🎯 KPI ({curator.direction}): {student_count} студентов → {int(kpi_percent * 100)}% вместо 20% (доплата +{int((kpi_percent - standard_percent) * 100)}%) | +{kpi_bonus:.2f} руб."
                 )
                 
-                logger.info(f"🎯 KPI начислен куратору {curator.full_name}: {student_count} студентов, {kpi_percent * 100}% вместо 20%, доплата {kpi_bonus:.2f} руб.")
+                logger.info(f"🎯 KPI начислен куратору {curator.full_name} ({curator.direction}): {student_count} студентов, {kpi_percent * 100}% вместо 20%, доплата {kpi_bonus:.2f} руб.")
         
         # 🎯 ДОПОЛНИТЕЛЬНЫЙ KPI ДЛЯ ДОПЛАТ ОТ KPI-СТУДЕНТОВ
         logger.info("🎯 Рассчитываем дополнительный KPI для доплат от KPI-студентов")
