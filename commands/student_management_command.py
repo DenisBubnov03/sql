@@ -751,12 +751,13 @@ async def calculate_salary(update: Update, context):
         # Импортируем модели
         from data_base.models import CuratorInsuranceBalance, ManualProgress
         
+        fullstack_salary_result = calculate_fullstack_salary(start_date, end_date, detailed_payments)
         # Получаем всех кураторов ручного направления (кроме директора ID=1)
         manual_curators = session.query(Mentor).filter(
             Mentor.direction == "Ручное тестирование",
             Mentor.id != 1  # Исключаем директора
         ).all()
-        
+
         for curator in manual_curators:
             # Получаем активные страховки куратора за период
             active_insurance = session.query(CuratorInsuranceBalance).filter(
@@ -778,41 +779,22 @@ async def calculate_salary(update: Update, context):
                 if curator.id not in detailed_logs:
                     detailed_logs[curator.id] = []
                 
-                # Добавляем логи кураторов
+                # Добавляем детальные логи кураторов
                 if curator_id not in detailed_logs:
                     detailed_logs[curator_id] = []
-                detailed_logs[curator_id].append(f"💼 Куратор фуллстек: +{round(salary, 2)} руб.")
+
+                # Используем детальные логи из fullstack_salary_result
+                if curator_id in fullstack_salary_result.get('curator_logs', {}):
+                    detailed_logs[curator_id].extend(fullstack_salary_result['curator_logs'][curator_id])
+                else:
+                    # Fallback на старый формат, если детальных логов нет
+                    detailed_logs[curator_id].append(f"💼 Куратор фуллстек: +{round(salary, 2)} руб.")
         
         logger.info(f"💻 Система за сданные темы: обработано {fullstack_salary_result['students_processed']} студентов")
 
         logger.info("💻 Гибридная система фуллстек: 10% от платежей (кураторы) + оплата за темы (все).")
 
-        # 📊 Статистика по фуллстек платежам (гибридная система)
-        fullstack_payments_count = 0
-        fullstack_total_amount = 0
-        curator_payments_count = 0
-        curator_payments_amount = 0
-        director_payments_count = 0
-        director_payments_amount = 0
-
-        for payment in detailed_payments:
-            student = session.query(Student).filter(Student.id == payment.student_id).first()
-            if student and student.training_type == "Фуллстек":
-                fullstack_payments_count += 1
-                fullstack_total_amount += float(payment.amount)
-
-                if payment.mentor_id not in [1, 3]:  # Куратор
-                    curator_payments_count += 1
-                    curator_payments_amount += float(payment.amount)
-                else:  # Директор
-                    director_payments_count += 1
-                    director_payments_amount += float(payment.amount)
-
-        logger.info(f"📊 Статистика фуллстек платежей в периоде (гибридная система):")
-        logger.info(f"📊 Всего фуллстек платежей: {fullstack_payments_count} на сумму {fullstack_total_amount:.2f} руб.")
-        logger.info(f"📊 От кураторов: {curator_payments_count} платежей на {curator_payments_amount:.2f} руб. → директора получают 10% = {curator_payments_amount * 0.1:.2f} руб.")
-        logger.info(f"📊 От директоров: {director_payments_count} платежей на {director_payments_amount:.2f} руб. → директора получают только за темы")
-        logger.info(f"📊 Кураторы получают оплату за сданные темы")
+        # 📊 Статистика фуллстек теперь в fullstack_salary_calculator.py
 
         # 🎁 Учет премий (выплаты с комментарием "Премия")
         premium_payments = session.query(Payment).filter(
