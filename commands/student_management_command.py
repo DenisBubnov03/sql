@@ -3,6 +3,7 @@ import logging
 from sqlalchemy import func
 from sqlalchemy import select
 from commands.authorized_users import AUTHORIZED_USERS
+from commands.fullstack_salary_calculator import calculate_fullstack_salary
 from commands.logger import custom_logger
 from commands.start_commands import exit_to_main_menu
 from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, \
@@ -625,37 +626,10 @@ async def calculate_salary(update: Update, context):
             if not student:
                 continue
 
-            # 🔹 ГИБРИДНАЯ СИСТЕМА БОНУСОВ ДЛЯ ФУЛЛСТЕК СТУДЕНТОВ (ПЕРЕД continue!)
+            # 💻 ФУЛЛСТЕК СТУДЕНТЫ: обрабатываются отдельно в calculate_fullstack_salary()
             if student.training_type == "Фуллстек":
-                # Определяем ментора (может быть директором или куратором)
-                mentor = session.query(Mentor).filter(Mentor.id == payment.mentor_id).first()
-                if mentor:
-                    # НОВАЯ ЛОГИКА: 10% только если ментор НЕ директор
-                    if payment.mentor_id not in [1, 3]:  # Ментор = куратор
-                        bonus = float(payment.amount) * 0.1
-
-                        logger.info(f"🔹 Фуллстек платеж от куратора: студент  {student.fio} {student.telegram} {student.id}, куратор {mentor.full_name} (ID {mentor.id}), сумма {payment.amount}, бонус директорам {bonus}")
-
-                        # Директора получают 10% только за студентов кураторов
-                        if 1 not in mentor_salaries:
-                            mentor_salaries[1] = 0
-                        mentor_salaries[1] += bonus
-                        detailed_logs[1].append(
-                            f"🔁 10% бонус директору ручного за фуллстек студента {student.fio} {student.telegram} {student.id} (куратор: {mentor.full_name}) | "
-                            f"{payment.payment_date}, {payment.amount} руб. | +{round(bonus, 2)} руб."
-                        )
-
-                        if 3 not in mentor_salaries:
-                            mentor_salaries[3] = 0
-                        mentor_salaries[3] += bonus
-                        detailed_logs[3].append(
-                            f"🔁 10% бонус директору авто за фуллстек студента  {student.fio} {student.telegram} {student.id} (куратор: {mentor.full_name}) | "
-                            f"{payment.payment_date}, {payment.amount} руб. | +{round(bonus, 2)} руб."
-                        )
-                    else:  # Ментор = директор
-                        logger.info(f"🔹 Фуллстек платеж от директора: студент {student.fio}, директор {mentor.full_name} (ID {mentor.id}), сумма {payment.amount} - 10% бонус НЕ начисляется, только за темы")
-
-                continue  # ❌ Остальные бонусы не начисляются за Fullstack
+                logger.debug(f"🔹 Фуллстек студент {student.fio}: пропускаем, обрабатывается в calculate_fullstack_salary()")
+                continue  # ✅ Фуллстек студенты обрабатываются в отдельной функции
 
             if 1 not in detailed_logs:
                 detailed_logs[1] = []
@@ -687,63 +661,7 @@ async def calculate_salary(update: Update, context):
                     f"{payment.payment_date}, {payment.amount} руб. | +{round(bonus, 2)} руб."
                 )
 
-        # Фуллстек бонусы
-        fullstack_students = session.query(Student).filter(
-            Student.training_type == "Фуллстек",
-            Student.total_cost >= 50000,
-            Student.start_date >= start_date,
-            Student.start_date <= end_date
-        ).all()
-
-        if fullstack_students:
-            bonus = len(fullstack_students) * 5000
-            if 1 not in mentor_salaries:
-                mentor_salaries[1] = 0
-            mentor_salaries[1] += bonus
-            for student in fullstack_students:
-                log_line = f"Бонус за фуллстек: {student.fio} (ID {student.id}) | +5000 руб."
-                if 1 not in detailed_logs:
-                    detailed_logs[1] = []
-                detailed_logs[1].append(log_line)
-
-        # Fullstack доля для ментора 3
-        # 🔁 Новый расчёт по Фуллстек: распределение 30%/10%/20%
-        for payment in detailed_payments:
-            student = session.query(Student).filter(Student.id == payment.student_id).first()
-            if not student or student.training_type != "Фуллстек":
-                continue
-
-            amount = float(payment.amount)
-            mentor_id = payment.mentor_id
-
-            # 🔹 Ментор 3 получает:
-            if mentor_id == 3:
-                bonus = amount * 0.3
-                if 3 not in mentor_salaries:
-                    mentor_salaries[3] = 0
-                mentor_salaries[3] += bonus
-                detailed_logs.setdefault(3, []).append(
-                    f"💼 30% ментору 3 за своего фуллстек ученика {student.fio} | "
-                    f"{payment.payment_date}, {amount} руб. | +{round(bonus, 2)} руб."
-                )
-            else:
-                bonus_3 = amount * 0.1
-                if 3 not in mentor_salaries:
-                    mentor_salaries[3] = 0
-                mentor_salaries[3] += bonus_3
-                detailed_logs.setdefault(3, []).append(
-                    f"🔁 10% ментору 3 за чужого фуллстек ученика {student.fio} | "
-                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_3, 2)} руб."
-                )
-
-                bonus_other = amount * 0.2
-                if mentor_id not in mentor_salaries:
-                    mentor_salaries[mentor_id] = 0
-                mentor_salaries[mentor_id] += bonus_other
-                detailed_logs.setdefault(mentor_id, []).append(
-                    f"💼 20% ментору {mentor_id} за фуллстек ученика {student.fio} | "
-                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_other, 2)} руб."
-                )
+        # 💻 СТАРАЯ ФУЛЛСТЕК ЛОГИКА УДАЛЕНА - теперь используется calculate_fullstack_salary()
 
         # 🛡️ СТРАХОВКА ДЛЯ КУРАТОРОВ РУЧНОГО НАПРАВЛЕНИЯ
         logger.info("🛡️ Запускаем расчет страховки для кураторов ручного направления")
@@ -752,6 +670,35 @@ async def calculate_salary(update: Update, context):
         from data_base.models import CuratorInsuranceBalance, ManualProgress
         
         fullstack_salary_result = calculate_fullstack_salary(start_date, end_date)
+        
+        # Интегрируем ЗП директоров направления в общий расчет
+        for director_id, salary in fullstack_salary_result['director_salaries'].items():
+            if salary > 0:
+                if director_id not in mentor_salaries:
+                    mentor_salaries[director_id] = 0
+                mentor_salaries[director_id] += salary
+                
+                # Добавляем детальные логи директоров
+                if director_id not in detailed_logs:
+                    detailed_logs[director_id] = []
+                if director_id in fullstack_salary_result.get('logs', {}):
+                    detailed_logs[director_id].extend(fullstack_salary_result['logs'][director_id])
+        
+        # Интегрируем ЗП кураторов направления в общий расчет
+        for curator_id, salary in fullstack_salary_result['curator_salaries'].items():
+            if salary > 0:
+                if curator_id not in mentor_salaries:
+                    mentor_salaries[curator_id] = 0
+                mentor_salaries[curator_id] += salary
+                
+                # Добавляем детальные логи кураторов
+                if curator_id not in detailed_logs:
+                    detailed_logs[curator_id] = []
+                if curator_id in fullstack_salary_result.get('curator_logs', {}):
+                    detailed_logs[curator_id].extend(fullstack_salary_result['curator_logs'][curator_id])
+        
+        logger.info(f"💻 Система за сданные темы: обработано {fullstack_salary_result['students_processed']} студентов")
+        
         # Получаем всех кураторов ручного направления (кроме директора ID=1)
         manual_curators = session.query(Mentor).filter(
             Mentor.direction == "Ручное тестирование",
@@ -779,18 +726,7 @@ async def calculate_salary(update: Update, context):
                 if curator.id not in detailed_logs:
                     detailed_logs[curator.id] = []
                 
-                # Добавляем детальные логи кураторов
-                if curator_id not in detailed_logs:
-                    detailed_logs[curator_id] = []
-
-                # Используем детальные логи из fullstack_salary_result
-                if curator_id in fullstack_salary_result.get('curator_logs', {}):
-                    detailed_logs[curator_id].extend(fullstack_salary_result['curator_logs'][curator_id])
-                else:
-                    # Fallback на старый формат, если детальных логов нет
-                    detailed_logs[curator_id].append(f"💼 Куратор фуллстек: +{round(salary, 2)} руб.")
-        
-        logger.info(f"💻 Система за сданные темы: обработано {fullstack_salary_result['students_processed']} студентов")
+                # Логи кураторов уже добавлены выше при интеграции результатов
 
         logger.info("💻 Гибридная система фуллстек: 10% от платежей (кураторы) + оплата за темы (все).")
 
