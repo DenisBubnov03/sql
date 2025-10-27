@@ -751,7 +751,7 @@ async def calculate_salary(update: Update, context):
         # Импортируем модели
         from data_base.models import CuratorInsuranceBalance, ManualProgress
         
-        fullstack_salary_result = calculate_fullstack_salary(start_date, end_date, detailed_payments)
+        fullstack_salary_result = calculate_fullstack_salary(start_date, end_date)
         # Получаем всех кураторов ручного направления (кроме директора ID=1)
         manual_curators = session.query(Mentor).filter(
             Mentor.direction == "Ручное тестирование",
