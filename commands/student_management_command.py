@@ -668,16 +668,16 @@ async def calculate_salary(update: Update, context):
             Student.start_date <= end_date
         ).all()
 
-        if fullstack_students:
-            bonus = len(fullstack_students) * 5000
-            if 1 not in mentor_salaries:
-                mentor_salaries[1] = 0
-            mentor_salaries[1] += bonus
-            for student in fullstack_students:
-                log_line = f"Бонус за фуллстек: {student.fio} (ID {student.id}) | +5000 руб."
-                if 1 not in detailed_logs:
-                    detailed_logs[1] = []
-                detailed_logs[1].append(log_line)
+        # if fullstack_students:
+        #     bonus = len(fullstack_students) * 5000
+        #     if 1 not in mentor_salaries:
+        #         mentor_salaries[1] = 0
+        #     mentor_salaries[1] += bonus
+        #     for student in fullstack_students:
+        #         log_line = f"Бонус за фуллстек: {student.fio} (ID {student.id}) | +5000 руб."
+        #         if 1 not in detailed_logs:
+        #             detailed_logs[1] = []
+        #         detailed_logs[1].append(log_line)
 
         # 🎯 НОВЫЙ РАСЧЕТ ФУЛЛСТЕКОВ ПО ПРИНЯТЫМ ТЕМАМ
         logger.info("🎯 Запускаем новый расчет фуллстеков по принятым темам")
