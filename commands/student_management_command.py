@@ -3,7 +3,6 @@ import logging
 from sqlalchemy import func
 from sqlalchemy import select
 from commands.authorized_users import AUTHORIZED_USERS
-from commands.fullstack_salary_calculator import calculate_fullstack_salary
 from commands.logger import custom_logger
 from commands.start_commands import exit_to_main_menu
 from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, \
@@ -290,7 +289,7 @@ async def add_student_is_referral(update: Update, context: ContextTypes.DEFAULT_
     Обработка вопроса о том, является ли студент реферальным.
     """
     response = update.message.text.strip()
-
+    
     if response == "Да":
         context.user_data["is_referral"] = True
         await update.message.reply_text(
@@ -330,11 +329,11 @@ async def add_student_referrer_telegram(update: Update, context: ContextTypes.DE
     Обработка ввода Telegram реферера.
     """
     referrer_telegram = update.message.text.strip()
-
+    
     # Обработка кнопки "Главное меню"
     if referrer_telegram == "Главное меню":
         return await exit_to_main_menu(update, context)
-
+    
     # Проверка корректности введенного Telegram
     if not referrer_telegram.startswith("@") or len(referrer_telegram) <= 1:
         await update.message.reply_text(
@@ -345,9 +344,9 @@ async def add_student_referrer_telegram(update: Update, context: ContextTypes.DE
             )
         )
         return REFERRER_TELEGRAM
-
+    
     context.user_data["referrer_telegram"] = referrer_telegram
-
+    
     # Переходим к вопросу об источнике
     await update.message.reply_text(
         "Откуда пришел студент?",
@@ -366,7 +365,7 @@ async def add_student_source(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """
     source = update.message.text.strip()
     valid_sources = ["ОМ", "Ютуб", "Инстаграм", "Авито", "Сайт", "Через знакомых", "Пусто"]
-
+    
     if source not in valid_sources:
         await update.message.reply_text(
             f"Пожалуйста, выберите один из предложенных вариантов: {', '.join(valid_sources)}",
@@ -376,9 +375,9 @@ async def add_student_source(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
         )
         return STUDENT_SOURCE
-
+    
     context.user_data["source"] = source
-
+    
     # Теперь создаем студента с мета-данными
     return await create_student_with_meta(update, context)
 
@@ -427,7 +426,7 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
             source=context.user_data.get("source"),
             created_at=date.today()
         )
-
+        
         session.add(student_meta)
         session.commit()
 
@@ -464,20 +463,20 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
             msg += f"Авто-ментор: {auto_mentor_name}"
         else:
             msg += "Ментор не выбран."
-
+        
         # Добавляем информацию о рефералке и источнике
         if context.user_data.get("is_referral"):
             msg += f"\n\n📋 Реферальная система: Да\n👤 Реферер: {context.user_data.get('referrer_telegram')}"
         else:
             msg += f"\n\n📋 Реферальная система: Нет"
-
+        
         if context.user_data.get("source"):
             msg += f"\n📊 Источник: {context.user_data.get('source')}"
 
         await update.message.reply_text(msg)
         await exit_to_main_menu(update, context)
         return ConversationHandler.END
-
+        
     except Exception as e:
         logger.error(f"Ошибка при создании студента с мета-данными: {e}")
         await update.message.reply_text("❌ Произошла ошибка при создании студента.")
@@ -626,10 +625,8 @@ async def calculate_salary(update: Update, context):
             if not student:
                 continue
 
-            # 💻 ФУЛЛСТЕК СТУДЕНТЫ: обрабатываются отдельно в calculate_fullstack_salary()
             if student.training_type == "Фуллстек":
-                logger.debug(f"🔹 Фуллстек студент {student.fio}: пропускаем, обрабатывается в calculate_fullstack_salary()")
-                continue  # ✅ Фуллстек студенты обрабатываются в отдельной функции
+                continue  # ❌ Бонус не начисляется за Fullstack
 
             if 1 not in detailed_logs:
                 detailed_logs[1] = []
@@ -661,76 +658,160 @@ async def calculate_salary(update: Update, context):
                     f"{payment.payment_date}, {payment.amount} руб. | +{round(bonus, 2)} руб."
                 )
 
-        # 💻 СТАРАЯ ФУЛЛСТЕК ЛОГИКА УДАЛЕНА - теперь используется calculate_fullstack_salary()
-
-        # 🛡️ СТРАХОВКА ДЛЯ КУРАТОРОВ РУЧНОГО НАПРАВЛЕНИЯ
-        logger.info("🛡️ Запускаем расчет страховки для кураторов ручного направления")
-
-        # Импортируем модели
-        from data_base.models import CuratorInsuranceBalance, ManualProgress
-        
-        fullstack_salary_result = calculate_fullstack_salary(start_date, end_date)
-        
-        # Интегрируем ЗП директоров направления в общий расчет
-        for director_id, salary in fullstack_salary_result['director_salaries'].items():
-            if salary > 0:
-                if director_id not in mentor_salaries:
-                    mentor_salaries[director_id] = 0
-                mentor_salaries[director_id] += salary
-                
-                # Добавляем детальные логи директоров
-                if director_id not in detailed_logs:
-                    detailed_logs[director_id] = []
-                if director_id in fullstack_salary_result.get('logs', {}):
-                    detailed_logs[director_id].extend(fullstack_salary_result['logs'][director_id])
-        
-        # Интегрируем ЗП кураторов направления в общий расчет
-        for curator_id, salary in fullstack_salary_result['curator_salaries'].items():
-            if salary > 0:
-                if curator_id not in mentor_salaries:
-                    mentor_salaries[curator_id] = 0
-                mentor_salaries[curator_id] += salary
-                
-                # Добавляем детальные логи кураторов
-                if curator_id not in detailed_logs:
-                    detailed_logs[curator_id] = []
-                if curator_id in fullstack_salary_result.get('curator_logs', {}):
-                    detailed_logs[curator_id].extend(fullstack_salary_result['curator_logs'][curator_id])
-        
-        logger.info(f"💻 Система за сданные темы: обработано {fullstack_salary_result['students_processed']} студентов")
-        
-        # Получаем всех кураторов ручного направления (кроме директора ID=1)
-        manual_curators = session.query(Mentor).filter(
-            Mentor.direction == "Ручное тестирование",
-            Mentor.id != 1  # Исключаем директора
+        # Фуллстек бонусы
+        fullstack_students = session.query(Student).filter(
+            Student.training_type == "Фуллстек",
+            Student.total_cost >= 50000,
+            Student.start_date >= start_date,
+            Student.start_date <= end_date
         ).all()
 
-        for curator in manual_curators:
-            # Получаем активные страховки куратора за период
-            active_insurance = session.query(CuratorInsuranceBalance).filter(
-                CuratorInsuranceBalance.curator_id == curator.id,
-                CuratorInsuranceBalance.is_active == True,
-                CuratorInsuranceBalance.created_at >= start_date,
-                CuratorInsuranceBalance.created_at <= end_date
+        if fullstack_students:
+            bonus = len(fullstack_students) * 5000
+            if 1 not in mentor_salaries:
+                mentor_salaries[1] = 0
+            mentor_salaries[1] += bonus
+            for student in fullstack_students:
+                log_line = f"Бонус за фуллстек: {student.fio} (ID {student.id}) | +5000 руб."
+                if 1 not in detailed_logs:
+                    detailed_logs[1] = []
+                detailed_logs[1].append(log_line)
+
+        # Fullstack доля для ментора 3
+        # 🔁 Новый расчёт по Фуллстек: распределение 30%/10%/20%
+        for payment in detailed_payments:
+            student = session.query(Student).filter(Student.id == payment.student_id).first()
+            if not student or student.training_type != "Фуллстек":
+                continue
+
+            amount = float(payment.amount)
+            mentor_id = payment.mentor_id
+
+            # 🔹 Ментор 3 получает:
+            if mentor_id == 3:
+                bonus = amount * 0.3
+                if 3 not in mentor_salaries:
+                    mentor_salaries[3] = 0
+                mentor_salaries[3] += bonus
+                detailed_logs.setdefault(3, []).append(
+                    f"💼 30% ментору 3 за своего фуллстек ученика {student.fio} | "
+                    f"{payment.payment_date}, {amount} руб. | +{round(bonus, 2)} руб."
+                )
+            else:
+                bonus_3 = amount * 0.1
+                if 3 not in mentor_salaries:
+                    mentor_salaries[3] = 0
+                mentor_salaries[3] += bonus_3
+                detailed_logs.setdefault(3, []).append(
+                    f"🔁 10% ментору 3 за чужого фуллстек ученика {student.fio} | "
+                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_3, 2)} руб."
+                )
+
+                bonus_other = amount * 0.2
+                if mentor_id not in mentor_salaries:
+                    mentor_salaries[mentor_id] = 0
+                mentor_salaries[mentor_id] += bonus_other
+                detailed_logs.setdefault(mentor_id, []).append(
+                    f"💼 20% ментору {mentor_id} за фуллстек ученика {student.fio} | "
+                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_other, 2)} руб."
+                )
+
+        # 🛡️ СТРАХОВКА ДЛЯ КУРАТОРОВ РУЧНОГО НАПРАВЛЕНИЯ
+        from config import Config
+
+        if Config.INSURANCE_ENABLED:
+            logger.info("🛡️ Запускаем расчет страховки для кураторов ручного направления")
+
+            # Импортируем модели
+            from data_base.models import CuratorInsuranceBalance, ManualProgress
+
+            # Получаем всех кураторов ручного направления (кроме директора ID=1)
+            manual_curators = session.query(Mentor).filter(
+                Mentor.direction == "Ручное тестирование",
+                Mentor.id != 1  # Исключаем директора
             ).all()
 
-            if active_insurance:
-                total_insurance = sum(float(ins.insurance_amount) for ins in active_insurance)
-                
-                # Добавляем страховку к ЗП куратора
-                if curator.id not in mentor_salaries:
-                    mentor_salaries[curator.id] = 0
-                mentor_salaries[curator.id] += total_insurance
+            for curator in manual_curators:
+                # Получаем активные страховки куратора за период
+                active_insurance = session.query(CuratorInsuranceBalance).filter(
+                    CuratorInsuranceBalance.curator_id == curator.id,
+                    CuratorInsuranceBalance.is_active == True,
+                    CuratorInsuranceBalance.created_at >= start_date,
+                    CuratorInsuranceBalance.created_at <= end_date
+                ).all()
 
-                # Добавляем логи страховки
-                if curator.id not in detailed_logs:
-                    detailed_logs[curator.id] = []
-                
-                # Логи кураторов уже добавлены выше при интеграции результатов
+                if active_insurance:
+                    total_insurance = sum(float(ins.insurance_amount) for ins in active_insurance)
 
-        logger.info("💻 Гибридная система фуллстек: 10% от платежей (кураторы) + оплата за темы (все).")
+                    # Добавляем страховку к ЗП куратора
+                    if curator.id not in mentor_salaries:
+                        mentor_salaries[curator.id] = 0
+                    mentor_salaries[curator.id] += total_insurance
 
-        # 📊 Статистика фуллстек теперь в fullstack_salary_calculator.py
+                    # Добавляем логи страховки
+                    if curator.id not in detailed_logs:
+                        detailed_logs[curator.id] = []
+
+                    detailed_logs[curator.id].append(f"🛡️ Страховка за {len(active_insurance)} студентов: +{round(total_insurance, 2)} руб.")
+
+                    # Детальные логи по каждому студенту
+                    for insurance in active_insurance:
+                        student = session.query(Student).filter(Student.id == insurance.student_id).first()
+                        if student:
+                            detailed_logs[curator.id].append(
+                                f"  📋 {student.fio} (ID {student.id}) - 5 модуль | +{float(insurance.insurance_amount)} руб."
+                            )
+
+                    logger.info(f"🛡️ Куратор {curator.full_name}: страховка {total_insurance} руб. за {len(active_insurance)} студентов")
+
+                # 🔍 АВТОМАТИЧЕСКОЕ НАЧИСЛЕНИЕ СТРАХОВКИ НА ОСНОВЕ ДАТЫ 5 МОДУЛЯ ИЗ MANUAL_PROGRESS
+                # Получаем студентов куратора с прогрессом по 5 модулю
+                students_with_module_5 = session.query(Student, ManualProgress).join(
+                    ManualProgress, Student.id == ManualProgress.student_id
+                ).filter(
+                    Student.mentor_id == curator.id,
+                    Student.training_type == "Ручное тестирование",
+                    ManualProgress.m5_start_date.isnot(None),
+                    ManualProgress.m5_start_date >= start_date,
+                    ManualProgress.m5_start_date <= end_date
+                ).all()
+
+                for student, progress in students_with_module_5:
+                    module_5_date = progress.m5_start_date
+
+                    # Проверяем, нет ли уже страховки за этого студента
+                    existing_insurance = session.query(CuratorInsuranceBalance).filter(
+                        CuratorInsuranceBalance.student_id == student.id,
+                        CuratorInsuranceBalance.is_active == True
+                    ).first()
+
+                    if not existing_insurance:
+                        # Создаем новую страховку
+                        new_insurance = CuratorInsuranceBalance(
+                            curator_id=curator.id,
+                            student_id=student.id,
+                            insurance_amount=5000.00,
+                            created_at=module_5_date,
+                            is_active=True
+                        )
+                        session.add(new_insurance)
+                        session.commit()
+
+                        # Добавляем к ЗП куратора
+                        if curator.id not in mentor_salaries:
+                            mentor_salaries[curator.id] = 0
+                        mentor_salaries[curator.id] += 5000.00
+
+                        # Добавляем логи
+                        if curator.id not in detailed_logs:
+                            detailed_logs[curator.id] = []
+                        detailed_logs[curator.id].append(
+                            f"🛡️ Авто-страховка за {student.fio} (ID {student.id}) - 5 модуль {module_5_date} | +5000 руб."
+                        )
+
+                        logger.info(f"🛡️ Авто-начислена страховка куратору {curator.full_name} за студента {student.fio}: 5000 руб.")
+        else:
+            logger.info("🛡️ Страховочные выплаты отключены (INSURANCE_ENABLED = False)")
 
         # 🎁 Учет премий (выплаты с комментарием "Премия")
         premium_payments = session.query(Payment).filter(
@@ -754,6 +835,9 @@ async def calculate_salary(update: Update, context):
         # 🛡️ ВЫЧЕТ СТРАХОВКИ ПРИ ПОЛУЧЕНИИ КОМИССИИ
         logger.info("🛡️ Проверяем вычет страховки при получении комиссии")
 
+        # Импортируем модели для работы со страховкой
+        from data_base.models import CuratorInsuranceBalance
+
         # Получаем все платежи с комментарием "Комиссия" за период
         commission_payments = session.query(Payment).filter(
             Payment.payment_date >= start_date,
@@ -761,200 +845,201 @@ async def calculate_salary(update: Update, context):
             Payment.status == "подтвержден",
             Payment.comment == "Комиссия"
         ).order_by(Payment.payment_date.asc()).all()
-
+        
         for payment in commission_payments:
             student_id = payment.student_id
             if not student_id:
                 continue
-
+                
             # Получаем студента
             student = session.query(Student).filter(Student.id == student_id).first()
             if not student or student.training_type != "Ручное тестирование":
                 continue
-
+                
             # Получаем куратора студента
             curator_id = student.mentor_id
             if not curator_id:
                 continue
-
+                
             # Проверяем, есть ли активная страховка за этого студента
             active_insurance = session.query(CuratorInsuranceBalance).filter(
                 CuratorInsuranceBalance.student_id == student_id,
                 CuratorInsuranceBalance.curator_id == curator_id,
                 CuratorInsuranceBalance.is_active == True
             ).first()
-
+            
             if active_insurance:
                 # Вычитаем страховку из ЗП куратора
                 insurance_amount = float(active_insurance.insurance_amount)
                 if curator_id not in mentor_salaries:
                     mentor_salaries[curator_id] = 0
                 mentor_salaries[curator_id] -= insurance_amount
-
+                
                 # Деактивируем страховку
                 active_insurance.is_active = False
                 session.commit()
-
+                
                 # Добавляем логи
                 if curator_id not in detailed_logs:
                     detailed_logs[curator_id] = []
                 detailed_logs[curator_id].append(
                     f"🛡️ Вычет страховки за {student.fio} (ID {student_id}) - комиссия {payment.amount} руб. | -{insurance_amount} руб."
                 )
-
+                
                 logger.info(f"🛡️ Вычтена страховка {insurance_amount} руб. у куратора {curator_id} за студента {student.fio} при получении комиссии")
 
         # 🎯 KPI ДЛЯ ВСЕХ КУРАТОРОВ (кроме директоров)
-        logger.info("🎯 Рассчитываем KPI для всех кураторов")
+        from config import Config
 
-        # Импортируем модель для отслеживания KPI студентов
-        from data_base.models import CuratorKpiStudents
+        if Config.KPI_ENABLED:
+            logger.info("🎯 Рассчитываем KPI для всех кураторов")
 
-        # Получаем всех кураторов (кроме директоров ID=1,3)
-        all_curators_for_kpi = session.query(Mentor).filter(
-            ~Mentor.id.in_([1, 3])  # Исключаем директоров
-        ).all()
+            # Импортируем модель для отслеживания KPI студентов
+            from data_base.models import CuratorKpiStudents
 
-        for curator in all_curators_for_kpi:
-            # Определяем типы обучения для куратора (свое направление + фуллстек)
-            curator_training_types = []
-            if curator.direction == "Ручное тестирование":
-                curator_training_types = ["Ручное тестирование", "Фуллстек"]
-            elif curator.direction == "Автоматизация" or curator.direction == "Автотестирование":
-                curator_training_types = ["Автоматизация", "Автотестирование", "Фуллстек"]
-            else:
-                # Для других направлений добавляем фуллстек
-                curator_training_types = [curator.direction, "Фуллстек"]
+            # Получаем всех кураторов (кроме директоров ID=1,3)
+            all_curators_for_kpi = session.query(Mentor).filter(
+                ~Mentor.id.in_([1, 3])  # Исключаем директоров
+            ).all()
 
-            # Получаем студентов куратора подходящих типов
-            # Для автоматизации проверяем auto_mentor_id, для остальных - mentor_id
-            if curator.direction in ["Автоматизация", "Автотестирование"]:
-                students = session.query(Student).filter(
-                    Student.auto_mentor_id == curator.id,
-                    Student.training_type.in_(curator_training_types)
-                ).all()
-            else:
-                students = session.query(Student).filter(
-                    Student.mentor_id == curator.id,
-                    Student.training_type.in_(curator_training_types)
-                ).all()
-            student_ids = [s.id for s in students]
+            for curator in all_curators_for_kpi:
+                # Определяем типы обучения для куратора (свое направление + фуллстек)
+                curator_training_types = []
+                if curator.direction == "Ручное тестирование":
+                    curator_training_types = ["Ручное тестирование", "Фуллстек"]
+                elif curator.direction == "Автоматизация" or curator.direction == "Автотестирование":
+                    curator_training_types = ["Автоматизация", "Автотестирование", "Фуллстек"]
+                else:
+                    # Для других направлений добавляем фуллстек
+                    curator_training_types = [curator.direction, "Фуллстек"]
 
-            if not student_ids:
-                continue
+                # Получаем студентов куратора подходящих типов
+                # Для автоматизации проверяем auto_mentor_id, для остальных - mentor_id
+                if curator.direction in ["Автоматизация", "Автотестирование"]:
+                    students = session.query(Student).filter(
+                        Student.auto_mentor_id == curator.id,
+                        Student.training_type.in_(curator_training_types)
+                    ).all()
+                else:
+                    students = session.query(Student).filter(
+                        Student.mentor_id == curator.id,
+                        Student.training_type.in_(curator_training_types)
+                    ).all()
+                student_ids = [s.id for s in students]
 
-            # Получаем первоначальные платежи студентов в периоде
-            initial_payments = session.query(Payment).filter(
-                Payment.student_id.in_(student_ids),
-                Payment.payment_date >= start_date,
-                Payment.payment_date <= end_date,
-                Payment.status == "подтвержден",
-                Payment.comment == "Первоначальный платёж при регистрации"
-            ).order_by(Payment.payment_date.asc()).all()
+                if not student_ids:
+                    continue
 
-            # Считаем уникальных студентов, купивших в периоде
-            unique_students = set(p.student_id for p in initial_payments)
-            student_count = len(unique_students)
+                # Получаем первоначальные платежи студентов в периоде
+                initial_payments = session.query(Payment).filter(
+                    Payment.student_id.in_(student_ids),
+                    Payment.payment_date >= start_date,
+                    Payment.payment_date <= end_date,
+                    Payment.status == "подтвержден",
+                    Payment.comment == "Первоначальный платёж при регистрации"
+                ).order_by(Payment.payment_date.asc()).all()
 
-            # Определяем процент KPI
-            kpi_percent = 0
-            if 5 <= student_count < 10:
-                kpi_percent = 0.25
-            elif student_count >= 10:
-                kpi_percent = 0.30
+                # Считаем уникальных студентов, купивших в периоде
+                unique_students = set(p.student_id for p in initial_payments)
+                student_count = len(unique_students)
 
-            if kpi_percent > 0:
-                # 📝 СОХРАНЯЕМ СТУДЕНТОВ, ПОПАВШИХ ПОД KPI
-                for student_id in unique_students:
-                    # Проверяем, нет ли уже записи для этого студента в этом периоде
-                    existing_kpi = session.query(CuratorKpiStudents).filter(
-                        CuratorKpiStudents.curator_id == curator.id,
-                        CuratorKpiStudents.student_id == student_id,
-                        CuratorKpiStudents.period_start == start_date,
-                        CuratorKpiStudents.period_end == end_date
-                    ).first()
+                # Определяем процент KPI через конфигурацию
+                kpi_percent = Config.get_kpi_percent(student_count)
 
-                    if not existing_kpi:
-                        # Создаем новую запись
-                        kpi_student = CuratorKpiStudents(
-                            curator_id=curator.id,
-                            student_id=student_id,
-                            kpi_percent=kpi_percent,
-                            period_start=start_date,
-                            period_end=end_date,
-                            created_at=datetime.now().date()
-                        )
-                        session.add(kpi_student)
+                if kpi_percent > 0:
+                    # 📝 СОХРАНЯЕМ СТУДЕНТОВ, ПОПАВШИХ ПОД KPI
+                    for student_id in unique_students:
+                        # Проверяем, нет ли уже записи для этого студента в этом периоде
+                        existing_kpi = session.query(CuratorKpiStudents).filter(
+                            CuratorKpiStudents.curator_id == curator.id,
+                            CuratorKpiStudents.student_id == student_id,
+                            CuratorKpiStudents.period_start == start_date,
+                            CuratorKpiStudents.period_end == end_date
+                        ).first()
 
-                # Суммируем первоначальные платежи
-                total_initial_payments = sum(float(p.amount) for p in initial_payments)
+                        if not existing_kpi:
+                            # Создаем новую запись
+                            kpi_student = CuratorKpiStudents(
+                                curator_id=curator.id,
+                                student_id=student_id,
+                                kpi_percent=kpi_percent,
+                                period_start=start_date,
+                                period_end=end_date,
+                                created_at=datetime.now().date()
+                            )
+                            session.add(kpi_student)
 
-                # Вычисляем разницу между KPI процентом и стандартным 20%
-                standard_percent = 0.20
-                kpi_bonus = total_initial_payments * (kpi_percent - standard_percent)
+                    # Суммируем первоначальные платежи
+                    total_initial_payments = sum(float(p.amount) for p in initial_payments)
 
-                # Добавляем разницу к зарплате (так как 20% уже учтены в основном расчете)
-                if curator.id not in mentor_salaries:
-                    mentor_salaries[curator.id] = 0
-                mentor_salaries[curator.id] += kpi_bonus
+                    # Вычисляем разницу между KPI процентом и стандартным процентом
+                    standard_percent = Config.STANDARD_PERCENT
+                    kpi_bonus = total_initial_payments * (kpi_percent - standard_percent)
 
-                # Добавляем логи
-                if curator.id not in detailed_logs:
-                    detailed_logs[curator.id] = []
-                detailed_logs[curator.id].append(
-                    f"🎯 KPI ({curator.direction}): {student_count} студентов → {int(kpi_percent * 100)}% вместо 20% (доплата +{int((kpi_percent - standard_percent) * 100)}%) | +{kpi_bonus:.2f} руб."
-                )
+                    # Добавляем разницу к зарплате (так как 20% уже учтены в основном расчете)
+                    if curator.id not in mentor_salaries:
+                        mentor_salaries[curator.id] = 0
+                    mentor_salaries[curator.id] += kpi_bonus
 
-                logger.info(f"🎯 KPI начислен куратору {curator.full_name} ({curator.direction}): {student_count} студентов, {kpi_percent * 100}% вместо 20%, доплата {kpi_bonus:.2f} руб.")
+                    # Добавляем логи
+                    if curator.id not in detailed_logs:
+                        detailed_logs[curator.id] = []
+                    detailed_logs[curator.id].append(
+                        f"🎯 KPI ({curator.direction}): {student_count} студентов → {int(kpi_percent * 100)}% вместо {int(standard_percent * 100)}% (доплата +{int((kpi_percent - standard_percent) * 100)}%) | +{kpi_bonus:.2f} руб."
+                    )
 
-        # 🎯 ДОПОЛНИТЕЛЬНЫЙ KPI ДЛЯ ДОПЛАТ ОТ KPI-СТУДЕНТОВ
-        logger.info("🎯 Рассчитываем дополнительный KPI для доплат от KPI-студентов")
+                    logger.info(f"🎯 KPI начислен куратору {curator.full_name} ({curator.direction}): {student_count} студентов, {kpi_percent * 100}% вместо {standard_percent * 100}%, доплата {kpi_bonus:.2f} руб.")
 
-        # Получаем всех студентов, которые попали под KPI в любом периоде
-        kpi_students = session.query(CuratorKpiStudents).all()
+            # 🎯 ДОПОЛНИТЕЛЬНЫЙ KPI ДЛЯ ДОПЛАТ ОТ KPI-СТУДЕНТОВ
+            logger.info("🎯 Рассчитываем дополнительный KPI для доплат от KPI-студентов")
 
-        for kpi_record in kpi_students:
-            curator_id = kpi_record.curator_id
-            student_id = kpi_record.student_id
-            kpi_percent = float(kpi_record.kpi_percent)
+            # Получаем всех студентов, которые попали под KPI в любом периоде
+            kpi_students = session.query(CuratorKpiStudents).all()
 
-            # Получаем доплаты этого студента в текущем периоде расчета
-            additional_payments = session.query(Payment).filter(
-                Payment.student_id == student_id,
-                Payment.payment_date >= start_date,
-                Payment.payment_date <= end_date,
-                Payment.status == "подтвержден",
-                Payment.comment == "Доплата за обучение"
-            ).order_by(Payment.payment_date.asc()).all()
+            for kpi_record in kpi_students:
+                curator_id = kpi_record.curator_id
+                student_id = kpi_record.student_id
+                kpi_percent = float(kpi_record.kpi_percent)
 
-            if additional_payments:
-                # Суммируем доплаты
-                total_additional_payments = sum(float(p.amount) for p in additional_payments)
+                # Получаем доплаты этого студента в текущем периоде расчета
+                additional_payments = session.query(Payment).filter(
+                    Payment.student_id == student_id,
+                    Payment.payment_date >= start_date,
+                    Payment.payment_date <= end_date,
+                    Payment.status == "подтвержден",
+                    Payment.comment == "Доплата за обучение"
+                ).order_by(Payment.payment_date.asc()).all()
 
-                # Вычисляем разницу между KPI процентом и стандартным 20%
-                standard_percent = 0.20
-                additional_kpi_bonus = total_additional_payments * (kpi_percent - standard_percent)
+                if additional_payments:
+                    # Суммируем доплаты
+                    total_additional_payments = sum(float(p.amount) for p in additional_payments)
 
-                # Добавляем к зарплате куратора
-                if curator_id not in mentor_salaries:
-                    mentor_salaries[curator_id] = 0
-                mentor_salaries[curator_id] += additional_kpi_bonus
+                    # Вычисляем разницу между KPI процентом и стандартным процентом
+                    standard_percent = Config.STANDARD_PERCENT
+                    additional_kpi_bonus = total_additional_payments * (kpi_percent - standard_percent)
 
-                # Получаем информацию о студенте для логов
-                student = session.query(Student).filter(Student.id == student_id).first()
-                student_name = student.fio if student else f"ID {student_id}"
+                    # Добавляем к зарплате куратора
+                    if curator_id not in mentor_salaries:
+                        mentor_salaries[curator_id] = 0
+                    mentor_salaries[curator_id] += additional_kpi_bonus
 
-                # Добавляем логи
-                if curator_id not in detailed_logs:
-                    detailed_logs[curator_id] = []
-                detailed_logs[curator_id].append(
-                    f"🎯 KPI доплаты от {student_name}: {int(kpi_percent * 100)}% вместо 20% с {total_additional_payments:.2f} руб. | +{additional_kpi_bonus:.2f} руб."
-                )
+                    # Получаем информацию о студенте для логов
+                    student = session.query(Student).filter(Student.id == student_id).first()
+                    student_name = student.fio if student else f"ID {student_id}"
 
-                logger.info(f"🎯 Дополнительный KPI начислен куратору {curator_id} за доплаты студента {student_name}: {additional_kpi_bonus:.2f} руб.")
+                    # Добавляем логи
+                    if curator_id not in detailed_logs:
+                        detailed_logs[curator_id] = []
+                    detailed_logs[curator_id].append(
+                        f"🎯 KPI доплаты от {student_name}: {int(kpi_percent * 100)}% вместо {int(standard_percent * 100)}% с {total_additional_payments:.2f} руб. | +{additional_kpi_bonus:.2f} руб."
+                    )
 
-        # Коммитим изменения в базу данных
-        session.commit()
+                    logger.info(f"🎯 Дополнительный KPI начислен куратору {curator_id} за доплаты студента {student_name}: {additional_kpi_bonus:.2f} руб.")
+
+            # Коммитим изменения в базу данных
+            session.commit()
+        else:
+            logger.info("🎯 KPI система отключена (KPI_ENABLED = False)")
 
         # 💼 Расчет зарплат карьерных консультантов
         career_consultant_salaries = {}
@@ -1413,7 +1498,7 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
         kpi_amount = 0.0
         insurance_amount = 0.0
         premium_amount = 0.0
-
+        
         if logs:
             for log in logs:
                 if "🎯 KPI" in log:
