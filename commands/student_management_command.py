@@ -527,6 +527,8 @@ async def calculate_salary(update: Update, context):
     Рассчитывает зарплату менторов за указанный период.
     """
     try:
+        # Импортируем новый калькулятор фуллстеков
+        from commands.fullstack_salary_calculator import calculate_fullstack_salary
         date_range = update.message.text.strip()
 
         if " - " not in date_range:
@@ -677,44 +679,41 @@ async def calculate_salary(update: Update, context):
                     detailed_logs[1] = []
                 detailed_logs[1].append(log_line)
 
-        # Fullstack доля для ментора 3
-        # 🔁 Новый расчёт по Фуллстек: распределение 30%/10%/20%
-        for payment in detailed_payments:
-            student = session.query(Student).filter(Student.id == payment.student_id).first()
-            if not student or student.training_type != "Фуллстек":
-                continue
-
-            amount = float(payment.amount)
-            mentor_id = payment.mentor_id
-
-            # 🔹 Ментор 3 получает:
-            if mentor_id == 3:
-                bonus = amount * 0.3
-                if 3 not in mentor_salaries:
-                    mentor_salaries[3] = 0
-                mentor_salaries[3] += bonus
-                detailed_logs.setdefault(3, []).append(
-                    f"💼 30% ментору 3 за своего фуллстек ученика {student.fio} | "
-                    f"{payment.payment_date}, {amount} руб. | +{round(bonus, 2)} руб."
-                )
-            else:
-                bonus_3 = amount * 0.1
-                if 3 not in mentor_salaries:
-                    mentor_salaries[3] = 0
-                mentor_salaries[3] += bonus_3
-                detailed_logs.setdefault(3, []).append(
-                    f"🔁 10% ментору 3 за чужого фуллстек ученика {student.fio} | "
-                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_3, 2)} руб."
-                )
-
-                bonus_other = amount * 0.2
-                if mentor_id not in mentor_salaries:
-                    mentor_salaries[mentor_id] = 0
-                mentor_salaries[mentor_id] += bonus_other
-                detailed_logs.setdefault(mentor_id, []).append(
-                    f"💼 20% ментору {mentor_id} за фуллстек ученика {student.fio} | "
-                    f"{payment.payment_date}, {amount} руб. | +{round(bonus_other, 2)} руб."
-                )
+        # 🎯 НОВЫЙ РАСЧЕТ ФУЛЛСТЕКОВ ПО ПРИНЯТЫМ ТЕМАМ
+        logger.info("🎯 Запускаем новый расчет фуллстеков по принятым темам")
+        try:
+            fullstack_result = calculate_fullstack_salary(start_date, end_date)
+            
+            # Добавляем результаты директоров к основному расчету
+            for director_id, salary in fullstack_result['director_salaries'].items():
+                if director_id not in mentor_salaries:
+                    mentor_salaries[director_id] = 0
+                mentor_salaries[director_id] += salary
+            
+            # Добавляем результаты кураторов к основному расчету
+            for curator_id, salary in fullstack_result['curator_salaries'].items():
+                if curator_id not in mentor_salaries:
+                    mentor_salaries[curator_id] = 0
+                mentor_salaries[curator_id] += salary
+            
+            # Добавляем логи директоров
+            for director_id, logs in fullstack_result['logs'].items():
+                if director_id not in detailed_logs:
+                    detailed_logs[director_id] = []
+                detailed_logs[director_id].extend(logs)
+            
+            # Добавляем логи кураторов
+            for curator_id, logs in fullstack_result['curator_logs'].items():
+                if curator_id not in detailed_logs:
+                    detailed_logs[curator_id] = []
+                detailed_logs[curator_id].extend(logs)
+            
+            # Добавляем статистику
+            logger.info(f"🎯 Фуллстек расчет завершен: обработано {fullstack_result['students_processed']} студентов, {fullstack_result['topics_processed']} тем")
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка при расчете фуллстеков: {e}")
+            # Продолжаем расчет без фуллстеков
 
         # 🛡️ СТРАХОВКА ДЛЯ КУРАТОРОВ РУЧНОГО НАПРАВЛЕНИЯ
         from config import Config
