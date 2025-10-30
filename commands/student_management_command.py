@@ -449,9 +449,13 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
         if mentor_id:
             mentor = session.query(Mentor).filter(Mentor.id == mentor_id).first()
             mentor_name = mentor.full_name if mentor else f"ID {mentor_id}"
+        else:
+            mentor_name = "Не назначен"
         if auto_mentor_id:
             auto_mentor = session.query(Mentor).filter(Mentor.id == auto_mentor_id).first()
             auto_mentor_name = auto_mentor.full_name if auto_mentor else f"ID {auto_mentor_id}"
+        else:
+            auto_mentor_name = "Не назначен"
 
         # Финальное сообщение
         msg = f"✅ Студент {context.user_data['fio']} добавлен!\n"
@@ -1225,7 +1229,7 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_text(
             "Сначала выберите ментора для ручного направления (Ручное тестирование):",
             reply_markup=ReplyKeyboardMarkup(
-                [[name] for name in context.user_data["mentors_list"].keys()],
+                [[name] for name in context.user_data["mentors_list"].keys()] + [["Пропустить"]],
                 one_time_keyboard=True
             )
         )
@@ -1241,7 +1245,7 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_text(
             "Теперь выберите ментора для авто-направления (Автотестирование):",
             reply_markup=ReplyKeyboardMarkup(
-                [[name] for name in context.user_data["mentors_list"].keys()],
+                [[name] for name in context.user_data["mentors_list"].keys()] + [["Пропустить"]],
                 one_time_keyboard=True
             )
         )
@@ -1268,7 +1272,7 @@ async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAU
     await update.message.reply_text(
         msg,
         reply_markup=ReplyKeyboardMarkup(
-            [[name] for name in context.user_data["mentors_list"].keys()],
+            [[name] for name in context.user_data["mentors_list"].keys()] + [["Пропустить"]],
             one_time_keyboard=True
         )
     )
@@ -1279,8 +1283,8 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
     selected = update.message.text.strip()
     mentors_list = context.user_data.get("mentors_list", {})
 
-    if selected not in mentors_list:
-        await update.message.reply_text("❌ Пожалуйста, выберите одного из предложенных.")
+    if selected not in mentors_list and selected != "Пропустить":
+        await update.message.reply_text("❌ Пожалуйста, выберите одного из предложенных или нажмите 'Пропустить'.")
         return SELECT_MENTOR
 
     course_type = context.user_data.get("course_type")
@@ -1288,7 +1292,7 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
     if course_type == "Фуллстек":
         # Если еще не выбран ручной ментор — сейчас выбираем его
         if "mentor_id" not in context.user_data:
-            context.user_data["mentor_id"] = mentors_list[selected]
+            context.user_data["mentor_id"] = None if selected == "Пропустить" else mentors_list[selected]
             # Теперь показать выбор авто-ментора
             from data_base.models import Mentor
             mentors = session.query(Mentor).filter(Mentor.direction == "Автотестирование").all()
@@ -1299,23 +1303,23 @@ async def handle_mentor_selection(update: Update, context: ContextTypes.DEFAULT_
             await update.message.reply_text(
                 "Теперь выберите ментора для авто-направления (Автотестирование):",
                 reply_markup=ReplyKeyboardMarkup(
-                    [[name] for name in context.user_data["mentors_list"].keys()],
+                    [[name] for name in context.user_data["mentors_list"].keys()] + [["Пропустить"]],
                     one_time_keyboard=True
                 )
             )
             return SELECT_MENTOR
         else:
             # Сейчас выбираем авто-ментора
-            context.user_data["auto_mentor_id"] = mentors_list[selected]
+            context.user_data["auto_mentor_id"] = None if selected == "Пропустить" else mentors_list[selected]
             await update.message.reply_text("Оба ментора выбраны. Введите общую стоимость обучения:")
             return TOTAL_PAYMENT
     elif course_type == "Автотестирование":
-        context.user_data["auto_mentor_id"] = mentors_list[selected]
+        context.user_data["auto_mentor_id"] = None if selected == "Пропустить" else mentors_list[selected]
         context.user_data["mentor_id"] = None
         await update.message.reply_text("Введите общую стоимость обучения:")
         return TOTAL_PAYMENT
     else:  # Ручное тестирование
-        context.user_data["mentor_id"] = mentors_list[selected]
+        context.user_data["mentor_id"] = None if selected == "Пропустить" else mentors_list[selected]
         context.user_data["auto_mentor_id"] = None
         await update.message.reply_text("Введите общую стоимость обучения:")
         return TOTAL_PAYMENT
