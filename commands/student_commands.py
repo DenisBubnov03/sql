@@ -156,6 +156,10 @@ async def edit_student_field_limited(update: Update, context: ContextTypes.DEFAU
     if field_to_edit == "Назад":
         return await exit_to_main_menu(update, context)
 
+    if field_to_edit == "Куратор":
+        # Обработка редактирования куратора
+        return await edit_curator(update, context)
+
     if field_to_edit == "Получил работу":
         # Уникальная обработка для "Получил работу"
         context.user_data["field_to_edit"] = field_to_edit
@@ -185,7 +189,7 @@ async def edit_student_field_limited(update: Update, context: ContextTypes.DEFAU
     await update.message.reply_text(
         "Некорректное поле. Выберите одно из предложенных:",
         reply_markup=ReplyKeyboardMarkup(
-            [["ФИО", "Telegram", "Статус обучения", "Получил работу"], ["Назад"]],
+            [["ФИО", "Telegram", "Статус обучения", "Получил работу", "Куратор"], ["Назад"]],
             one_time_keyboard=True
         )
     )

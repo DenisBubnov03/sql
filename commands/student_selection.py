@@ -48,13 +48,20 @@ async def find_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Если найден только один студент
     student = matching_students[0]
     context.user_data["student"] = student
+    # Клавиатура по ролям
+    from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
+    user_id = update.message.from_user.id
+    if user_id in NOT_ADMINS and user_id not in AUTHORIZED_USERS:
+        keyboard = [["ФИО", "Telegram", "Статус обучения", "Получил работу", "Куратор"], ["Назад"]]
+    else:
+        keyboard = [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты", "Статус обучения", "Получил работу",
+                     "Комиссия выплачено", "Куратор", "Удалить ученика"], ["Назад"]]
+
     await update.message.reply_text(
         f"Вы выбрали студента: {student.fio} ({student.telegram}).\n"
         "Что вы хотите отредактировать?",
         reply_markup=ReplyKeyboardMarkup(
-            [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты", "Статус обучения", "Получил работу",
-              "Комиссия выплачено", "Куратор", "Удалить ученика"],
-             ["Назад"]],
+            keyboard,
             one_time_keyboard=True
         )
     )
@@ -77,12 +84,18 @@ async def handle_multiple_students(update: Update, context: ContextTypes.DEFAULT
         index = int(selected_option) - 1
         if 0 <= index < len(matching_students):
             context.user_data["student"] = matching_students[index]
+            from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
+            user_id = update.message.from_user.id
+            if user_id in NOT_ADMINS and user_id not in AUTHORIZED_USERS:
+                keyboard = [["ФИО", "Telegram", "Статус обучения", "Получил работу", "Куратор"], ["Назад"]]
+            else:
+                keyboard = [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты", "Статус обучения", "Получил работу",
+                             "Комиссия выплачено", "Куратор", "Удалить ученика"], ["Назад"]]
+
             await update.message.reply_text(
                 f"Вы выбрали студента: {matching_students[index].fio}.",
                 reply_markup=ReplyKeyboardMarkup(
-                    [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты", "Статус обучения", "Получил работу",
-                      "Комиссия выплачено", "Удалить ученика"],
-                     ["Назад"]],
+                    keyboard,
                     one_time_keyboard=True
                 )
             )
