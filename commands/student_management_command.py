@@ -1462,9 +1462,19 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
             period_start = None
             period_end = None
 
+        # Брутто суммы по видам платежей (для справки)
         total_initial = 0.0
         total_additional = 0.0
         total_commission = 0.0
+
+        # Брутто базы, которые реально попали в расчёт (исключая Fullstack)
+        counted_initial = 0.0
+        counted_additional = 0.0
+        counted_commission = 0.0
+
+        # Начисленные суммы (нетто) с учётом правил процентов, как в основном расчёте
+        from_students_payout = 0.0  # первоначальный + доплата
+        from_offers_payout = 0.0    # комиссия
 
         if period_start and period_end:
             payments_q = session.query(Payment, Student).join(Student, Student.id == Payment.student_id).filter(
@@ -1477,6 +1487,8 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
             for payment, student in payments_q:
                 comment_lower = (payment.comment or "").lower()
                 amount = float(payment.amount)
+
+                # Брутто агрегаты (все платежи)
                 if "первонач" in comment_lower:
                     total_initial += amount
                 elif "доплат" in comment_lower:
@@ -1484,13 +1496,63 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
                 elif "комисси" in comment_lower:
                     total_commission += amount
 
+                # Исключаем Fullstack из расчётной базы
+                if student.training_type == "Фуллстек":
+                    continue
+
+                # Платёж попадает в расчёт — накапливаем расчётную базу
+                if "первонач" in comment_lower:
+                    counted_initial += amount
+                elif "доплат" in comment_lower:
+                    counted_additional += amount
+                elif "комисси" in comment_lower:
+                    counted_commission += amount
+
+                # Применяем те же правила процентов, что и в calculate_salary
+                if mentor.id == 1 and student.training_type == "Ручное тестирование":
+                    percent = 0.3
+                elif mentor.id == 3 and student.training_type == "Автотестирование":
+                    percent = 0.3
+                else:
+                    percent = 0.2
+
+                payout = amount * percent
+                if "первонач" in comment_lower or "доплат" in comment_lower:
+                    from_students_payout += payout
+                elif "комисси" in comment_lower:
+                    from_offers_payout += payout
+
         total_prepayment = round(total_initial + total_additional, 2)
         total_postpayment = round(total_commission, 2)
+
+        # Отображаемые базы — только то, что реально попало в расчёт (без Fullstack)
+        counted_prepayment = round(counted_initial + counted_additional, 2)
+        counted_postpayment = round(counted_commission, 2)
         tax_amount = round(salary * 0.06, 2)
 
-        # Вычисляем составляющие зарплаты (20% от сумм)
-        from_students = round(total_prepayment * 0.2, 2)  # с учеников (первоначальный + доплата)
-        from_offers = round(total_postpayment * 0.2, 2)  # с оффера (комиссия)
+        # Составляющие зарплаты по правилам процентов (20/30%)
+        from_students = round(from_students_payout, 2)  # начислено с учеников
+        from_offers = round(from_offers_payout, 2)      # начислено с оффера
+
+        # Добавляем сумму за созвоны по фуллстекам (из логов расчета фуллстека)
+        # Эти выплаты должны попадать в компонент "с учеников"
+        fullstack_calls_amount = 0.0
+        if logs:
+            import re
+            for log in logs:
+                # Кураторские логи фуллстека
+                if "фуллстек" in log.lower() and "+" in log:
+                    m = re.search(r"\+(\d+\.?\d*) руб\.", log)
+                    if m:
+                        fullstack_calls_amount += float(m.group(1))
+                # Логи директоров направления (тоже считаем как созвоны)
+                elif ("директор" in log.lower() or "принял" in log.lower()) and "+" in log:
+                    m = re.search(r"\+(\d+\.?\d*) руб\.", log)
+                    if m:
+                        fullstack_calls_amount += float(m.group(1))
+
+        if fullstack_calls_amount > 0:
+            from_students = round(from_students + fullstack_calls_amount, 2)
         
         # Вычисляем KPI и другие бонусы из логов
         import re
@@ -1528,12 +1590,9 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
             report += f"| премии {premium_amount} руб. |\n"
         report += f"| налог {tax_amount} руб. |\n\n"
 
-        # Показываем 20% от сумм
-        prepayment_20_percent = round(total_prepayment * 0.2, 2)
-        postpayment_20_percent = round(total_postpayment * 0.2, 2)
-
-        report += f"Предоплата (первоначальный + доплата): {prepayment_20_percent} руб. (20% от {total_prepayment} руб.)\n"
-        report += f"Постоплата (комиссия): {postpayment_20_percent} руб. (20% от {total_postpayment} руб.)\n"
+        # Поясняем начисления без фиксации процента в тексте (так как 20/30% зависят от роли/курса)
+        report += f"Предоплата (первоначальный + доплата): {from_students} руб. (от {counted_prepayment} руб.)\n"
+        report += f"Постоплата (комиссия): {from_offers} руб. (от {counted_postpayment} руб.)\n"
         report += f"Налог 6% к уплате: {tax_amount} руб.\n\n"
 
         if logs:
@@ -1593,6 +1652,8 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
     total_additional = 0.0
     total_commission = 0.0
 
+    commission_details_fallback = []
+
     if period_start and period_end:
         student_ids_subq = session.query(Student.id).filter(Student.career_consultant_id == consultant.id)
         payments_q = session.query(Payment).filter(
@@ -1611,22 +1672,28 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
                 total_additional += amount
             elif "комисси" in comment_lower:
                 total_commission += amount
+                commission_details_fallback.append(payment)
 
     total_prepayment = round(total_initial + total_additional, 2)
     total_postpayment = round(total_commission, 2)
     tax_amount = round(salary * 0.06, 2)
 
-    # Показываем 20% от сумм
-    prepayment_20_percent = round(total_prepayment * 0.2, 2)
-    postpayment_20_percent = round(total_postpayment * 0.2, 2)
+    # Для КК учитываем только комиссию: 10% от комиссий, предоплата не выплачивается
+    prepayment_percent = 0.0
+    postpayment_percent = 0.1
+    prepayment_amount = round(total_prepayment * prepayment_percent, 2)
+    postpayment_amount = round(total_postpayment * postpayment_percent, 2)
 
-    report += f"Предоплата (первоначальный + доплата): {prepayment_20_percent} руб. (20% от {total_prepayment} руб.)\n"
-    report += f"Постоплата (комиссия): {postpayment_20_percent} руб. (20% от {total_postpayment} руб.)\n"
+    report += f"Предоплата (первоначальный + доплата): {prepayment_amount} руб. ({int(prepayment_percent*100)}% от {total_prepayment} руб.)\n"
+    report += f"Постоплата (комиссия): {postpayment_amount} руб. ({int(postpayment_percent*100)}% от {total_postpayment} руб.)\n"
     report += f"Налог 6% к уплате: {tax_amount} руб.\n\n"
 
-    if commission_payments:
+    # Если прямой запрос по комиссиям ничего не вернул, используем собранные комиссии из общего списка
+    commission_items = commission_payments if commission_payments else commission_details_fallback
+
+    if commission_items:
         report += "📋 Детализация комиссий (10% от каждого платежа):\n"
-        for payment in commission_payments:
+        for payment in commission_items:
             student = session.query(Student).filter(Student.id == payment.student_id).first()
             if student:
                 commission_amount = round(float(payment.amount) * 0.1, 2)
