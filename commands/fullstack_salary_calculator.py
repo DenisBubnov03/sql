@@ -86,7 +86,8 @@ def calculate_fullstack_salary(start_date: date, end_date: date):
                 'auto_topics': 0,
                 'is_curator_student': False,
                 'curator_id': None,
-                'curator_direction': None
+                'curator_direction': None,
+                'curators': {}  # Словарь всех кураторов: {curator_id: {'direction': 'auto/manual', 'assignments': [...]}}
             }
         
         # Определяем директор это или куратор
@@ -98,22 +99,38 @@ def calculate_fullstack_salary(start_date: date, end_date: date):
                 students_data[student_id]['auto_topics'] += 1
         else:  # Куратор
             students_data[student_id]['is_curator_student'] = True
-            students_data[student_id]['curator_id'] = assignment.mentor_id
             
-            # Определяем направление куратора по типу темы
+            # ВАЖНО: не перезаписываем curator_id, а собираем всех кураторов
+            curator_id = assignment.mentor_id
+            if curator_id not in students_data[student_id]['curators']:
+                students_data[student_id]['curators'][curator_id] = {
+                    'direction': None,
+                    'assignments': []
+                }
+            
+            # Определяем направление куратора
             if assignment.topic_manual is not None:
-                students_data[student_id]['curator_direction'] = 'manual'
+                if students_data[student_id]['curators'][curator_id]['direction'] is None:
+                    students_data[student_id]['curators'][curator_id]['direction'] = 'manual'
             elif assignment.topic_auto is not None:
-                students_data[student_id]['curator_direction'] = 'auto'
+                if students_data[student_id]['curators'][curator_id]['direction'] is None:
+                    students_data[student_id]['curators'][curator_id]['direction'] = 'auto'
+            
+            students_data[student_id]['curators'][curator_id]['assignments'].append(assignment)
+            
+            # Для обратной совместимости устанавливаем первого найденного куратора
+            if students_data[student_id]['curator_id'] is None:
+                students_data[student_id]['curator_id'] = curator_id
+                students_data[student_id]['curator_direction'] = students_data[student_id]['curators'][curator_id]['direction']
             
             # Сохраняем информацию о кураторе для расчета ЗП
-            if assignment.mentor_id not in curator_students:
-                curator_students[assignment.mentor_id] = []
-            if student_id not in [s['student_id'] for s in curator_students[assignment.mentor_id]]:
-                curator_students[assignment.mentor_id].append({
+            if curator_id not in curator_students:
+                curator_students[curator_id] = []
+            if student_id not in [s['student_id'] for s in curator_students[curator_id]]:
+                curator_students[curator_id].append({
                     'student_id': student_id,
                     'student': students_data[student_id]['student'],
-                    'direction': students_data[student_id]['curator_direction']
+                    'direction': students_data[student_id]['curators'][curator_id]['direction']
                 })
     
     logger.info(f"📊 Найдено уникальных студентов с принятыми темами: {len(students_data)}")
@@ -134,84 +151,78 @@ def calculate_fullstack_salary(start_date: date, end_date: date):
         
         if data['is_curator_student']:
             # === ОБРАБОТКА СТУДЕНТОВ КУРАТОРОВ ===
-            curator_id = data['curator_id']
-            curator_direction = data['curator_direction']
-            
-            # Инициализируем ЗП куратора и его логи
-            if curator_id not in curator_salaries:
-                curator_salaries[curator_id] = 0
-            if curator_id not in curator_detailed_logs:
-                curator_detailed_logs[curator_id] = []
-            
-            if curator_direction == 'manual':
-                # === РУЧНОЙ КУРАТОР: как директор, но 10% вместо 30% ===
-                # Рассчитываем стоимость одного созвона (10% от total_cost)
-                call_cost = total_cost * 0.10
+            # ВАЖНО: обрабатываем ВСЕХ кураторов для этого студента, а не только первого
+            for curator_id, curator_info in data.get('curators', {}).items():
+                curator_direction = curator_info['direction']
                 
-                # Считаем количество принятых тем куратором
-                manual_topics_count = len(TOPIC_FIELD_MAPPING)
-                manual_call_price = call_cost / manual_topics_count if manual_topics_count > 0 else 0
+                if not curator_direction:
+                    continue
                 
-                # Подсчитываем принятые темы куратором для этого студента
-                curator_manual_topics = 0
-                for assignment in topic_assignments:
-                    if (assignment.student_id == student_id and 
-                        assignment.mentor_id == curator_id and 
-                        assignment.topic_manual is not None):
-                        curator_manual_topics += 1
+                # Инициализируем ЗП куратора и его логи
+                if curator_id not in curator_salaries:
+                    curator_salaries[curator_id] = 0
+                if curator_id not in curator_detailed_logs:
+                    curator_detailed_logs[curator_id] = []
                 
-                curator_salary = curator_manual_topics * manual_call_price
-                curator_salaries[curator_id] += curator_salary
-                
-                # Добавляем детальный лог для куратора
-                curator_detailed_logs[curator_id].append(
-                    f"💼 Ручной куратор за фуллстек студента {student.fio} {student.telegram} {student.id} | "
-                    f"Принял {curator_manual_topics} тем по {round(manual_call_price, 2)} руб. | +{round(curator_salary, 2)} руб."
-                )
-                
-                # 10% ручному директору направления (только если студент НЕ на ручном директоре)
-                if student.mentor_id != 1:  # Студент НЕ на ручном директоре
-                    director_salaries[1] += total_cost * 0.10
-                    logger.info(f"📊 Ручной директор (ID 1): бонус +{round(total_cost * 0.10, 2)} руб. за студента {student.fio} (куратор {curator_id})")
-                else:
-                    logger.debug(f"🚫 Ручному директору НЕ начислен бонус: студент {student.fio} на ручном директоре")
-                
-                logger.info(f"📊 Ручной куратор {curator_id}: принял {curator_manual_topics} тем, ЗП +{round(curator_salary, 2)} руб.")
-                
-            else:  # auto
-                # === АВТО КУРАТОР: как директор, но 20% вместо 30% ===
-                # Рассчитываем стоимость одного созвона (20% от total_cost)
-                call_cost = total_cost * 0.20
-                
-                # Считаем количество принятых модулей куратором
-                auto_modules_count = len(AUTO_MODULE_FIELD_MAPPING)
-                auto_call_price = call_cost / auto_modules_count if auto_modules_count > 0 else 0
-                
-                # Подсчитываем принятые модули куратором для этого студента
-                curator_auto_topics = 0
-                for assignment in topic_assignments:
-                    if (assignment.student_id == student_id and 
-                        assignment.mentor_id == curator_id and 
-                        assignment.topic_auto is not None):
-                        curator_auto_topics += 1
-                
-                curator_salary = curator_auto_topics * auto_call_price
-                curator_salaries[curator_id] += curator_salary
-                
-                # Добавляем детальный лог для авто куратора
-                curator_detailed_logs[curator_id].append(
-                    f"💼 Авто куратор за фуллстек студента {student.fio} {student.telegram} {student.id} | "
-                    f"Принял {curator_auto_topics} модулей по {round(auto_call_price, 2)} руб. | +{round(curator_salary, 2)} руб."
-                )
-                
-                # 10% авто директору направления (только если студент НЕ на авто директоре)
-                if student.auto_mentor_id != 3:  # Студент НЕ на авто директоре
-                    director_salaries[3] += total_cost * 0.10
-                    logger.info(f"📊 Авто директор (ID 3): бонус +{round(total_cost * 0.10, 2)} руб. за студента {student.fio} (куратор {curator_id})")
-                else:
-                    logger.debug(f"🚫 Авто директору НЕ начислен бонус: студент {student.fio} на авто директоре")
-                
-                logger.info(f"📊 Авто куратор {curator_id}: принял {curator_auto_topics} модулей, ЗП +{round(curator_salary, 2)} руб.")
+                if curator_direction == 'manual':
+                    # === РУЧНОЙ КУРАТОР: как директор, но 10% вместо 30% ===
+                    # Рассчитываем стоимость одного созвона (10% от total_cost)
+                    call_cost = total_cost * 0.10
+                    
+                    # Считаем количество принятых тем куратором
+                    manual_topics_count = len(TOPIC_FIELD_MAPPING)
+                    manual_call_price = call_cost / manual_topics_count if manual_topics_count > 0 else 0
+                    
+                    # Подсчитываем принятые темы куратором для этого студента (из его assignments)
+                    curator_manual_topics = sum(1 for a in curator_info['assignments'] if a.topic_manual is not None)
+                    
+                    curator_salary = curator_manual_topics * manual_call_price
+                    curator_salaries[curator_id] += curator_salary
+                    
+                    # Добавляем детальный лог для куратора
+                    curator_detailed_logs[curator_id].append(
+                        f"💼 Ручной куратор за фуллстек студента {student.fio} {student.telegram} {student.id} | "
+                        f"Принял {curator_manual_topics} тем по {round(manual_call_price, 2)} руб. | +{round(curator_salary, 2)} руб."
+                    )
+                    
+                    # 10% ручному директору направления (только если студент НЕ на ручном директоре)
+                    if student.mentor_id != 1:  # Студент НЕ на ручном директоре
+                        director_salaries[1] += total_cost * 0.10
+                        logger.info(f"📊 Ручной директор (ID 1): бонус +{round(total_cost * 0.10, 2)} руб. за студента {student.fio} (куратор {curator_id})")
+                    else:
+                        logger.debug(f"🚫 Ручному директору НЕ начислен бонус: студент {student.fio} на ручном директоре")
+                    
+                    logger.info(f"📊 Ручной куратор {curator_id}: принял {curator_manual_topics} тем у студента {student.fio}, ЗП +{round(curator_salary, 2)} руб.")
+                    
+                else:  # auto
+                    # === АВТО КУРАТОР: как директор, но 20% вместо 30% ===
+                    # Рассчитываем стоимость одного созвона (20% от total_cost)
+                    call_cost = total_cost * 0.20
+                    
+                    # Считаем количество принятых модулей куратором
+                    auto_modules_count = len(AUTO_MODULE_FIELD_MAPPING)
+                    auto_call_price = call_cost / auto_modules_count if auto_modules_count > 0 else 0
+                    
+                    # Подсчитываем принятые модули куратором для этого студента (из его assignments)
+                    curator_auto_topics = sum(1 for a in curator_info['assignments'] if a.topic_auto is not None)
+                    
+                    curator_salary = curator_auto_topics * auto_call_price
+                    curator_salaries[curator_id] += curator_salary
+                    
+                    # Добавляем детальный лог для авто куратора
+                    curator_detailed_logs[curator_id].append(
+                        f"💼 Авто куратор за фуллстек студента {student.fio} {student.telegram} {student.id} | "
+                        f"Принял {curator_auto_topics} модулей по {round(auto_call_price, 2)} руб. | +{round(curator_salary, 2)} руб."
+                    )
+                    
+                    # 10% авто директору направления (только если студент НЕ на авто директоре)
+                    if student.auto_mentor_id != 3:  # Студент НЕ на авто директоре
+                        director_salaries[3] += total_cost * 0.10
+                        logger.info(f"📊 Авто директор (ID 3): бонус +{round(total_cost * 0.10, 2)} руб. за студента {student.fio} (куратор {curator_id})")
+                    else:
+                        logger.debug(f"🚫 Авто директору НЕ начислен бонус: студент {student.fio} на авто директоре")
+                    
+                    logger.info(f"📊 Авто куратор {curator_id}: принял {curator_auto_topics} модулей у студента {student.fio}, ЗП +{round(curator_salary, 2)} руб.")
             
         else:
             # === ОБРАБОТКА СТУДЕНТОВ ДИРЕКТОРОВ НАПРАВЛЕНИЯ ===
