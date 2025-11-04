@@ -1,5 +1,6 @@
 from datetime import datetime
 import logging
+import asyncio
 from sqlalchemy import func
 from sqlalchemy import select
 from commands.authorized_users import AUTHORIZED_USERS
@@ -722,7 +723,7 @@ async def calculate_salary(update: Update, context):
         # 🛡️ СТРАХОВКА ДЛЯ КУРАТОРОВ РУЧНОГО НАПРАВЛЕНИЯ
         from config import Config
 
-        if Config.INSURANCE_ENABLED:
+        if Config.CURATOR_INSURANCE_ENABLED:
             logger.info("🛡️ Запускаем расчет страховки для кураторов ручного направления")
 
             # Импортируем модели
@@ -814,7 +815,7 @@ async def calculate_salary(update: Update, context):
 
                         logger.info(f"🛡️ Авто-начислена страховка куратору {curator.full_name} за студента {student.fio}: 5000 руб.")
         else:
-            logger.info("🛡️ Страховочные выплаты отключены (INSURANCE_ENABLED = False)")
+            logger.info("🛡️ Страховочные выплаты для кураторов отключены (CURATOR_INSURANCE_ENABLED = False)")
 
         # 🎁 Учет премий (выплаты с комментарием "Премия")
         premium_payments = session.query(Payment).filter(
@@ -1073,13 +1074,147 @@ async def calculate_salary(update: Update, context):
             # 10% от суммы комиссий
             total_commission = sum(float(p.amount) for p in commission_payments)
             salary = total_commission * 0.1
+            
+            # 🛡️ СТРАХОВКА ДЛЯ КАРЬЕРНЫХ КОНСУЛЬТАНТОВ
+            from data_base.models import ConsultantInsuranceBalance
+            from config import Config
+            
+            if Config.CONSULTANT_INSURANCE_ENABLED:
+                logger.info(f"🛡️ Запускаем расчет страховки для КК {consultant.full_name}")
+                
+                total_insurance = 0.0
+                insurance_students_count = 0
+                
+                # СНАЧАЛА: Учитываем ВСЕ активные страховки КК (для студентов, взяттых ранее)
+                all_active_insurance = session.query(ConsultantInsuranceBalance).filter(
+                    ConsultantInsuranceBalance.consultant_id == consultant.id,
+                    ConsultantInsuranceBalance.is_active == True
+                ).all()
+                
+                logger.info(f"🛡️ Найдено активных страховок КК {consultant.full_name}: {len(all_active_insurance)}")
+                
+                processed_student_ids = set()
+                
+                # Учитываем все активные страховки
+                for ins in all_active_insurance:
+                    total_insurance += float(ins.insurance_amount)
+                    insurance_students_count += 1
+                    processed_student_ids.add(ins.student_id)
+                    student = session.query(Student).filter(Student.id == ins.student_id).first()
+                    if student:
+                        created_date = ins.created_at.strftime("%d.%m.%Y") if ins.created_at else "неизвестно"
+                        detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
+                            f"🛡️ Страховка за {student.fio} (ID {ins.student_id}) - активная (создана {created_date}) | +{float(ins.insurance_amount)} руб."
+                        )
+                        logger.info(f"🛡️ Учитывается активная страховка КК {consultant.full_name} за студента {student.fio}: {float(ins.insurance_amount)} руб.")
+                
+                # ЗАТЕМ: Проверяем студентов, взятых КК В ЭТОМ ПЕРИОДЕ (consultant_start_date в периоде)
+                # Сначала получаем всех студентов КК для отладки
+                all_students_consultant = session.query(Student).filter(
+                    Student.career_consultant_id == consultant.id
+                ).all()
+                
+                logger.info(f"🛡️ Всего студентов у КК {consultant.full_name} (ID {consultant.id}): {len(all_students_consultant)}")
+                for stud in all_students_consultant:
+                    logger.info(f"   📋 Студент {stud.fio} (ID {stud.id}): consultant_start_date = {stud.consultant_start_date}, career_consultant_id = {stud.career_consultant_id}")
+                
+                students_taken_in_period = session.query(Student).filter(
+                    Student.career_consultant_id == consultant.id,
+                    Student.consultant_start_date.isnot(None),
+                    Student.consultant_start_date >= start_date,
+                    Student.consultant_start_date <= end_date
+                ).all()
+                
+                logger.info(f"🛡️ Период расчета: {start_date} - {end_date}")
+                logger.info(f"🛡️ Найдено студентов, взятых КК в периоде: {len(students_taken_in_period)}")
+                for stud in students_taken_in_period:
+                    logger.info(f"   ✅ Студент {stud.fio} (ID {stud.id}): consultant_start_date = {stud.consultant_start_date}")
+                
+                # Создаем страховку для студентов, взятых в периоде (если её еще нет)
+                for student in students_taken_in_period:
+                    if student.id not in processed_student_ids:
+                        # Проверяем, нет ли уже страховки (на всякий случай)
+                        existing_insurance = session.query(ConsultantInsuranceBalance).filter(
+                            ConsultantInsuranceBalance.student_id == student.id,
+                            ConsultantInsuranceBalance.consultant_id == consultant.id,
+                            ConsultantInsuranceBalance.is_active == True
+                        ).first()
+                        
+                        if not existing_insurance:
+                            # Создаем новую страховку
+                            new_insurance = ConsultantInsuranceBalance(
+                                consultant_id=consultant.id,
+                                student_id=student.id,
+                                insurance_amount=1000.00,
+                                created_at=student.consultant_start_date,
+                                is_active=True
+                            )
+                            session.add(new_insurance)
+                            total_insurance += 1000.00
+                            insurance_students_count += 1
+                            
+                            date_str = student.consultant_start_date.strftime("%d.%m.%Y") if student.consultant_start_date else "неизвестно"
+                            detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
+                                f"🛡️ Страховка за {student.fio} (ID {student.id}) - взял в работу {date_str} | +1000 руб."
+                            )
+                            logger.info(f"🛡️ Начислена страховка КК {consultant.full_name} за студента {student.fio}: 1000 руб. (дата: {date_str})")
+                        else:
+                            # Страховка уже есть (не должно быть, но на всякий случай)
+                            total_insurance += float(existing_insurance.insurance_amount)
+                            insurance_students_count += 1
+                            logger.info(f"🛡️ Страховка уже существует для студента {student.fio}, учитываем её")
+                        
+                        processed_student_ids.add(student.id)
+                
+                if total_insurance > 0:
+                    salary += total_insurance
+                    detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
+                        f"🛡️ Итого страховка за {insurance_students_count} студентов: +{round(total_insurance, 2)} руб."
+                    )
+                    logger.info(f"🛡️ КК {consultant.full_name}: страховка {total_insurance} руб. за {insurance_students_count} студентов")
+                else:
+                    logger.info(f"🛡️ КК {consultant.full_name}: страховка не начислена (нет активных страховок или студентов, взятых в периоде)")
+                
+                session.commit()
+            
+            # 🛡️ ВЫЧЕТ СТРАХОВКИ КК ПРИ ПОЛУЧЕНИИ КОМИССИИ (без детализации)
+            # Вычитаем страховку за студентов, по которым поступила комиссия в этом периоде
+            if Config.CONSULTANT_INSURANCE_ENABLED and commission_payments:
+                logger.info(f"🛡️ Проверяем вычет страховки КК {consultant.full_name} при получении комиссии")
+                
+                for payment in commission_payments:
+                    student_id = payment.student_id
+                    if not student_id:
+                        continue
+                    
+                    # Проверяем, есть ли активная страховка за этого студента
+                    active_insurance = session.query(ConsultantInsuranceBalance).filter(
+                        ConsultantInsuranceBalance.student_id == student_id,
+                        ConsultantInsuranceBalance.consultant_id == consultant.id,
+                        ConsultantInsuranceBalance.is_active == True
+                    ).first()
+                    
+                    if active_insurance:
+                        # Вычитаем страховку из ЗП КК
+                        insurance_amount = float(active_insurance.insurance_amount)
+                        salary -= insurance_amount
+                        
+                        # Деактивируем страховку
+                        active_insurance.is_active = False
+                        session.commit()
+                        
+                        # Логируем (но НЕ добавляем в детализацию, как требовал пользователь)
+                        student = session.query(Student).filter(Student.id == student_id).first()
+                        student_name = student.fio if student else f"ID {student_id}"
+                        logger.info(f"🛡️ Вычтена страховка {insurance_amount} руб. у КК {consultant.full_name} за студента {student_name} при получении комиссии {payment.amount} руб. (НЕ показано в детализации)")
+            
             career_consultant_salaries[consultant.id] = round(salary, 2)
             
             # Подробное логирование каждого платежа комиссии
             if commission_payments:
                 detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
                     f"💼 Карьерный консультант {consultant.full_name} | "
-                    f"Комиссии: {total_commission} руб. | 10% = {salary} руб."
+                    f"Комиссии: {total_commission} руб. | 10% = {total_commission * 0.1} руб."
                 )
                 
                 # Логируем каждый платеж комиссии отдельно
@@ -1092,10 +1227,10 @@ async def calculate_salary(update: Update, context):
                             f"Дата: {payment.payment_date} | "
                             f"Комментарий: {payment.comment}"
                         )
-            elif salary > 0:
+            elif total_commission > 0:
                 detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
                     f"💼 Карьерный консультант {consultant.full_name} | "
-                    f"Комиссии: {total_commission} руб. | 10% = {salary} руб."
+                    f"Комиссии: {total_commission} руб. | 10% = {total_commission * 0.1} руб."
                 )
 
         # Вывод логов в файл
@@ -1380,7 +1515,6 @@ async def handle_detailed_salary_request(update: Update, context: ContextTypes.D
                     logger.info(f"Отчет для {mentor.full_name} отправлен")
                     
                     # Небольшая задержка между отправкой отчетов
-                    import asyncio
                     await asyncio.sleep(0.5)
                     
                 except Exception as e:
@@ -1688,8 +1822,37 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
     prepayment_amount = round(total_prepayment * prepayment_percent, 2)
     postpayment_amount = round(total_postpayment * postpayment_percent, 2)
 
+    # 🛡️ Получаем информацию о страховке
+    total_insurance = 0.0
+    insurance_items = []
+    from data_base.models import ConsultantInsuranceBalance
+    from config import Config
+    
+    if Config.CONSULTANT_INSURANCE_ENABLED and period_start and period_end:
+        # Получаем активные страховки, созданные в периоде (включая те, которые могли быть деактивированы позже)
+        all_insurance_in_period = session.query(ConsultantInsuranceBalance).filter(
+            ConsultantInsuranceBalance.consultant_id == consultant.id,
+            ConsultantInsuranceBalance.created_at >= period_start,
+            ConsultantInsuranceBalance.created_at <= period_end
+        ).all()
+        
+        for ins in all_insurance_in_period:
+            student = session.query(Student).filter(Student.id == ins.student_id).first()
+            if student:
+                insurance_amount = float(ins.insurance_amount)
+                total_insurance += insurance_amount
+                insurance_status = "активна" if ins.is_active else "погашена при получении комиссии"
+                insurance_items.append({
+                    'student': student,
+                    'amount': insurance_amount,
+                    'created_at': ins.created_at,
+                    'status': insurance_status
+                })
+
     report += f"Предоплата (первоначальный + доплата): {prepayment_amount} руб. ({int(prepayment_percent*100)}% от {total_prepayment} руб.)\n"
     report += f"Постоплата (комиссия): {postpayment_amount} руб. ({int(postpayment_percent*100)}% от {total_postpayment} руб.)\n"
+    if total_insurance > 0:
+        report += f"🛡️ Страховка за студентов: {round(total_insurance, 2)} руб.\n"
     report += f"Налог 6% к уплате: {tax_amount} руб.\n\n"
 
     # Если прямой запрос по комиссиям ничего не вернул, используем собранные комиссии из общего списка
@@ -1705,5 +1868,13 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
                 report += f"  📅 {payment.payment_date} | 💬 {payment.comment}\n"
     else:
         report += "📋 Детализация комиссий не найдена.\n"
+    
+    # 🛡️ Детализация страховки
+    if insurance_items:
+        report += "\n🛡️ Детализация страховки (1000 руб. за каждого студента, взятого в периоде):\n"
+        for item in insurance_items:
+            student = item['student']
+            report += f"• {student.fio} ({student.telegram}): +{item['amount']} руб.\n"
+            report += f"  📅 Дата взятия в работу: {item['created_at']} | Статус: {item['status']}\n"
     
     return report

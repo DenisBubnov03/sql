@@ -214,3 +214,25 @@ class CuratorKpiStudents(Base):
     def __repr__(self):
         return f"<CuratorKpiStudents(id={self.id}, curator_id={self.curator_id}, student_id={self.student_id}, kpi_percent={self.kpi_percent}, period={self.period_start}-{self.period_end})>"
 
+
+class ConsultantInsuranceBalance(Base):
+    """
+    Модель баланса страховки карьерных консультантов за студентов, взятых в работу.
+    Страховка составляет 1000 руб за каждого студента, взятого в периоде.
+    """
+    __tablename__ = "consultant_insurance_balance"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    consultant_id = Column(Integer, ForeignKey("career_consultants.id", ondelete="CASCADE"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    insurance_amount = Column(DECIMAL(10, 2), default=1000.00, server_default="1000.00")
+    created_at = Column(Date, nullable=True)
+    is_active = Column(Boolean, default=True, server_default="true")
+
+    # Отношения
+    consultant = relationship("CareerConsultant", foreign_keys=[consultant_id])
+    student = relationship("Student", foreign_keys=[student_id])
+
+    def __repr__(self):
+        return f"<ConsultantInsuranceBalance(id={self.id}, consultant_id={self.consultant_id}, student_id={self.student_id}, amount={self.insurance_amount}, active={self.is_active})>"
+

@@ -29,6 +29,8 @@ def get_students_by_career_consultant(consultant_id):
 
 def assign_student_to_career_consultant(student_id, consultant_id):
     """Закрепляет студента за карьерным консультантом."""
+    from datetime import date
+    
     student = session.query(Student).get(student_id)
     if not student:
         raise ValueError("Студент не найден.")
@@ -38,6 +40,9 @@ def assign_student_to_career_consultant(student_id, consultant_id):
         raise ValueError("Карьерный консультант не найден.")
     
     student.career_consultant_id = consultant_id
+    # Устанавливаем дату взятия студента в работу, если она еще не установлена
+    if not student.consultant_start_date:
+        student.consultant_start_date = date.today()
     session.commit()
     return student
 

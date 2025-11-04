@@ -438,10 +438,10 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Начисляем страховку куратору за получение 5 модуля
             if student.training_type == "Ручное тестирование" and student.mentor_id:
                 from config import Config
-                if Config.INSURANCE_ENABLED:
+                if Config.CURATOR_INSURANCE_ENABLED:
                     await award_insurance_for_module_5(student.id, student.mentor_id)
                 else:
-                    print("🛡️ Страховочные выплаты отключены")
+                    print("🛡️ Страховочные выплаты для кураторов отключены")
 
         # Отправляем сообщение об успехе
         await update.message.reply_text(
@@ -624,9 +624,9 @@ async def award_insurance_for_module_5(student_id: int, curator_id: int):
         from datetime import date
         from config import Config
         
-        # Проверяем, включены ли страховочные выплаты
-        if not Config.INSURANCE_ENABLED:
-            print("🛡️ Страховочные выплаты отключены")
+        # Проверяем, включены ли страховочные выплаты для кураторов
+        if not Config.CURATOR_INSURANCE_ENABLED:
+            print("🛡️ Страховочные выплаты для кураторов отключены")
             return
 
         # Проверяем, что студент учится на ручном тестировании
