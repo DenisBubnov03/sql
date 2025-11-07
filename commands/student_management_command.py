@@ -1264,6 +1264,249 @@ async def calculate_salary(update: Update, context):
                     salary_with_tax = round(salary * 1.06, 2)
                     logger.info(f"Итог: {salary} руб. (с НДФЛ {salary_with_tax})")
 
+        # 💰 РАСЧЕТ ХОЛДИРОВАНИЯ ДЛЯ ФУЛЛСТЕК КУРАТОРОВ
+        from config import Config
+        from data_base.models import HeldAmount
+        from data_base.operations import calculate_held_amount
+        from datetime import date
+        
+        # Настраиваем отдельный логгер для холдирования
+        held_logger = logging.getLogger('held_amounts')
+        held_logger.setLevel(logging.INFO)
+        # Проверяем, есть ли уже обработчик (избегаем дублирования)
+        if not held_logger.handlers:
+            held_file_handler = logging.FileHandler('held_amounts.log', encoding='utf-8')
+            held_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+            held_logger.addHandler(held_file_handler)
+        
+        total_held_amount = 0.0
+        
+        if Config.HELD_AMOUNTS_ENABLED:
+            logger.info("💰 Запускаем расчет холдирования для фуллстек кураторов")
+            held_logger.info(f"=" * 80)
+            held_logger.info(f"💰 Расчет холдирования за период {start_date_str} - {end_date_str}")
+            held_logger.info(f"=" * 80)
+            
+            # Дата начала действия системы холдирования
+            from datetime import date as date_class
+            held_amounts_start_date = date_class(2025, 9, 1)
+            
+            # 🔄 ПРОВЕРЯЕМ И ОБНОВЛЯЕМ СТАТУСЫ ЗАПИСЕЙ В held_amounts
+            # Если у студента training_status = "Не учится" или "Отчислен", 
+            # помечаем все его записи как released
+            held_logger.info("🔄 Проверяем статусы студентов в held_amounts...")
+            all_held_records = session.query(HeldAmount).all()
+            students_to_deactivate = set()
+            
+            for held_record in all_held_records:
+                student = session.query(Student).filter(Student.id == held_record.student_id).first()
+                if student and student.training_status in ["Не учится", "Отчислен"]:
+                    students_to_deactivate.add(student.id)
+                    if held_record.status == "active":
+                        held_record.status = "released"
+                        held_logger.info(f"🔴 Помечено как released: студент ID {student.id} ({student.fio}), training_status={student.training_status}")
+            
+            if students_to_deactivate:
+                session.commit()
+                held_logger.info(f"✅ Обновлено записей для {len(students_to_deactivate)} студентов со статусом 'Не учится' или 'Отчислен'")
+            
+            # Получаем активных студентов фуллстек, которые:
+            # 1. Начали обучение с 1 сентября 2025
+            # 2. Не отчислены (training_status != "Отчислен")
+            # 3. Статус обучения не равен "Не учится" (training_status != "Не учится")
+            # ВАЖНО: Создаем/обновляем холдирование для ВСЕХ студентов >= 01.09.2025,
+            # независимо от периода расчета зарплаты, чтобы записи всегда были актуальными
+            fullstack_students = session.query(Student).filter(
+                Student.training_type == "Фуллстек",
+                Student.start_date >= held_amounts_start_date,
+                Student.training_status != "Отчислен",
+                Student.training_status != "Не учится"
+            ).all()
+            
+            # Дополнительная фильтрация в Python для надежности
+            fullstack_students = [
+                s for s in fullstack_students 
+                if s.training_status not in ["Отчислен", "Не учится"]
+            ]
+            
+            logger.info(f"💰 Найдено активных студентов фуллстек (>= 01.09.2025): {len(fullstack_students)}")
+            held_logger.info(f"💰 Найдено активных студентов фуллстек для обработки: {len(fullstack_students)}")
+            
+            if len(fullstack_students) == 0:
+                held_logger.info("⚠️ Студенты не найдены. Проверьте фильтры:")
+                held_logger.info(f"   - training_type == 'Фуллстек'")
+                held_logger.info(f"   - training_status != 'Отчислен'")
+                held_logger.info(f"   - start_date >= {held_amounts_start_date}")
+            
+            for student in fullstack_students:
+                try:
+                    # 🔍 РУЧНОЕ НАПРАВЛЕНИЕ: проверяем, кто назначен куратором
+                    if student.mentor_id == Config.DIRECTOR_MANUAL_ID:
+                        # Директор ручного направления - холдим 30% от total_cost
+                        manual_result = calculate_held_amount(student.id, "manual", Config.DIRECTOR_MANUAL_ID, is_director=True)
+                        direction_for_db = "manual"  # Используем обычный direction для хранения
+                        is_director_manual = True
+                    elif student.mentor_id:
+                        # Обычный куратор ручного направления - холдим 20% от стоимости курса
+                        manual_result = calculate_held_amount(student.id, "manual", student.mentor_id, is_director=False)
+                        direction_for_db = "manual"
+                        is_director_manual = False
+                    else:
+                        # Куратор не назначен - создаем холдирование для куратора (20% от стоимости)
+                        manual_result = calculate_held_amount(student.id, "manual", None, is_director=False)
+                        direction_for_db = "manual"
+                        is_director_manual = False
+                    
+                    if manual_result:
+                        held_amount = manual_result['held_amount']
+                        potential_amount = manual_result['potential_amount']
+                        paid_amount = manual_result['paid_amount']
+                        modules_completed = manual_result['modules_completed']
+                        total_modules = manual_result['total_modules']
+                        mentor_id_for_db = student.mentor_id if student.mentor_id else Config.DIRECTOR_MANUAL_ID if is_director_manual else None
+                        
+                        # Создаем или обновляем запись холдирования для ручного направления
+                        held_record = session.query(HeldAmount).filter(
+                            HeldAmount.student_id == student.id,
+                            HeldAmount.direction == "manual"
+                        ).first()
+                        
+                        if held_record:
+                            # Обновляем существующую запись
+                            held_record.mentor_id = mentor_id_for_db
+                            held_record.held_amount = held_amount
+                            held_record.potential_amount = potential_amount
+                            held_record.paid_amount = paid_amount
+                            held_record.modules_completed = modules_completed
+                            held_record.total_modules = total_modules
+                            held_record.updated_at = date.today()
+                            if held_record.status == "released":
+                                held_record.status = "active"
+                            
+                            role_text = "ДИРЕКТОР" if is_director_manual else "КУРАТОР"
+                            held_logger.info(f"📝 Обновлено холдирование РУЧНОЕ ({role_text}): Студент {student.fio} (ID {student.id}) | "
+                                            f"ID: {mentor_id_for_db or 'не назначен'} | "
+                                            f"Модулей: {modules_completed}/{total_modules} | "
+                                            f"Потенциально: {potential_amount} руб. | "
+                                            f"Выплачено: {paid_amount} руб. | "
+                                            f"Холдировано: {held_amount} руб.")
+                        else:
+                            # Создаем новую запись
+                            held_record = HeldAmount(
+                                student_id=student.id,
+                                mentor_id=mentor_id_for_db,
+                                direction="manual",
+                                held_amount=held_amount,
+                                potential_amount=potential_amount,
+                                paid_amount=paid_amount,
+                                modules_completed=modules_completed,
+                                total_modules=total_modules,
+                                status="active",
+                                created_at=date.today(),
+                                updated_at=date.today()
+                            )
+                            session.add(held_record)
+                            
+                            role_text = "ДИРЕКТОР" if is_director_manual else "КУРАТОР"
+                            held_logger.info(f"➕ Создано холдирование РУЧНОЕ ({role_text}): Студент {student.fio} (ID {student.id}) | "
+                                            f"ID: {mentor_id_for_db or 'не назначен'} | "
+                                            f"Модулей: {modules_completed}/{total_modules} | "
+                                            f"Потенциально: {potential_amount} руб. | "
+                                            f"Выплачено: {paid_amount} руб. | "
+                                            f"Холдировано: {held_amount} руб.")
+                        
+                        total_held_amount += held_amount
+                    
+                    # 🔍 АВТО НАПРАВЛЕНИЕ: проверяем, кто назначен куратором
+                    if student.auto_mentor_id == Config.DIRECTOR_AUTO_ID:
+                        # Директор авто направления - холдим 30% от total_cost
+                        auto_result = calculate_held_amount(student.id, "auto", Config.DIRECTOR_AUTO_ID, is_director=True)
+                        direction_for_db = "auto"
+                        is_director_auto = True
+                    elif student.auto_mentor_id:
+                        # Обычный куратор авто направления - холдим 20% от стоимости курса
+                        auto_result = calculate_held_amount(student.id, "auto", student.auto_mentor_id, is_director=False)
+                        direction_for_db = "auto"
+                        is_director_auto = False
+                    else:
+                        # Куратор не назначен - создаем холдирование для куратора (20% от стоимости)
+                        auto_result = calculate_held_amount(student.id, "auto", None, is_director=False)
+                        direction_for_db = "auto"
+                        is_director_auto = False
+                    
+                    if auto_result:
+                        held_amount = auto_result['held_amount']
+                        potential_amount = auto_result['potential_amount']
+                        paid_amount = auto_result['paid_amount']
+                        modules_completed = auto_result['modules_completed']
+                        total_modules = auto_result['total_modules']
+                        mentor_id_for_db = student.auto_mentor_id if student.auto_mentor_id else Config.DIRECTOR_AUTO_ID if is_director_auto else None
+                        
+                        # Создаем или обновляем запись холдирования для авто направления
+                        held_record = session.query(HeldAmount).filter(
+                            HeldAmount.student_id == student.id,
+                            HeldAmount.direction == "auto"
+                        ).first()
+                        
+                        if held_record:
+                            # Обновляем существующую запись
+                            held_record.mentor_id = mentor_id_for_db
+                            held_record.held_amount = held_amount
+                            held_record.potential_amount = potential_amount
+                            held_record.paid_amount = paid_amount
+                            held_record.modules_completed = modules_completed
+                            held_record.total_modules = total_modules
+                            held_record.updated_at = date.today()
+                            if held_record.status == "released":
+                                held_record.status = "active"
+                            
+                            role_text = "ДИРЕКТОР" if is_director_auto else "КУРАТОР"
+                            held_logger.info(f"📝 Обновлено холдирование АВТО ({role_text}): Студент {student.fio} (ID {student.id}) | "
+                                            f"ID: {mentor_id_for_db or 'не назначен'} | "
+                                            f"Модулей: {modules_completed}/{total_modules} | "
+                                            f"Потенциально: {potential_amount} руб. | "
+                                            f"Выплачено: {paid_amount} руб. | "
+                                            f"Холдировано: {held_amount} руб.")
+                        else:
+                            # Создаем новую запись
+                            held_record = HeldAmount(
+                                student_id=student.id,
+                                mentor_id=mentor_id_for_db,
+                                direction="auto",
+                                held_amount=held_amount,
+                                potential_amount=potential_amount,
+                                paid_amount=paid_amount,
+                                modules_completed=modules_completed,
+                                total_modules=total_modules,
+                                status="active",
+                                created_at=date.today(),
+                                updated_at=date.today()
+                            )
+                            session.add(held_record)
+                            
+                            role_text = "ДИРЕКТОР" if is_director_auto else "КУРАТОР"
+                            held_logger.info(f"➕ Создано холдирование АВТО ({role_text}): Студент {student.fio} (ID {student.id}) | "
+                                            f"ID: {mentor_id_for_db or 'не назначен'} | "
+                                            f"Модулей: {modules_completed}/{total_modules} | "
+                                            f"Потенциально: {potential_amount} руб. | "
+                                            f"Выплачено: {paid_amount} руб. | "
+                                            f"Холдировано: {held_amount} руб.")
+                        
+                        total_held_amount += held_amount
+                    
+                    session.commit()
+                    
+                except Exception as e:
+                    logger.error(f"❌ Ошибка при расчете холдирования для студента {student.id}: {e}")
+                    held_logger.error(f"❌ Ошибка при расчете холдирования для студента {student.fio} (ID {student.id}): {e}")
+                    session.rollback()
+            
+            held_logger.info(f"💰 ИТОГО холдирование за период: {round(total_held_amount, 2)} руб.")
+            held_logger.info(f"=" * 80)
+            logger.info(f"💰 Расчет холдирования завершен. Итого холдировано: {round(total_held_amount, 2)} руб.")
+        else:
+            logger.info("💰 Система холдирования отключена (HELD_AMOUNTS_ENABLED = False)")
+        
         # Вычисляем общий бюджет на зарплаты (включая карьерных консультантов)
         total_mentor_salaries = sum(mentor_salaries.values())
         total_career_consultant_salaries = sum(career_consultant_salaries.values())
@@ -1311,7 +1554,7 @@ async def calculate_salary(update: Update, context):
         # Общий итог с НДФЛ
         total_salaries_with_tax = round(total_salaries * 1.06, 2)
         salary_report += f"💸 Общий итог: {int(total_salaries):,} руб. (с НДФЛ {int(total_salaries_with_tax):,})\n"
-
+        
         # Добавляем кнопку для подробной информации
         salary_report += "\n🔍 Хотите увидеть подробное формирование зарплаты по каждому сотруднику?"
         

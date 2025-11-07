@@ -28,7 +28,7 @@ from commands.student_notifications import check_call_notifications, check_payme
 from commands.student_selection import find_student, handle_multiple_students
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
-    handle_period_start, handle_period_end
+    handle_period_start, handle_period_end, show_held_amounts
 from commands.additional_expenses_commands import start_expense_process, handle_expense_type, handle_expense_amount, handle_expense_date
 import os
 from dotenv import load_dotenv
@@ -116,6 +116,7 @@ def main():
                 MessageHandler(filters.Regex("^📈 Общая статистика$"), show_general_statistics),
                 MessageHandler(filters.Regex("^📚 По типу обучения$"), show_course_type_menu),
                 MessageHandler(filters.Regex("^📅 По периоду$"), request_period_start),
+                MessageHandler(filters.Regex("^💰 Холдирование$"), show_held_amounts),
             ],
             START_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_period_start)],
             END_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_period_end)],

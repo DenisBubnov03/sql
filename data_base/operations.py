@@ -217,6 +217,104 @@ def get_students_by_training_type(training_type):
     return session.query(Student).filter(Student.training_type == training_type).all()
 
 
+def count_completed_modules(student_id, direction):
+    """
+    Подсчитывает количество сданных модулей для студента фуллстек по направлению.
+    
+    Args:
+        student_id: ID студента
+        direction: "manual" для ручного направления или "auto" для авто
+        
+    Returns:
+        int: Количество уникальных сданных модулей
+    """
+    from data_base.models import FullstackTopicAssign
+    from sqlalchemy import func
+    
+    if direction == "manual":
+        # Считаем уникальные ручные темы
+        count = session.query(func.count(func.distinct(FullstackTopicAssign.topic_manual))).filter(
+            FullstackTopicAssign.student_id == student_id,
+            FullstackTopicAssign.topic_manual.isnot(None)
+        ).scalar() or 0
+    elif direction == "auto":
+        # Считаем уникальные авто темы
+        count = session.query(func.count(func.distinct(FullstackTopicAssign.topic_auto))).filter(
+            FullstackTopicAssign.student_id == student_id,
+            FullstackTopicAssign.topic_auto.isnot(None)
+        ).scalar() or 0
+    else:
+        return 0
+    
+    return count
+
+
+def calculate_held_amount(student_id, direction, mentor_id=None, is_director=False):
+    """
+    Рассчитывает холдирование для студента фуллстек по направлению.
+    
+    Args:
+        student_id: ID студента
+        direction: "manual" или "auto"
+        mentor_id: ID куратора или директора (может быть None)
+        is_director: True если это директор направления, False если куратор
+        
+    Returns:
+        dict: {
+            'potential_amount': потенциальная сумма,
+            'paid_amount': выплаченная сумма,
+            'held_amount': холдирование,
+            'modules_completed': количество сданных модулей,
+            'total_modules': всего модулей
+        }
+    """
+    from config import Config
+    from data_base.models import Student
+    
+    student = session.query(Student).filter(Student.id == student_id).first()
+    if not student or student.training_type != "Фуллстек":
+        return None
+    
+    # Для директоров - 30% от total_cost студента
+    if is_director:
+        potential_amount = float(student.total_cost) * Config.DIRECTOR_RESERVE_PERCENT
+        # Для директоров выплата не зависит от модулей (пока считаем как 0)
+        paid_amount = 0.0
+        held_amount = potential_amount
+        modules_completed = 0
+        total_modules = 0
+    else:
+        # Для кураторов - 20% от стоимости направления
+        if direction == "manual":
+            potential_amount = Config.FULLSTACK_MANUAL_COURSE_COST * Config.MANUAL_CURATOR_RESERVE_PERCENT
+            total_modules = Config.MANUAL_MODULES_TOTAL
+        elif direction == "auto":
+            potential_amount = Config.FULLSTACK_AUTO_COURSE_COST * Config.AUTO_CURATOR_RESERVE_PERCENT
+            total_modules = Config.AUTO_MODULES_TOTAL
+        else:
+            return None
+        
+        # Считаем сданные модули
+        modules_completed = count_completed_modules(student_id, direction)
+        
+        # Рассчитываем выплаченную сумму
+        if total_modules > 0:
+            paid_amount = (modules_completed / total_modules) * potential_amount
+        else:
+            paid_amount = 0.0
+        
+        # Холдирование
+        held_amount = max(0.0, potential_amount - paid_amount)  # Не может быть отрицательным
+    
+    return {
+        'potential_amount': round(potential_amount, 2),
+        'paid_amount': round(paid_amount, 2),
+        'held_amount': round(held_amount, 2),
+        'modules_completed': modules_completed,
+        'total_modules': total_modules
+    }
+
+
 # def assign_mentor(training_type):
 #     """
 #     Назначает ментора в зависимости от направления:

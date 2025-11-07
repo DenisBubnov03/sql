@@ -442,6 +442,49 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await award_insurance_for_module_5(student.id, student.mentor_id)
                 else:
                     print("🛡️ Страховочные выплаты для кураторов отключены")
+        
+        # 💰 ОСВОБОЖДЕНИЕ ХОЛДИРОВАНИЯ ПРИ ОТЧИСЛЕНИИ СТУДЕНТА
+        if field_to_edit == "Статус обучения" and new_value == "Отчислен":
+            from config import Config
+            if Config.HELD_AMOUNTS_ENABLED:
+                from data_base.models import HeldAmount
+                from datetime import date
+                import logging
+                
+                # Настраиваем логгер для холдирования
+                held_logger = logging.getLogger('held_amounts')
+                held_logger.setLevel(logging.INFO)
+                # Проверяем, есть ли уже обработчик
+                if not held_logger.handlers:
+                    held_file_handler = logging.FileHandler('held_amounts.log', encoding='utf-8')
+                    held_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+                    held_logger.addHandler(held_file_handler)
+                
+                try:
+                    # Освобождаем все активные холдирования для этого студента
+                    held_amounts = session.query(HeldAmount).filter(
+                        HeldAmount.student_id == student.id,
+                        HeldAmount.status == "active"
+                    ).all()
+                    
+                    if held_amounts:
+                        total_released = 0.0
+                        for held in held_amounts:
+                            released_amount = float(held.held_amount)  # Текущее холдирование
+                            held.status = "released"
+                            held.held_amount = 0.0
+                            held.updated_at = date.today()
+                            total_released += released_amount
+                            
+                            held_logger.info(f"🔓 Освобождено холдирование: Студент {student.fio} (ID {student.id}) | "
+                                            f"Направление: {held.direction} | "
+                                            f"Освобождено: {released_amount} руб.")
+                        
+                        session.commit()
+                        print(f"💰 Освобождено холдирование для студента {student.fio}: {round(total_released, 2)} руб.")
+                except Exception as e:
+                    print(f"❌ Ошибка при освобождении холдирования: {e}")
+                    session.rollback()
 
         # Отправляем сообщение об успехе
         await update.message.reply_text(

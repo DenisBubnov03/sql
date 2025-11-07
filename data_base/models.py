@@ -236,3 +236,31 @@ class ConsultantInsuranceBalance(Base):
     def __repr__(self):
         return f"<ConsultantInsuranceBalance(id={self.id}, consultant_id={self.consultant_id}, student_id={self.student_id}, amount={self.insurance_amount}, active={self.is_active})>"
 
+
+class HeldAmount(Base):
+    """
+    Модель для холдирования (резервирования) денег за фуллстек кураторов.
+    Холдируется часть потенциальной суммы, которая будет выплачена куратору при сдаче модулей.
+    """
+    __tablename__ = "held_amounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    mentor_id = Column(Integer, ForeignKey("mentors.id", ondelete="SET NULL"), nullable=True)  # Ручной куратор или директор (может быть NULL)
+    direction = Column(String(20), nullable=False)  # "manual", "auto", "director_manual", "director_auto"
+    held_amount = Column(DECIMAL(10, 2), default=0.00, server_default="0.00")  # Текущая сумма холдирования
+    potential_amount = Column(DECIMAL(10, 2), nullable=False)  # Потенциальная сумма, если сдаст все
+    paid_amount = Column(DECIMAL(10, 2), default=0.00, server_default="0.00")  # Уже выплачено
+    modules_completed = Column(Integer, default=0, server_default="0")  # Количество сданных модулей
+    total_modules = Column(Integer, nullable=False)  # Всего модулей (5 для manual, 8 для auto)
+    status = Column(String(20), default="active", server_default="active")  # "active" или "released"
+    created_at = Column(Date, nullable=True)
+    updated_at = Column(Date, nullable=True)
+
+    # Отношения
+    student = relationship("Student", foreign_keys=[student_id])
+    mentor = relationship("Mentor", foreign_keys=[mentor_id])
+
+    def __repr__(self):
+        return f"<HeldAmount(id={self.id}, student_id={self.student_id}, mentor_id={self.mentor_id}, direction={self.direction}, held={self.held_amount}, status={self.status})>"
+
