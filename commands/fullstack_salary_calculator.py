@@ -7,6 +7,7 @@ from data_base.db import session
 from data_base.models import Student, FullstackTopicAssign, Mentor
 from commands.fullstack_constants import TOPIC_FIELD_MAPPING, AUTO_MODULE_FIELD_MAPPING
 from commands.logger import custom_logger
+from config import Config
 
 logger = custom_logger
 
@@ -165,12 +166,13 @@ def calculate_fullstack_salary(start_date: date, end_date: date):
                     curator_detailed_logs[curator_id] = []
                 
                 if curator_direction == 'manual':
-                    # === РУЧНОЙ КУРАТОР: как директор, но 10% вместо 30% ===
-                    # Рассчитываем стоимость одного созвона (10% от total_cost)
-                    call_cost = total_cost * 0.10
+                    # === РУЧНОЙ КУРАТОР: 20% от стоимости ручного курса, делим на 8 тем ===
+                    # Рассчитываем стоимость одного созвона (20% от стоимости ручного курса)
+                    manual_course_cost = Config.FULLSTACK_MANUAL_COURSE_COST
+                    call_cost = manual_course_cost * 0.20
                     
-                    # Считаем количество принятых тем куратором
-                    manual_topics_count = len(TOPIC_FIELD_MAPPING)
+                    # Делим на 8 тем
+                    manual_topics_count = 8
                     manual_call_price = call_cost / manual_topics_count if manual_topics_count > 0 else 0
                     
                     # Подсчитываем принятые темы куратором для этого студента (из его assignments)
@@ -192,15 +194,16 @@ def calculate_fullstack_salary(start_date: date, end_date: date):
                     else:
                         logger.debug(f"🚫 Ручному директору НЕ начислен бонус: студент {student.fio} на ручном директоре")
                     
-                    logger.info(f"📊 Ручной куратор {curator_id}: принял {curator_manual_topics} тем у студента {student.fio}, ЗП +{round(curator_salary, 2)} руб.")
+                    logger.info(f"📊 Ручной куратор {curator_id}: принял {curator_manual_topics} тем у студента {student.fio}, ЗП +{round(curator_salary, 2)} руб. (расчет: {manual_course_cost} × 0.20 / 8 = {round(manual_call_price, 2)} за тему)")
                     
                 else:  # auto
-                    # === АВТО КУРАТОР: как директор, но 20% вместо 30% ===
-                    # Рассчитываем стоимость одного созвона (20% от total_cost)
-                    call_cost = total_cost * 0.20
+                    # === АВТО КУРАТОР: 20% от стоимости авто курса, делим на 6 модулей ===
+                    # Рассчитываем стоимость одного созвона (20% от стоимости авто курса)
+                    auto_course_cost = Config.FULLSTACK_AUTO_COURSE_COST
+                    call_cost = auto_course_cost * 0.20
                     
-                    # Считаем количество принятых модулей куратором
-                    auto_modules_count = len(AUTO_MODULE_FIELD_MAPPING)
+                    # Делим на 6 модулей
+                    auto_modules_count = 6
                     auto_call_price = call_cost / auto_modules_count if auto_modules_count > 0 else 0
                     
                     # Подсчитываем принятые модули куратором для этого студента (из его assignments)
@@ -222,7 +225,7 @@ def calculate_fullstack_salary(start_date: date, end_date: date):
                     else:
                         logger.debug(f"🚫 Авто директору НЕ начислен бонус: студент {student.fio} на авто директоре")
                     
-                    logger.info(f"📊 Авто куратор {curator_id}: принял {curator_auto_topics} модулей у студента {student.fio}, ЗП +{round(curator_salary, 2)} руб.")
+                    logger.info(f"📊 Авто куратор {curator_id}: принял {curator_auto_topics} модулей у студента {student.fio}, ЗП +{round(curator_salary, 2)} руб. (расчет: {auto_course_cost} × 0.20 / 6 = {round(auto_call_price, 2)} за модуль)")
             
         else:
             # === ОБРАБОТКА СТУДЕНТОВ ДИРЕКТОРОВ НАПРАВЛЕНИЯ ===
