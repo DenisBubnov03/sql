@@ -17,6 +17,39 @@ from commands.states import (
 )
 from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 
+
+def get_project_root():
+    """
+    Определяет корневую директорию проекта.
+    Ищет директорию, содержащую bot.py или .git, начиная с текущей директории и поднимаясь вверх.
+    Если не находит, использует текущую рабочую директорию или директорию на уровень выше commands.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Сначала пробуем найти по bot.py или .git
+    current_dir = os.path.abspath(os.path.dirname(__file__))
+    
+    # Поднимаемся вверх по директориям, пока не найдем bot.py или .git
+    while current_dir != os.path.dirname(current_dir):  # Пока не достигли корня файловой системы
+        if os.path.exists(os.path.join(current_dir, 'bot.py')) or \
+           os.path.exists(os.path.join(current_dir, '.git')):
+            logger.info(f"Корень проекта найден: {current_dir}")
+            return current_dir
+        current_dir = os.path.dirname(current_dir)
+    
+    # Если не нашли, пробуем использовать текущую рабочую директорию
+    cwd = os.getcwd()
+    if os.path.exists(os.path.join(cwd, 'bot.py')) or \
+       os.path.exists(os.path.join(cwd, '.git')):
+        logger.info(f"Корень проекта из рабочей директории: {cwd}")
+        return cwd
+    
+    # Последний fallback - директория на уровень выше commands
+    fallback_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    logger.warning(f"Корень проекта не найден, используем fallback: {fallback_dir}")
+    return fallback_dir
+
 # Шаблоны договоров
 CONTRACT_TEMPLATES = {
     "Ручное": "doc/шаблоны/Шаблон ДВОУ Ручное.docx",
@@ -119,7 +152,7 @@ async def handle_contract_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     if choice == "Создать новый договор":
         await update.message.reply_text(
             "📄 Формирование договора\n\n"
-            "Введите Telegram ученика (без @):",
+            "Введите Telegram ученика:",
             reply_markup=ReplyKeyboardMarkup(
                 [["🔙 Отмена"]],
                 one_time_keyboard=True
@@ -165,7 +198,7 @@ async def handle_student_telegram(update: Update, context: ContextTypes.DEFAULT_
     if context.user_data.get('resending_contract'):
         # Пробуем найти файл с @ и без @
         # Получаем абсолютный путь относительно корня проекта
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dir = get_project_root()
         doc_dir = os.path.join(base_dir, "doc")
         
         file_path_with_at = os.path.join(doc_dir, f"{telegram_with_at}.docx")
@@ -790,8 +823,21 @@ async def generate_contract(data: dict) -> str:
     template_path = CONTRACT_TEMPLATES[contract_type]
     
     # Получаем абсолютный путь относительно корня проекта
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    base_dir = get_project_root()
     template_path = os.path.join(base_dir, template_path)
+    
+    # Логирование для отладки
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Поиск шаблона: тип={contract_type}, base_dir={base_dir}, template_path={template_path}")
+    logger.info(f"Проверка существования: {os.path.exists(template_path)}")
+    
+    # Проверяем, существует ли директория шаблонов
+    templates_dir = os.path.join(base_dir, "doc", "шаблоны")
+    logger.info(f"Директория шаблонов: {templates_dir}, существует: {os.path.exists(templates_dir)}")
+    if os.path.exists(templates_dir):
+        files = os.listdir(templates_dir)
+        logger.info(f"Файлы в директории шаблонов: {files}")
 
     if not os.path.exists(template_path):
         raise FileNotFoundError(f"Шаблон {template_path} не найден")
@@ -1052,7 +1098,7 @@ async def generate_contract(data: dict) -> str:
     filename = f"{student_telegram}.docx"
     
     # Получаем абсолютный путь относительно корня проекта
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    base_dir = get_project_root()
     doc_dir = os.path.join(base_dir, "doc")
     file_path = os.path.join(doc_dir, filename)
 
