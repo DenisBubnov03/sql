@@ -262,8 +262,12 @@ async def add_student_paid_amount(update: Update, context: ContextTypes.DEFAULT_
 
         if 0 <= paid_amount <= total_payment:
             context.user_data["paid_amount"] = paid_amount
-            # Хардкодим комиссию "2, 50%"
-            context.user_data["commission"] = "2, 50%"
+            # Устанавливаем комиссию в зависимости от типа обучения
+            course_type = context.user_data.get("course_type", "")
+            if course_type == "Фуллстек":
+                context.user_data["commission"] = "2, 65%"
+            else:
+                context.user_data["commission"] = "2, 55%"
             
             # Переходим к вопросу о рефералке
             await update.message.reply_text(

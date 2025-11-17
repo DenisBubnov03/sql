@@ -13,10 +13,7 @@ from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATIS
     CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
     EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, WAIT_FOR_NEW_VALUE, \
     CONFIRM_ASSIGNMENT, WAIT_FOR_DETAILED_SALARY, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR, \
-    IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE, \
-    CONTRACT_MENU, CONTRACT_STUDENT_TG, CONTRACT_TYPE, CONTRACT_ADVANCE_AMOUNT, CONTRACT_PAYMENT_TYPE, CONTRACT_MONTHS, \
-    CONTRACT_COMMISSION_TYPE, CONTRACT_COMMISSION_CUSTOM, CONTRACT_FIO, CONTRACT_ADDRESS, CONTRACT_INN, \
-    CONTRACT_RS, CONTRACT_KS, CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL
+    IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE
 from commands.student_commands import (
     edit_student, edit_student_field, handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
@@ -33,12 +30,6 @@ from commands.student_statistic_commands import show_statistics_menu, show_gener
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
     handle_period_start, handle_period_end, show_held_amounts
 from commands.additional_expenses_commands import start_expense_process, handle_expense_type, handle_expense_amount, handle_expense_date
-from commands.contract_commands import (
-    start_contract_formation, handle_contract_menu, handle_student_telegram, handle_contract_type,
-    handle_advance_amount, handle_payment_type, handle_months, handle_commission_type,
-    handle_commission_custom, handle_fio, handle_address, handle_inn, handle_rs,
-    handle_ks, handle_bank, handle_bik, handle_email
-)
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -200,33 +191,6 @@ def main():
         fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)],
     )
     
-    # Обработчик формирования договоров
-    contract_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^Договор$"), start_contract_formation)],
-        states={
-            CONTRACT_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_contract_menu)],
-            CONTRACT_STUDENT_TG: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_student_telegram)],
-            CONTRACT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_contract_type)],
-            CONTRACT_ADVANCE_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_advance_amount)],
-            CONTRACT_PAYMENT_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_type)],
-            CONTRACT_MONTHS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_months)],
-            CONTRACT_COMMISSION_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_commission_type)],
-            CONTRACT_COMMISSION_CUSTOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_commission_custom)],
-            CONTRACT_FIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_fio)],
-            CONTRACT_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_address)],
-            CONTRACT_INN: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_inn)],
-            CONTRACT_RS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_rs)],
-            CONTRACT_KS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ks)],
-            CONTRACT_BANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bank)],
-            CONTRACT_BIK: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bik)],
-            CONTRACT_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email)],
-        },
-        fallbacks=[
-            MessageHandler(filters.Regex("^🔙 Отмена$"), exit_to_main_menu),
-            MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu),
-        ],
-    )
-    
     # Обработчик карьерных консультантов
     career_consultant_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^🔗 Закрепить КК$"), show_assign_student_menu)],
@@ -240,7 +204,6 @@ def main():
     application.add_handler(contract_signing_handler)
     application.add_handler(bonus_handler)
     application.add_handler(expense_handler)
-    application.add_handler(contract_handler)
     
     # Обработчики карьерных консультантов
     application.add_handler(MessageHandler(filters.Regex("^📊 Моя статистика$"), show_career_consultant_statistics))

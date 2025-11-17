@@ -328,7 +328,7 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data["salary"] = salary
                 context.user_data["employment_step"] = "commission"
                 await update.message.reply_text(
-                    "Введите данные о комиссии в формате: количество выплат, процент (например: 2, 50%):"
+                    "Введите данные о комиссии в формате: количество выплат, процент (например: 2, 55%):"
                 )
                 return WAIT_FOR_NEW_VALUE
             except ValueError:
@@ -368,7 +368,7 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return await exit_to_main_menu(update, context)
             except ValueError:
                 await update.message.reply_text(
-                    "Некорректные данные о комиссии. Убедитесь, что формат: количество выплат, процент (например: 2, 50%)."
+                    "Некорректные данные о комиссии. Убедитесь, что формат: количество выплат, процент (например: 2, 55%)."
                 )
                 return WAIT_FOR_NEW_VALUE
 

@@ -96,9 +96,14 @@ async def handle_salary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Данные успешно обновлены! Возвращаемся в главное меню...")
         return await exit_to_main_menu(update, context)
     else:
-        # Если комиссии нет, устанавливаем хардкод "2, 50%"
-        context.user_data["commission"] = "2, 50%"
-        await update.message.reply_text("Комиссия установлена автоматически: 2, 50%")
+        # Если комиссии нет, устанавливаем комиссию в зависимости от типа обучения
+        training_type = student.training_type if student else None
+        if training_type == "Фуллстек":
+            context.user_data["commission"] = "2, 65%"
+            await update.message.reply_text("Комиссия установлена автоматически: 2, 65%")
+        else:
+            context.user_data["commission"] = "2, 55%"
+            await update.message.reply_text("Комиссия установлена автоматически: 2, 55%")
         
         # Обновляем данные студента с хардкодной комиссией
         updates = {
