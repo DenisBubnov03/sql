@@ -449,6 +449,8 @@ async def handle_payment_type(update: Update, context: ContextTypes.DEFAULT_TYPE
         contract_type = context.user_data.get('contract_type', '')
         if contract_type == "Фуллстек":
             default_commission = "2 месяца по 65%"
+        elif contract_type == "Экспресс Авто":
+            default_commission = "2 месяца по 25%"
         else:
             default_commission = "2 месяца по 55%"
         
@@ -492,6 +494,8 @@ async def handle_months(update: Update, context: ContextTypes.DEFAULT_TYPE):
     contract_type = context.user_data.get('contract_type', '')
     if contract_type == "Фуллстек":
         default_commission = "2 месяца по 65%"
+    elif contract_type == "Экспресс Авто":
+        default_commission = "2 месяца по 25%"
     else:
         default_commission = "2 месяца по 55%"
     
@@ -523,9 +527,12 @@ async def handle_commission_type(update: Update, context: ContextTypes.DEFAULT_T
     elif commission_type == "2 месяца по 65%":
         context.user_data['commission_months'] = 2
         context.user_data['commission_percent'] = 65
+    elif commission_type == "2 месяца по 25%":
+        context.user_data['commission_months'] = 2
+        context.user_data['commission_percent'] = 25
     
     # Если выбрана стандартная комиссия, переходим к реквизитам
-    if commission_type in ["2 месяца по 55%", "2 месяца по 65%"]:
+    if commission_type in ["2 месяца по 55%", "2 месяца по 65%", "2 месяца по 25%"]:
         # Переходим к реквизитам
         await update.message.reply_text(
             "Введите ФИО заказчика:",
@@ -857,11 +864,16 @@ async def generate_contract(data: dict) -> str:
     contract_type = data.get('contract_type', '')
     if contract_type == "Фуллстек":
         default_commission_percent = 65
+    elif contract_type == "Экспресс Авто":
+        default_commission_percent = 25
     else:
         default_commission_percent = 55
     
     commission_months = data.get('commission_months', 2)
     commission_percent = data.get('commission_percent', default_commission_percent)
+    
+    # Вычисляем суммарный процент (общий процент за все месяцы)
+    total_commission_percent = commission_months * commission_percent
 
     # Реквизиты
     address = data.get('contract_address', '').strip()
@@ -977,6 +989,7 @@ async def generate_contract(data: dict) -> str:
 
         # Комиссия
         "{{comission}}": commission_text,
+        "{{procent}}": str(total_commission_percent),
 
         # Реквизиты
         "{{adress}}": address,
@@ -997,6 +1010,7 @@ async def generate_contract(data: dict) -> str:
         "{{PAYMENT_TYPE}}": payment_text,
         "{{MONTHLY_MONTHS}}": monthly_text,
         "{{COMMISSION}}": commission_text,
+        "{{PROCENT}}": str(total_commission_percent),
         "{{ADDRESS}}": address,
         "{{INN}}": inn,
         "{{RS}}": rs,
