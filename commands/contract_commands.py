@@ -1031,38 +1031,71 @@ async def generate_contract(data: dict) -> str:
                             replace_text_in_paragraph(paragraph, old_text, new_text)
 
     # Второй проход - все остальные поля (делаем несколько проходов для надежности)
+    # Отслеживаем обработанные параграфы для payment_terms, чтобы избежать дублирования
+    processed_paragraphs_payment_terms = set()
+    
     for _ in range(3):  # 3 прохода для обработки всех вхождений
         for paragraph in doc.paragraphs:
+            paragraph_id = id(paragraph)
             for old_text, new_text in replacements.items():
                 # Пропускаем пустые замены и уже обработанные
                 if new_text == "" or old_text in priority_replacements:
                     continue
-                replace_text_in_paragraph(paragraph, old_text, new_text)
+                # Для payment_terms проверяем, не был ли уже обработан этот параграф
+                if old_text == "{{payment_terms}}":
+                    if paragraph_id in processed_paragraphs_payment_terms:
+                        continue
+                    if replace_text_in_paragraph(paragraph, old_text, new_text):
+                        processed_paragraphs_payment_terms.add(paragraph_id)
+                else:
+                    replace_text_in_paragraph(paragraph, old_text, new_text)
 
         # Обрабатываем таблицы - все остальные поля
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
+                        paragraph_id = id(paragraph)
                         for old_text, new_text in replacements.items():
                             # Пропускаем пустые замены и уже обработанные
                             if new_text == "" or old_text in priority_replacements:
                                 continue
-                            replace_text_in_paragraph(paragraph, old_text, new_text)
+                            # Для payment_terms проверяем, не был ли уже обработан этот параграф
+                            if old_text == "{{payment_terms}}":
+                                if paragraph_id in processed_paragraphs_payment_terms:
+                                    continue
+                                if replace_text_in_paragraph(paragraph, old_text, new_text):
+                                    processed_paragraphs_payment_terms.add(paragraph_id)
+                            else:
+                                replace_text_in_paragraph(paragraph, old_text, new_text)
 
     # Обрабатываем заголовки и футеры
     for section in doc.sections:
         # Заголовки
         for header in section.header.paragraphs:
+            header_id = id(header)
             for old_text, new_text in replacements.items():
                 if new_text:
-                    replace_text_in_paragraph(header, old_text, new_text)
+                    # Для payment_terms проверяем, не был ли уже обработан этот параграф
+                    if old_text == "{{payment_terms}}":
+                        if header_id not in processed_paragraphs_payment_terms:
+                            if replace_text_in_paragraph(header, old_text, new_text):
+                                processed_paragraphs_payment_terms.add(header_id)
+                    else:
+                        replace_text_in_paragraph(header, old_text, new_text)
 
         # Футеры
         for footer in section.footer.paragraphs:
+            footer_id = id(footer)
             for old_text, new_text in replacements.items():
                 if new_text:
-                    replace_text_in_paragraph(footer, old_text, new_text)
+                    # Для payment_terms проверяем, не был ли уже обработан этот параграф
+                    if old_text == "{{payment_terms}}":
+                        if footer_id not in processed_paragraphs_payment_terms:
+                            if replace_text_in_paragraph(footer, old_text, new_text):
+                                processed_paragraphs_payment_terms.add(footer_id)
+                    else:
+                        replace_text_in_paragraph(footer, old_text, new_text)
 
     # Обработка универсального плейсхолдера {{payment_terms}} уже выполнена через словарь replacements выше
     # Также обрабатываем старые плейсхолдеры для обратной совместимости (если они остались в шаблоне)
