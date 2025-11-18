@@ -8,6 +8,7 @@ from data_base.models import Payment
 
 # Состояния для ConversationHandler
 EXPENSE_TYPE = "EXPENSE_TYPE"
+EXPENSE_NAME = "EXPENSE_NAME"
 EXPENSE_AMOUNT = "EXPENSE_AMOUNT"
 EXPENSE_DATE = "EXPENSE_DATE"
 
@@ -25,7 +26,7 @@ async def start_expense_process(update: Update, context: ContextTypes.DEFAULT_TY
     await update.message.reply_text(
         "💸 Выберите тип доп расходов:",
         reply_markup=ReplyKeyboardMarkup(
-            [["Реклама", "Зарплата"], ["Назад"]],
+            [["Реклама", "Зарплата", "Другое"], ["Назад"]],
             one_time_keyboard=True
         )
     )
@@ -40,19 +41,53 @@ async def handle_expense_type(update: Update, context: ContextTypes.DEFAULT_TYPE
     if expense_type == "Назад":
         return await exit_to_main_menu(update, context)
     
-    if expense_type not in ["Реклама", "Зарплата"]:
+    if expense_type not in ["Реклама", "Зарплата", "Другое"]:
         await update.message.reply_text(
-            "❌ Некорректный тип расхода. Выберите 'Реклама' или 'Зарплата':",
+            "❌ Некорректный тип расхода. Выберите 'Реклама', 'Зарплата' или 'Другое':",
             reply_markup=ReplyKeyboardMarkup(
-                [["Реклама", "Зарплата"], ["Назад"]],
+                [["Реклама", "Зарплата", "Другое"], ["Назад"]],
                 one_time_keyboard=True
             )
         )
         return EXPENSE_TYPE
     
+    if expense_type == "Другое":
+        # Если выбрано "Другое", запрашиваем наименование платежа
+        await update.message.reply_text(
+            "📝 Введите наименование платежа:",
+            reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True)
+        )
+        return EXPENSE_NAME
+    
+    # Для "Реклама" и "Зарплата" сразу переходим к сумме
     context.user_data["expense_type"] = expense_type
     await update.message.reply_text(
         f"💰 Введите сумму для расхода '{expense_type}':",
+        reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True)
+    )
+    return EXPENSE_AMOUNT
+
+
+async def handle_expense_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обрабатывает ввод наименования платежа для типа "Другое".
+    """
+    expense_name = update.message.text.strip()
+    
+    if expense_name == "Назад":
+        return await exit_to_main_menu(update, context)
+    
+    if not expense_name:
+        await update.message.reply_text(
+            "❌ Наименование не может быть пустым. Введите наименование платежа:",
+            reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True)
+        )
+        return EXPENSE_NAME
+    
+    # Сохраняем наименование как тип расхода
+    context.user_data["expense_type"] = expense_name
+    await update.message.reply_text(
+        f"💰 Введите сумму для расхода '{expense_name}':",
         reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True)
     )
     return EXPENSE_AMOUNT

@@ -11,7 +11,7 @@ from commands.start_commands import start, exit_to_main_menu
 from commands.career_consultant_commands import add_career_consultant_handler
 from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
     CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
-    EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, WAIT_FOR_NEW_VALUE, \
+    EXPENSE_TYPE, EXPENSE_NAME, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, WAIT_FOR_NEW_VALUE, \
     CONFIRM_ASSIGNMENT, WAIT_FOR_DETAILED_SALARY, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR, \
     IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE, CONTRACT_MENU, CONTRACT_STUDENT_TG, CONTRACT_TYPE, \
     CONTRACT_ADVANCE_AMOUNT, CONTRACT_PAYMENT_TYPE, CONTRACT_MONTHS, CONTRACT_COMMISSION_TYPE, \
@@ -32,7 +32,7 @@ from commands.student_selection import find_student, handle_multiple_students
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
     handle_period_start, handle_period_end, show_held_amounts
-from commands.additional_expenses_commands import start_expense_process, handle_expense_type, handle_expense_amount, handle_expense_date
+from commands.additional_expenses_commands import start_expense_process, handle_expense_type, handle_expense_name, handle_expense_amount, handle_expense_date
 from commands.contract_commands import (
     start_contract_formation, handle_contract_menu, handle_student_telegram,
     handle_contract_type, handle_advance_amount, handle_payment_type, handle_months,
@@ -221,6 +221,7 @@ def main():
         entry_points=[MessageHandler(filters.Regex("^Доп расходы$"), start_expense_process)],
         states={
             EXPENSE_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_type)],
+            EXPENSE_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_name)],
             EXPENSE_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_amount)],
             EXPENSE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_date)],
         },
