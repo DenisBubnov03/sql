@@ -327,9 +327,24 @@ def calc_total_salaries_for_dates(start_date, end_date, session) -> tuple:
             Payment.comment.ilike("%комисси%")
         ).all()
         
-        # 10% от суммы комиссий
-        total_commission = sum(float(p.amount) for p in commission_payments)
-        salary = total_commission * 0.1
+        # Рассчитываем комиссию: 20% если КК взял студента после 18.11.2025, иначе 10%
+        from datetime import date
+        COMMISSION_CHANGE_DATE = date(2025, 11, 18)
+        
+        total_commission = 0
+        salary = 0
+        for payment in commission_payments:
+            student = session.query(Student).filter(Student.id == payment.student_id).first()
+            if student and student.consultant_start_date:
+                # Если КК взял студента после 18.11.2025, то 20%, иначе 10%
+                if student.consultant_start_date >= COMMISSION_CHANGE_DATE:
+                    salary += float(payment.amount) * 0.2
+                else:
+                    salary += float(payment.amount) * 0.1
+            else:
+                # Если дата не установлена, используем старую ставку 10%
+                salary += float(payment.amount) * 0.1
+            total_commission += float(payment.amount)
         career_consultant_salaries[consultant.id] = round(salary, 2)
         
         # Подробное логирование для карьерных консультантов
@@ -337,7 +352,7 @@ def calc_total_salaries_for_dates(start_date, end_date, session) -> tuple:
             logger.info(f"📘 Карьерный консультант: {consultant.full_name} ({consultant.telegram})")
             # Расчет с учетом НДФЛ 6%
             salary_with_tax = round(salary * 1.06, 2)
-            logger.info(f"💼 Карьерный консультант {consultant.full_name} | Комиссии: {total_commission} руб. | 10% = {salary} руб. (с НДФЛ {salary_with_tax})")
+            logger.info(f"💼 Карьерный консультант {consultant.full_name} | Комиссии: {total_commission} руб. | Итого: {salary} руб. (с НДФЛ {salary_with_tax})")
             
             # Логируем каждый платеж комиссии отдельно
             for payment in commission_payments:

@@ -1075,9 +1075,24 @@ async def calculate_salary(update: Update, context):
             # Фильтруем по комиссии
             commission_payments = [p for p in all_student_payments if "комисси" in p.comment.lower()]
             
-            # 10% от суммы комиссий
-            total_commission = sum(float(p.amount) for p in commission_payments)
-            salary = total_commission * 0.1
+            # Рассчитываем комиссию: 20% если КК взял студента после 18.11.2025, иначе 10%
+            from datetime import date
+            COMMISSION_CHANGE_DATE = date(2025, 11, 18)
+            
+            total_commission = 0
+            salary = 0
+            for payment in commission_payments:
+                student = session.query(Student).filter(Student.id == payment.student_id).first()
+                if student and student.consultant_start_date:
+                    # Если КК взял студента после 18.11.2025, то 20%, иначе 10%
+                    if student.consultant_start_date >= COMMISSION_CHANGE_DATE:
+                        salary += float(payment.amount) * 0.2
+                    else:
+                        salary += float(payment.amount) * 0.1
+                else:
+                    # Если дата не установлена, используем старую ставку 10%
+                    salary += float(payment.amount) * 0.1
+                total_commission += float(payment.amount)
             
             # 🛡️ СТРАХОВКА ДЛЯ КАРЬЕРНЫХ КОНСУЛЬТАНТОВ
             from data_base.models import ConsultantInsuranceBalance
@@ -1218,7 +1233,7 @@ async def calculate_salary(update: Update, context):
             if commission_payments:
                 detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
                     f"💼 Карьерный консультант {consultant.full_name} | "
-                    f"Комиссии: {total_commission} руб. | 10% = {total_commission * 0.1} руб."
+                    f"Комиссии: {total_commission} руб. | Итого: {salary} руб."
                 )
                 
                 # Логируем каждый платеж комиссии отдельно
@@ -1234,7 +1249,7 @@ async def calculate_salary(update: Update, context):
             elif total_commission > 0:
                 detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
                     f"💼 Карьерный консультант {consultant.full_name} | "
-                    f"Комиссии: {total_commission} руб. | 10% = {total_commission * 0.1} руб."
+                    f"Комиссии: {total_commission} руб. | Итого: {salary} руб."
                 )
 
         # Вывод логов в файл
@@ -1510,7 +1525,7 @@ async def calculate_salary(update: Update, context):
             logger.info(f"💰 Расчет холдирования завершен. Итого холдировано: {round(total_held_amount, 2)} руб.")
         else:
             logger.info("💰 Система холдирования отключена (HELD_AMOUNTS_ENABLED = False)")
-        
+
         # Вычисляем общий бюджет на зарплаты (включая карьерных консультантов)
         total_mentor_salaries = sum(mentor_salaries.values())
         total_career_consultant_salaries = sum(career_consultant_salaries.values())
@@ -1558,7 +1573,7 @@ async def calculate_salary(update: Update, context):
         # Общий итог с НДФЛ
         total_salaries_with_tax = round(total_salaries * 1.06, 2)
         salary_report += f"💸 Общий итог: {int(total_salaries):,} руб. (с НДФЛ {int(total_salaries_with_tax):,})\n"
-        
+
         # Добавляем кнопку для подробной информации
         salary_report += "\n🔍 Хотите увидеть подробное формирование зарплаты по каждому сотруднику?"
         
@@ -2063,11 +2078,26 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
     total_postpayment = round(total_commission, 2)
     tax_amount = round(salary * 0.06, 2)
 
-    # Для КК учитываем только комиссию: 10% от комиссий, предоплата не выплачивается
+    # Для КК учитываем только комиссию: 20% если КК взял студента после 18.11.2025, иначе 10%
+    # Предоплата не выплачивается
+    from datetime import date
+    COMMISSION_CHANGE_DATE = date(2025, 11, 18)
+    
     prepayment_percent = 0.0
-    postpayment_percent = 0.1
     prepayment_amount = round(total_prepayment * prepayment_percent, 2)
-    postpayment_amount = round(total_postpayment * postpayment_percent, 2)
+    
+    # Пересчитываем postpayment_amount с учетом даты закрепления для каждого платежа
+    postpayment_amount = 0
+    for payment in commission_details_fallback:
+        student = session.query(Student).filter(Student.id == payment.student_id).first()
+        if student and student.consultant_start_date:
+            if student.consultant_start_date >= COMMISSION_CHANGE_DATE:
+                postpayment_amount += float(payment.amount) * 0.2
+            else:
+                postpayment_amount += float(payment.amount) * 0.1
+        else:
+            postpayment_amount += float(payment.amount) * 0.1
+    postpayment_amount = round(postpayment_amount, 2)
 
     # 🛡️ Получаем информацию о страховке
     total_insurance = 0.0
@@ -2097,7 +2127,9 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
                 })
 
     report += f"Предоплата (первоначальный + доплата): {prepayment_amount} руб. ({int(prepayment_percent*100)}% от {total_prepayment} руб.)\n"
-    report += f"Постоплата (комиссия): {postpayment_amount} руб. ({int(postpayment_percent*100)}% от {total_postpayment} руб.)\n"
+    # Вычисляем средний процент для отображения
+    avg_percent = (postpayment_amount / total_postpayment * 100) if total_postpayment > 0 else 0
+    report += f"Постоплата (комиссия): {postpayment_amount} руб. (средний {avg_percent:.1f}% от {total_postpayment} руб.)\n"
     if total_insurance > 0:
         report += f"🛡️ Страховка за студентов: {round(total_insurance, 2)} руб.\n"
     report += f"Налог 6% к уплате: {tax_amount} руб.\n\n"
@@ -2106,12 +2138,20 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
     commission_items = commission_payments if commission_payments else commission_details_fallback
 
     if commission_items:
-        report += "📋 Детализация комиссий (10% от каждого платежа):\n"
+        report += "📋 Детализация комиссий:\n"
         for payment in commission_items:
             student = session.query(Student).filter(Student.id == payment.student_id).first()
             if student:
-                commission_amount = round(float(payment.amount) * 0.1, 2)
-                report += f"• {student.fio} ({student.telegram}): {payment.amount} руб. → {commission_amount} руб.\n"
+                # Определяем процент комиссии в зависимости от даты закрепления
+                if student.consultant_start_date and student.consultant_start_date >= COMMISSION_CHANGE_DATE:
+                    commission_percent = 0.2
+                    percent_text = "20%"
+                else:
+                    commission_percent = 0.1
+                    percent_text = "10%"
+                
+                commission_amount = round(float(payment.amount) * commission_percent, 2)
+                report += f"• {student.fio} ({student.telegram}): {payment.amount} руб. → {commission_amount} руб. ({percent_text})\n"
                 report += f"  📅 {payment.payment_date} | 💬 {payment.comment}\n"
     else:
         report += "📋 Детализация комиссий не найдена.\n"

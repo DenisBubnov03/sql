@@ -60,16 +60,31 @@ def calculate_career_consultant_salary(consultant_id, start_date, end_date):
         return 0
     
     # Получаем все подтвержденные платежи с комментарием "Комиссия" за период
-    commission_payments = session.query(func.sum(Payment.amount)).filter(
+    commission_payments = session.query(Payment).filter(
         Payment.student_id.in_(student_ids),
         Payment.payment_date >= start_date,
         Payment.payment_date <= end_date,
         Payment.status == "подтвержден",
         Payment.comment.ilike("%комисси%")
-    ).scalar() or 0
+    ).all()
     
-    # 10% от суммы комиссий
-    salary = float(commission_payments) * 0.1
+    # Рассчитываем комиссию: 20% если КК взял студента после 18.11.2025, иначе 10%
+    from datetime import date
+    COMMISSION_CHANGE_DATE = date(2025, 11, 18)
+    
+    salary = 0
+    for payment in commission_payments:
+        student = session.query(Student).filter(Student.id == payment.student_id).first()
+        if student and student.consultant_start_date:
+            # Если КК взял студента после 18.11.2025, то 20%, иначе 10%
+            if student.consultant_start_date >= COMMISSION_CHANGE_DATE:
+                salary += float(payment.amount) * 0.2
+            else:
+                salary += float(payment.amount) * 0.1
+        else:
+            # Если дата не установлена, используем старую ставку 10%
+            salary += float(payment.amount) * 0.1
+    
     return round(salary, 2)
 
 
