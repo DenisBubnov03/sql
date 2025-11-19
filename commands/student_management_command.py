@@ -1075,7 +1075,7 @@ async def calculate_salary(update: Update, context):
             # Фильтруем по комиссии
             commission_payments = [p for p in all_student_payments if "комисси" in p.comment.lower()]
             
-            # Рассчитываем комиссию: 20% если КК взял студента после 18.11.2025, иначе 10%
+            # Рассчитываем комиссию: 20% если КК с ID=1 взял студента после 18.11.2025, иначе 10%
             from datetime import date
             COMMISSION_CHANGE_DATE = date(2025, 11, 18)
             
@@ -1084,8 +1084,8 @@ async def calculate_salary(update: Update, context):
             for payment in commission_payments:
                 student = session.query(Student).filter(Student.id == payment.student_id).first()
                 if student and student.consultant_start_date:
-                    # Если КК взял студента после 18.11.2025, то 20%, иначе 10%
-                    if student.consultant_start_date >= COMMISSION_CHANGE_DATE:
+                    # Если КК взял студента после 18.11.2025 и КК с ID=1, то 20%, иначе 10%
+                    if student.consultant_start_date >= COMMISSION_CHANGE_DATE and student.career_consultant_id == 1:
                         salary += float(payment.amount) * 0.2
                     else:
                         salary += float(payment.amount) * 0.1
@@ -2091,7 +2091,8 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
     for payment in commission_details_fallback:
         student = session.query(Student).filter(Student.id == payment.student_id).first()
         if student and student.consultant_start_date:
-            if student.consultant_start_date >= COMMISSION_CHANGE_DATE:
+            # Если КК взял студента после 18.11.2025 и КК с ID=1, то 20%, иначе 10%
+            if student.consultant_start_date >= COMMISSION_CHANGE_DATE and student.career_consultant_id == 1:
                 postpayment_amount += float(payment.amount) * 0.2
             else:
                 postpayment_amount += float(payment.amount) * 0.1
@@ -2142,8 +2143,8 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
         for payment in commission_items:
             student = session.query(Student).filter(Student.id == payment.student_id).first()
             if student:
-                # Определяем процент комиссии в зависимости от даты закрепления
-                if student.consultant_start_date and student.consultant_start_date >= COMMISSION_CHANGE_DATE:
+                # Определяем процент комиссии в зависимости от даты закрепления и ID КК
+                if student.consultant_start_date and student.consultant_start_date >= COMMISSION_CHANGE_DATE and student.career_consultant_id == 1:
                     commission_percent = 0.2
                     percent_text = "20%"
                 else:
