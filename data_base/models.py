@@ -264,3 +264,25 @@ class HeldAmount(Base):
     def __repr__(self):
         return f"<HeldAmount(id={self.id}, student_id={self.student_id}, mentor_id={self.mentor_id}, direction={self.direction}, held={self.held_amount}, status={self.status})>"
 
+
+class AutoProgress(Base):
+    __tablename__ = "auto_progress"
+
+    student_id = Column(Integer, ForeignKey("students.id"), primary_key=True)
+    # Модули 1-8: даты открытия
+    m1_start_date = Column(Date)
+    m2_start_date = Column(Date)
+    m3_start_date = Column(Date)
+    m4_start_date = Column(Date)
+    m5_start_date = Column(Date)
+    m6_start_date = Column(Date)
+    m7_start_date = Column(Date)
+    m8_start_date = Column(Date)
+    # Для 2 и 3 модуля — даты сдачи экзаменов
+    m2_exam_passed_date = Column(Date)
+    m3_exam_passed_date = Column(Date)
+    # Для 4-7 модулей — даты сдачи тем
+    m4_topic_passed_date = Column(Date)
+    m5_topic_passed_date = Column(Date)
+    m6_topic_passed_date = Column(Date)
+    m7_topic_passed_date = Column(Date)

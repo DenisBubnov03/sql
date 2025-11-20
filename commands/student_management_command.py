@@ -536,6 +536,8 @@ async def calculate_salary(update: Update, context):
     Рассчитывает зарплату менторов за указанный период.
     """
     try:
+        # Импортируем date в начале функции, чтобы избежать конфликтов
+        from datetime import date
         # Импортируем новый калькулятор фуллстеков
         from commands.fullstack_salary_calculator import calculate_fullstack_salary
         date_range = update.message.text.strip()
@@ -603,6 +605,9 @@ async def calculate_salary(update: Update, context):
 
         logger.info(f"📊 Найдено детальных платежей: {len(detailed_payments)}")
 
+        # Дата начала новой системы расчета для ручных и авто кураторов
+        new_system_start_date = date(2025, 12, 1)
+
         for payment in detailed_payments:
             mentor_id = payment.mentor_id
             student = session.query(Student).filter(Student.id == payment.student_id).first()
@@ -611,6 +616,18 @@ async def calculate_salary(update: Update, context):
 
             if student.training_type == "Фуллстек":
                 continue  # Fullstack оплачивается отдельно: фикс 5000 ментору 1, 30% ментору 3
+
+            # ВАЖНО: Старая форма расчета (20% от платежей) применяется только для студентов,
+            # пришедших ДО new_system_start_date. Даже если их платеж был после этой даты,
+            # он все равно считается по старой системе (20% от суммы платежа).
+            # Студенты, пришедшие ПОСЛЕ new_system_start_date, рассчитываются только по новой системе
+            # (по темам/модулям) и НЕ получают 20% от платежей.
+            if student.training_type in ["Ручное тестирование", "Автотестирование"]:
+                if student.start_date and student.start_date >= new_system_start_date:
+                    logger.debug(f"⏭️ Пропускаем студента {student.fio} (ID {student.id}): пришел {student.start_date} >= {new_system_start_date}, будет рассчитан по новой системе")
+                    continue  # Пропускаем - эти студенты рассчитываются по новой системе (только по темам/модулям)
+                else:
+                    logger.debug(f"✅ Старая система: студент {student.fio} (ID {student.id}), пришел {student.start_date}, платеж {payment.payment_date}, сумма {payment.amount} руб.")
 
             if mentor_id == 1 and student.training_type == "Ручное тестирование":
                 percent = 0.3
@@ -631,6 +648,8 @@ async def calculate_salary(update: Update, context):
             detailed_logs[mentor_id].append(line)
 
         # 🔁 Бонусы 10% за чужих студентов (кроме Fullstack)
+        # ВАЖНО: Бонусы директорам (ментор 1 и ментор 3) начисляются независимо от даты перехода
+        # на новую систему. Они работают для всех студентов, независимо от того, когда студент пришел.
         for payment in detailed_payments:
             student = session.query(Student).filter(Student.id == payment.student_id).first()
             if not student:
@@ -638,6 +657,8 @@ async def calculate_salary(update: Update, context):
 
             if student.training_type == "Фуллстек":
                 continue  # ❌ Бонус не начисляется за Fullstack
+
+            # НЕ проверяем дату для бонусов директорам - они начисляются всегда
 
             if 1 not in detailed_logs:
                 detailed_logs[1] = []
@@ -723,6 +744,34 @@ async def calculate_salary(update: Update, context):
         except Exception as e:
             logger.error(f"❌ Ошибка при расчете фуллстеков: {e}")
             # Продолжаем расчет без фуллстеков
+
+        # 🎯 РАСЧЕТ ЗП РУЧНЫХ И АВТО КУРАТОРОВ ПО ПРИНЯТЫМ ТЕМАМ/МОДУЛЯМ
+        logger.info("🎯 Запускаем расчет ЗП ручных и авто кураторов по принятым темам/модулям")
+        try:
+            from commands.manual_auto_curator_salary_calculator import calculate_manual_auto_curator_salary
+            manual_auto_result = calculate_manual_auto_curator_salary(start_date, end_date)
+            
+            # Добавляем результаты кураторов к основному расчету
+            for curator_id, salary in manual_auto_result['curator_salaries'].items():
+                if curator_id not in mentor_salaries:
+                    mentor_salaries[curator_id] = 0
+                mentor_salaries[curator_id] += salary
+            
+            # Добавляем логи кураторов
+            for curator_id, logs in manual_auto_result['logs'].items():
+                if curator_id not in detailed_logs:
+                    detailed_logs[curator_id] = []
+                detailed_logs[curator_id].extend(logs)
+            
+            # Добавляем статистику
+            stats = manual_auto_result['students_processed']
+            logger.info(f"🎯 Расчет ручных/авто кураторов завершен: обработано {stats['total']} студентов (ручных: {stats['manual']}, авто: {stats['auto']}), кураторов: {manual_auto_result['curators_count']}")
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка при расчете ручных/авто кураторов: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            # Продолжаем расчет без ручных/авто кураторов
 
         # 🛡️ СТРАХОВКА ДЛЯ КУРАТОРОВ РУЧНОГО НАПРАВЛЕНИЯ
         from config import Config
@@ -1076,7 +1125,6 @@ async def calculate_salary(update: Update, context):
             commission_payments = [p for p in all_student_payments if "комисси" in p.comment.lower()]
             
             # Рассчитываем комиссию: 20% если КК с ID=1 взял студента после 18.11.2025, иначе 10%
-            from datetime import date
             COMMISSION_CHANGE_DATE = date(2025, 11, 18)
             
             total_commission = 0
@@ -1842,6 +1890,9 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
     """
     Генерирует подробный отчет по зарплате ментора.
     """
+    # Импортируем date в начале функции, чтобы избежать конфликтов
+    from datetime import date
+    
     logger.info(f"Начинаю формирование отчета для ментора {mentor.full_name}")
     
     try:
@@ -1876,6 +1927,9 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
         from_students_payout = 0.0  # первоначальный + доплата
         from_offers_payout = 0.0    # комиссия
 
+        # Дата начала новой системы расчета для ручных и авто кураторов
+        new_system_start_date = date(2025, 11, 1)
+
         if period_start and period_end:
             payments_q = session.query(Payment, Student).join(Student, Student.id == Payment.student_id).filter(
                 Payment.payment_date >= period_start,
@@ -1899,6 +1953,11 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
                 # Исключаем Fullstack из расчётной базы
                 if student.training_type == "Фуллстек":
                     continue
+
+                # Старая форма расчета: только для студентов, пришедших ДО 01.10.2025
+                if student.training_type in ["Ручное тестирование", "Автотестирование"]:
+                    if student.start_date and student.start_date >= new_system_start_date:
+                        continue  # Пропускаем - эти студенты рассчитываются по новой системе
 
                 # Платёж попадает в расчёт — накапливаем расчётную базу
                 if "первонач" in comment_lower:
@@ -2016,6 +2075,9 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
     """
     Генерирует подробный отчет по зарплате карьерного консультанта.
     """
+    # Импортируем date в начале функции, чтобы избежать конфликтов
+    from datetime import date
+    
     logger.info(f"Начинаю формирование отчета для КК {consultant.full_name}")
     
     salary_with_tax = round(salary * 1.06, 2)
@@ -2080,7 +2142,6 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
 
     # Для КК учитываем только комиссию: 20% если КК взял студента после 18.11.2025, иначе 10%
     # Предоплата не выплачивается
-    from datetime import date
     COMMISSION_CHANGE_DATE = date(2025, 11, 18)
     
     prepayment_percent = 0.0
