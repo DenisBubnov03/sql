@@ -47,10 +47,70 @@ def assign_student_to_career_consultant(student_id, consultant_id):
     return student
 
 
+def calculate_base_income_and_salary(payment_amount, commission_string, curator_percent):
+    """
+    Рассчитывает базовый доход (100% ЗП ученика) и зарплату куратора/КК от комиссионного платежа.
+    
+    Алгоритм:
+    1. Извлекает X (количество месяцев) и Y (процент от ЗП) из commission_string
+    2. Вычисляет общий процент долга: X * Y
+    3. Находит базовый доход: Платеж / (X * Y / 100)
+    4. Рассчитывает зарплату: Базовый доход * curator_percent
+    
+    Args:
+        payment_amount: Фактическая сумма платежа (включает наценку бизнеса)
+        commission_string: Строка в формате "X, Y" или "X,Y" (X - количество месяцев, Y - процент от ЗП)
+        curator_percent: Процент куратора/КК (0.20 для кураторов, 0.10 или 0.20 для КК)
+    
+    Returns:
+        tuple: (базовый_доход, зарплата_куратора) или (None, None) при ошибке
+    """
+    try:
+        if not commission_string:
+            return None, None
+        
+        # Обрабатываем формат "X, Y" или "X,Y" (с пробелом или без)
+        commission_string = commission_string.strip()
+        if ", " in commission_string:
+            parts = commission_string.split(", ")
+        elif "," in commission_string:
+            parts = commission_string.split(",")
+        else:
+            return None, None
+        
+        if len(parts) != 2:
+            return None, None
+        
+        # Извлекаем X (количество месяцев) и Y (процент от ЗП)
+        X = int(parts[0].strip())
+        Y_str = parts[1].strip().replace("%", "").replace(" ", "")
+        Y = int(Y_str)
+        
+        # Шаг 1: Рассчитываем общий процент долга
+        total_percent = X * Y
+        
+        # Шаг 1.3: Конвертируем в долю
+        percent_share = total_percent / 100.0
+        
+        if percent_share == 0:
+            return None, None
+        
+        # Шаг 2: Находим базовый доход (100% ЗП)
+        base_income = float(payment_amount) / percent_share
+        
+        # Шаг 3: Рассчитываем зарплату куратора/КК
+        curator_salary = base_income * curator_percent
+        
+        return round(base_income, 2), round(curator_salary, 2)
+        
+    except (ValueError, ZeroDivisionError, AttributeError) as e:
+        return None, None
+
+
 def calculate_career_consultant_salary(consultant_id, start_date, end_date):
     """
     Рассчитывает зарплату карьерного консультанта.
-    10% от платежей со статусом "Комиссия" и подтвержденных закрепленных за ними учеников.
+    10% или 20% от базового дохода (100% ЗП ученика) платежей со статусом "Комиссия".
     """
     # Получаем всех студентов, закрепленных за консультантом
     students = get_students_by_career_consultant(consultant_id)
@@ -75,15 +135,32 @@ def calculate_career_consultant_salary(consultant_id, start_date, end_date):
     salary = 0
     for payment in commission_payments:
         student = session.query(Student).filter(Student.id == payment.student_id).first()
+        if not student:
+            continue
+        
+        # Определяем процент КК
         if student and student.consultant_start_date:
             # Если КК взял студента после 18.11.2025 и КК с ID=1, то 20%, иначе 10%
             if student.consultant_start_date >= COMMISSION_CHANGE_DATE and student.career_consultant_id == 1:
-                salary += float(payment.amount) * 0.2
+                consultant_percent = 0.2
             else:
-                salary += float(payment.amount) * 0.1
+                consultant_percent = 0.1
         else:
             # Если дата не установлена, используем старую ставку 10%
-            salary += float(payment.amount) * 0.1
+            consultant_percent = 0.1
+        
+        # Используем новую формулу расчета от базового дохода
+        base_income, curator_salary = calculate_base_income_and_salary(
+            float(payment.amount),
+            student.commission,
+            consultant_percent
+        )
+        
+        if curator_salary is not None:
+            salary += curator_salary
+        else:
+            # Fallback на старую формулу, если не удалось рассчитать по новой
+            salary += float(payment.amount) * consultant_percent
     
     return round(salary, 2)
 

@@ -606,7 +606,8 @@ async def calculate_salary(update: Update, context):
         logger.info(f"📊 Найдено детальных платежей: {len(detailed_payments)}")
 
         # Дата начала новой системы расчета для ручных и авто кураторов
-        new_system_start_date = date(2025, 12, 1)
+        from config import Config
+        new_system_start_date = Config.NEW_PAYMENT_SYSTEM_START_DATE
 
         for payment in detailed_payments:
             mentor_id = payment.mentor_id
@@ -636,12 +637,31 @@ async def calculate_salary(update: Update, context):
             else:
                 percent = 0.2
 
-            payout = float(payment.amount) * percent
+            # Для комиссионных платежей используем новую формулу расчета от базового дохода
+            comment_lower = (payment.comment or "").lower()
+            if "комисси" in comment_lower and student.commission:
+                from data_base.operations import calculate_base_income_and_salary
+                base_income, curator_salary = calculate_base_income_and_salary(
+                    float(payment.amount),
+                    student.commission,
+                    percent
+                )
+                
+                if curator_salary is not None:
+                    payout = curator_salary
+                    line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб. (базовый доход: {base_income} руб.), {int(percent * 100)}%, {round(payout, 2)} руб."
+                else:
+                    # Fallback на старую формулу, если не удалось рассчитать по новой
+                    payout = float(payment.amount) * percent
+                    line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., {int(percent * 100)}%, {round(payout, 2)} руб."
+            else:
+                # Для остальных платежей используем старую формулу
+                payout = float(payment.amount) * percent
+                line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., {int(percent * 100)}%, {round(payout, 2)} руб."
+
             if mentor_id not in mentor_salaries:
                 mentor_salaries[mentor_id] = 0
             mentor_salaries[mentor_id] += payout
-
-            line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., {int(percent * 100)}%, {round(payout, 2)} руб."
 
             if mentor_id not in detailed_logs:
                 detailed_logs[mentor_id] = []
@@ -1131,15 +1151,34 @@ async def calculate_salary(update: Update, context):
             salary = 0
             for payment in commission_payments:
                 student = session.query(Student).filter(Student.id == payment.student_id).first()
+                if not student:
+                    continue
+                
+                # Определяем процент КК
                 if student and student.consultant_start_date:
                     # Если КК взял студента после 18.11.2025 и КК с ID=1, то 20%, иначе 10%
                     if student.consultant_start_date >= COMMISSION_CHANGE_DATE and student.career_consultant_id == 1:
-                        salary += float(payment.amount) * 0.2
+                        consultant_percent = 0.2
                     else:
-                        salary += float(payment.amount) * 0.1
+                        consultant_percent = 0.1
                 else:
                     # Если дата не установлена, используем старую ставку 10%
-                    salary += float(payment.amount) * 0.1
+                    consultant_percent = 0.1
+                
+                # Используем новую формулу расчета от базового дохода
+                from data_base.operations import calculate_base_income_and_salary
+                base_income, consultant_salary = calculate_base_income_and_salary(
+                    float(payment.amount),
+                    student.commission,
+                    consultant_percent
+                )
+                
+                if consultant_salary is not None:
+                    salary += consultant_salary
+                else:
+                    # Fallback на старую формулу, если не удалось рассчитать по новой
+                    salary += float(payment.amount) * consultant_percent
+                
                 total_commission += float(payment.amount)
             
             # 🛡️ СТРАХОВКА ДЛЯ КАРЬЕРНЫХ КОНСУЛЬТАНТОВ
@@ -1928,7 +1967,8 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
         from_offers_payout = 0.0    # комиссия
 
         # Дата начала новой системы расчета для ручных и авто кураторов
-        new_system_start_date = date(2025, 11, 1)
+        from config import Config
+        new_system_start_date = Config.NEW_PAYMENT_SYSTEM_START_DATE
 
         if period_start and period_end:
             payments_q = session.query(Payment, Student).join(Student, Student.id == Payment.student_id).filter(
@@ -1975,7 +2015,24 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
                 else:
                     percent = 0.2
 
-                payout = amount * percent
+                # Для комиссионных платежей используем новую формулу расчета от базового дохода
+                if "комисси" in comment_lower and student.commission:
+                    from data_base.operations import calculate_base_income_and_salary
+                    base_income, curator_salary = calculate_base_income_and_salary(
+                        amount,
+                        student.commission,
+                        percent
+                    )
+                    
+                    if curator_salary is not None:
+                        payout = curator_salary
+                    else:
+                        # Fallback на старую формулу, если не удалось рассчитать по новой
+                        payout = amount * percent
+                else:
+                    # Для остальных платежей используем старую формулу
+                    payout = amount * percent
+                
                 if "первонач" in comment_lower or "доплат" in comment_lower:
                     from_students_payout += payout
                 elif "комисси" in comment_lower:
@@ -2151,14 +2208,32 @@ async def generate_consultant_detailed_report(consultant, salary, start_date, en
     postpayment_amount = 0
     for payment in commission_details_fallback:
         student = session.query(Student).filter(Student.id == payment.student_id).first()
+        if not student:
+            continue
+        
+        # Определяем процент КК
         if student and student.consultant_start_date:
             # Если КК взял студента после 18.11.2025 и КК с ID=1, то 20%, иначе 10%
             if student.consultant_start_date >= COMMISSION_CHANGE_DATE and student.career_consultant_id == 1:
-                postpayment_amount += float(payment.amount) * 0.2
+                consultant_percent = 0.2
             else:
-                postpayment_amount += float(payment.amount) * 0.1
+                consultant_percent = 0.1
         else:
-            postpayment_amount += float(payment.amount) * 0.1
+            consultant_percent = 0.1
+        
+        # Используем новую формулу расчета от базового дохода
+        from data_base.operations import calculate_base_income_and_salary
+        base_income, consultant_salary = calculate_base_income_and_salary(
+            float(payment.amount),
+            student.commission,
+            consultant_percent
+        )
+        
+        if consultant_salary is not None:
+            postpayment_amount += consultant_salary
+        else:
+            # Fallback на старую формулу, если не удалось рассчитать по новой
+            postpayment_amount += float(payment.amount) * consultant_percent
     postpayment_amount = round(postpayment_amount, 2)
 
     # 🛡️ Получаем информацию о страховке
