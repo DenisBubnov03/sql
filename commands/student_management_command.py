@@ -539,6 +539,8 @@ async def calculate_salary(update: Update, context):
         # Импортируем date в начале функции, чтобы избежать конфликтов
         from datetime import date
         from datetime import date as date_class  # Дополнительный импорт для избежания конфликтов
+        # Импортируем Config ДО использования, чтобы убедиться, что date доступен
+        from config import Config
         # Импортируем новый калькулятор фуллстеков
         from commands.fullstack_salary_calculator import calculate_fullstack_salary
         date_range = update.message.text.strip()
@@ -607,7 +609,6 @@ async def calculate_salary(update: Update, context):
         logger.info(f"📊 Найдено детальных платежей: {len(detailed_payments)}")
 
         # Дата начала новой системы расчета для ручных и авто кураторов
-        from config import Config
         new_system_start_date = Config.NEW_PAYMENT_SYSTEM_START_DATE
 
         for payment in detailed_payments:
