@@ -538,6 +538,7 @@ async def calculate_salary(update: Update, context):
     try:
         # Импортируем date в начале функции, чтобы избежать конфликтов
         from datetime import date
+        from datetime import date as date_class  # Дополнительный импорт для избежания конфликтов
         # Импортируем новый калькулятор фуллстеков
         from commands.fullstack_salary_calculator import calculate_fullstack_salary
         date_range = update.message.text.strip()
@@ -1145,7 +1146,7 @@ async def calculate_salary(update: Update, context):
             commission_payments = [p for p in all_student_payments if "комисси" in p.comment.lower()]
             
             # Рассчитываем комиссию: 20% если КК с ID=1 взял студента после 18.11.2025, иначе 10%
-            COMMISSION_CHANGE_DATE = date(2025, 11, 18)
+            COMMISSION_CHANGE_DATE = date_class(2025, 11, 18)
             
             total_commission = 0
             salary = 0
