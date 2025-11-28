@@ -12,6 +12,7 @@ from commands.student_info_commands import calculate_commission
 from data_base.db import session
 from data_base.models import Student, Payment, CuratorInsuranceBalance, Mentor, ManualProgress
 from data_base.operations import get_all_students, update_student, get_student_by_fio_or_telegram, delete_student
+from telegram import ReplyKeyboardMarkup, KeyboardButton
 
 
 # Функция редактирования студента
@@ -123,10 +124,22 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text(
         "Некорректное поле. Выберите одно из предложенных:",
         reply_markup=ReplyKeyboardMarkup(
-            [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты",
-              "Статус обучения", "Получил работу", "Комиссия выплачено", "Удалить ученика"],
-             ["Назад"]],
-            one_time_keyboard=True
+            [
+                [
+                    KeyboardButton("ФИО"),
+                    KeyboardButton("Telegram"),
+                    KeyboardButton("Сумма оплаты"),
+                    KeyboardButton("Статус обучения"),
+                    KeyboardButton("Получил работу"),
+                    KeyboardButton("Комиссия выплачено"),
+                    KeyboardButton("Удалить ученика"),
+                ],
+                [
+                    KeyboardButton("Назад")
+                ]
+            ],
+            one_time_keyboard=True,
+            resize_keyboard=True
         )
     )
     return FIELD_TO_EDIT
@@ -189,8 +202,18 @@ async def edit_student_field_limited(update: Update, context: ContextTypes.DEFAU
     await update.message.reply_text(
         "Некорректное поле. Выберите одно из предложенных:",
         reply_markup=ReplyKeyboardMarkup(
-            [["ФИО", "Telegram", "Статус обучения", "Получил работу", "Куратор"], ["Назад"]],
-            one_time_keyboard=True
+            [
+                [
+                    KeyboardButton("ФИО"),
+                    KeyboardButton("Telegram"),
+                    KeyboardButton("Статус обучения"),
+                    KeyboardButton("Получил работу"),
+                    KeyboardButton("Куратор"),
+                ],
+                [KeyboardButton("Назад")]
+            ],
+            one_time_keyboard=True,
+            resize_keyboard=True
         )
     )
     return FIELD_TO_EDIT

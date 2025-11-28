@@ -1,6 +1,6 @@
 from commands.start_commands import exit_to_main_menu
 from commands.states import FIO_OR_TELEGRAM, SELECT_STUDENT, FIELD_TO_EDIT
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 
 from data_base.operations import get_all_students, get_student_by_fio_or_telegram
@@ -52,11 +52,26 @@ async def find_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
     user_id = update.message.from_user.id
     if user_id in NOT_ADMINS and user_id not in AUTHORIZED_USERS:
-        keyboard = [["ФИО", "Telegram", "Статус обучения", "Получил работу", "Куратор"], ["Назад"]]
+        keyboard = [
+            [KeyboardButton("ФИО")],
+            [KeyboardButton("Telegram")],
+            [KeyboardButton("Статус обучения")],
+            [KeyboardButton("Получил работу")],
+            [KeyboardButton("Куратор")],
+            [KeyboardButton("Назад")]
+        ]
     else:
-        keyboard = [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты", "Статус обучения", "Получил работу",
-                     "Комиссия выплачено", "Куратор", "Удалить ученика"], ["Назад"]]
-
+        keyboard = [
+            [KeyboardButton("ФИО")],
+            [KeyboardButton("Telegram")],
+            [KeyboardButton("Сумма оплаты")],
+            [KeyboardButton("Статус обучения")],
+            [KeyboardButton("Получил работу")],
+            [KeyboardButton("Комиссия выплачено")],
+            [KeyboardButton("Куратор")],
+            [KeyboardButton("Удалить ученика")],
+            [KeyboardButton("Назад")]
+        ]
     await update.message.reply_text(
         f"Вы выбрали студента: {student.fio} ({student.telegram}).\n"
         "Что вы хотите отредактировать?",
@@ -87,11 +102,26 @@ async def handle_multiple_students(update: Update, context: ContextTypes.DEFAULT
             from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
             user_id = update.message.from_user.id
             if user_id in NOT_ADMINS and user_id not in AUTHORIZED_USERS:
-                keyboard = [["ФИО", "Telegram", "Статус обучения", "Получил работу", "Куратор"], ["Назад"]]
+                keyboard = [
+                    [KeyboardButton("ФИО")],
+                    [KeyboardButton("Telegram")],
+                    [KeyboardButton("Статус обучения")],
+                    [KeyboardButton("Получил работу")],
+                    [KeyboardButton("Куратор")],
+                    [KeyboardButton("Назад")]
+                ]
             else:
-                keyboard = [["ФИО", "Telegram", "Дата последнего звонка", "Сумма оплаты", "Статус обучения", "Получил работу",
-                             "Комиссия выплачено", "Куратор", "Удалить ученика"], ["Назад"]]
-
+                keyboard = [
+                    [KeyboardButton("ФИО")],
+                    [KeyboardButton("Telegram")],
+                    [KeyboardButton("Сумма оплаты")],
+                    [KeyboardButton("Статус обучения")],
+                    [KeyboardButton("Получил работу")],
+                    [KeyboardButton("Комиссия выплачено")],
+                    [KeyboardButton("Куратор")],
+                    [KeyboardButton("Удалить ученика")],
+                    [KeyboardButton("Назад")]
+                ]
             await update.message.reply_text(
                 f"Вы выбрали студента: {matching_students[index].fio}.",
                 reply_markup=ReplyKeyboardMarkup(
