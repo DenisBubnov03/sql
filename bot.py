@@ -6,17 +6,20 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from bot.handlers.career_consultant_handlers import  show_career_consultant_statistics, \
     show_assign_student_menu, handle_student_selection, handle_assignment_confirmation, CONFIRM_ASSIGNMENT, SELECT_STUDENT, \
     career_consultant_start, exit_career_consultant_menu
+from commands.create_meeting import create_meeting_entry, select_meeting_type
 from commands.mentor_bonus_commands import start_bonus_process, handle_mentor_tg, handle_bonus_amount
 from commands.start_commands import start, exit_to_main_menu
 from commands.career_consultant_commands import add_career_consultant_handler
-from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, COURSE_TYPE_MENU, \
+from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, \
+    COURSE_TYPE_MENU, \
     CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
-    EXPENSE_TYPE, EXPENSE_NAME, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, WAIT_FOR_NEW_VALUE, \
+    EXPENSE_TYPE, EXPENSE_NAME, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, \
+    WAIT_FOR_NEW_VALUE, \
     CONFIRM_ASSIGNMENT, WAIT_FOR_DETAILED_SALARY, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR, \
     IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE, CONTRACT_MENU, CONTRACT_STUDENT_TG, CONTRACT_TYPE, \
     CONTRACT_ADVANCE_AMOUNT, CONTRACT_PAYMENT_TYPE, CONTRACT_MONTHS, CONTRACT_COMMISSION_TYPE, \
     CONTRACT_COMMISSION_CUSTOM, CONTRACT_FIO, CONTRACT_ADDRESS, CONTRACT_INN, CONTRACT_RS, CONTRACT_KS, \
-    CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL
+    CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL, MEETING_TYPE_SELECTION
 from commands.student_commands import (
     edit_student, edit_student_field, handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
@@ -237,7 +240,15 @@ def main():
         },
         fallbacks=[MessageHandler(filters.Regex("^🔙 Назад$"), exit_to_main_menu)],
     )
-    
+    create_meeting_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^📹 Создание встречи$"), create_meeting_entry)],
+        states={
+            MEETING_TYPE_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_meeting_type)]
+        },
+        fallbacks=[]
+    )
+    application.add_handler(create_meeting_handler)
+
     application.add_handler(contract_signing_handler)
     application.add_handler(contract_handler)
     application.add_handler(bonus_handler)
