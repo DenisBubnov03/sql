@@ -42,12 +42,12 @@ async def create_meeting_entry(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = update.message.from_user.id
     username = "@" + update.message.from_user.username if update.message.from_user.username else None
 
-    # Проверяем, является ли пользователь ментором или админом
-    mentor = session.query(Mentor).filter(Mentor.chat_id == str(user_id)).first()
-
-    if not mentor:
-        await update.message.reply_text("❌ Эта функция доступна только для кураторов и админов.")
-        return ConversationHandler.END
+    # # Проверяем, является ли пользователь ментором или админом
+    # mentor = session.query(Mentor).filter(Mentor.chat_id == str(user_id)).first()
+    #
+    # if not mentor:
+    #     await update.message.reply_text("❌ Эта функция доступна только для кураторов и админов.")
+    #     return ConversationHandler.END
 
     # Сохраняем telegram создателя
     context.user_data["creator_telegram"] = username
