@@ -26,7 +26,7 @@ async def start_expense_process(update: Update, context: ContextTypes.DEFAULT_TY
     await update.message.reply_text(
         "💸 Выберите тип доп расходов:",
         reply_markup=ReplyKeyboardMarkup(
-            [["Реклама", "Зарплата", "Другое"], ["Назад"]],
+            [["Реклама"], ["Зарплата"], ["Другое"], ["Назад"]],
             one_time_keyboard=True
         )
     )
@@ -45,7 +45,7 @@ async def handle_expense_type(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(
             "❌ Некорректный тип расхода. Выберите 'Реклама', 'Зарплата' или 'Другое':",
             reply_markup=ReplyKeyboardMarkup(
-                [["Реклама", "Зарплата", "Другое"], ["Назад"]],
+                [["Реклама"], ["Зарплата"], ["Другое"], ["Назад"]],
                 one_time_keyboard=True
             )
         )

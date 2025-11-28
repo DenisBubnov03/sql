@@ -39,28 +39,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Ограниченное меню для not_admin
     elif user_id in NOT_ADMINS:
         reply_keyboard = [
-            [KeyboardButton('Добавить студента'),
-             KeyboardButton('Подписание договора'),
-             KeyboardButton('Договор'),
-             KeyboardButton("📹 Создание встречи"),
-             KeyboardButton("📊 Рассчитать зарплату"),
-             KeyboardButton('Поиск ученика'),
-             KeyboardButton('Статистика'),
-             KeyboardButton('Редактировать данные студента'),
-             KeyboardButton('Доп расходы')]
+            [KeyboardButton('Добавить студента')],
+            [KeyboardButton('Подписание договора')],
+            [KeyboardButton('Договор')],
+            [KeyboardButton("📹 Создание встречи")],
+            [KeyboardButton("📊 Рассчитать зарплату")],
+            [KeyboardButton('Поиск ученика')],
+            [KeyboardButton('Статистика')],
+            [KeyboardButton('Редактировать данные студента')],
+            [KeyboardButton('Доп расходы')]
         ]
     else:
         reply_keyboard = [
-            [KeyboardButton('Добавить студента'),
-             KeyboardButton('Премия куратору'),
-             KeyboardButton('Подписание договора'),
-             KeyboardButton('Договор')],
-            [KeyboardButton('Редактировать данные студента'),
-             KeyboardButton('Проверить уведомления')],
-            [KeyboardButton('Поиск ученика'),
-             KeyboardButton('Статистика'),
-             KeyboardButton("📊 Рассчитать зарплату"),
-             KeyboardButton('Доп расходы')],
+            [KeyboardButton('Добавить студента')],
+            [KeyboardButton('Премия куратору')],
+            [KeyboardButton('Подписание договора')],
+            [KeyboardButton('Договор')],
+            [KeyboardButton('Редактировать данные студента')],
+            [KeyboardButton('Проверить уведомления')],
+            [KeyboardButton('Поиск ученика')],
+            [KeyboardButton('Статистика')],
+            [KeyboardButton("📊 Рассчитать зарплату")],
+            [KeyboardButton('Доп расходы')],
             [KeyboardButton('💼 Добавить КК')]
         ]
 
@@ -88,28 +88,28 @@ async def exit_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Ограниченное меню для not_admin
     elif user_id in NOT_ADMINS:
         reply_keyboard = [
-            [KeyboardButton('Добавить студента'),
-             KeyboardButton('Подписание договора'),
-             KeyboardButton('Договор'),
-             KeyboardButton("📹 Создание встречи"),
-             KeyboardButton("📊 Рассчитать зарплату"),
-             KeyboardButton('Поиск ученика'),
-             KeyboardButton('Статистика'),
-             KeyboardButton('Редактировать данные студента'),
-             KeyboardButton('Доп расходы')]
+            [KeyboardButton('Добавить студента')],
+            [KeyboardButton('Подписание договора')],
+            [KeyboardButton('Договор')],
+            [KeyboardButton("📹 Создание встречи")],
+            [KeyboardButton("📊 Рассчитать зарплату")],
+            [KeyboardButton('Поиск ученика')],
+            [KeyboardButton('Статистика')],
+            [KeyboardButton('Редактировать данные студента')],
+            [KeyboardButton('Доп расходы')]
         ]
     else:
         reply_keyboard = [
-            [KeyboardButton('Добавить студента'),
-             KeyboardButton('Премия куратору'),
-             KeyboardButton('Подписание договора'),
-             KeyboardButton('Договор')],
-            [KeyboardButton('Редактировать данные студента'),
-             KeyboardButton('Проверить уведомления')],
-            [KeyboardButton('Поиск ученика'),
-             KeyboardButton('Статистика'),
-             KeyboardButton("📊 Рассчитать зарплату"),
-             KeyboardButton('Доп расходы')],
+            [KeyboardButton('Добавить студента')],
+            [KeyboardButton('Премия куратору')],
+            [KeyboardButton('Подписание договора')],
+            [KeyboardButton('Договор')],
+            [KeyboardButton('Редактировать данные студента')],
+            [KeyboardButton('Проверить уведомления')],
+            [KeyboardButton('Поиск ученика')],
+            [KeyboardButton('Статистика')],
+            [KeyboardButton("📊 Рассчитать зарплату")],
+            [KeyboardButton('Доп расходы')],
             [KeyboardButton('💼 Добавить КК')]
         ]
 

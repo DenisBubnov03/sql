@@ -287,7 +287,7 @@ async def handle_contract_type(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(
             "❌ Неверный тип договора. Выберите из предложенных:",
             reply_markup=ReplyKeyboardMarkup(
-                [["Ручное", "Авто"], ["Фуллстек", "Экспресс Авто"], ["🔙 Отмена"]],
+                [["Ручное"], ["Авто"], ["Фуллстек"], ["Экспресс Авто"], ["🔙 Отмена"]],
                 one_time_keyboard=True
             )
         )

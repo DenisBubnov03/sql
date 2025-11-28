@@ -74,10 +74,10 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if field_to_edit == "Удалить ученика":
         await update.message.reply_text(
             f"Вы уверены, что хотите удалить студента {student.fio}? Это действие нельзя отменить.",
-            reply_markup=ReplyKeyboardMarkup(
-                [["Да, удалить", "Нет, отменить"]],
-                one_time_keyboard=True
-            )
+                reply_markup=ReplyKeyboardMarkup(
+                    [["Да, удалить"], ["Нет, отменить"]],
+                    one_time_keyboard=True
+                )
         )
         return "CONFIRM_DELETE"
 
@@ -109,7 +109,7 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text(
                 "Выберите новый статус обучения:",
                 reply_markup=ReplyKeyboardMarkup(
-                    [["Не учится", "Учится", "Получил 5 модуль"], ["Устроился", "Назад"]],
+                    [["Не учится"], ["Учится"], ["Получил 5 модуль"], ["Устроился"], ["Назад"]],
                     one_time_keyboard=True
                 )
             )
@@ -187,7 +187,7 @@ async def edit_student_field_limited(update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text(
                 "Выберите новый статус обучения:",
                 reply_markup=ReplyKeyboardMarkup(
-                    [["Не учится", "Учится", "Получил 5 модуль"], ["Устроился", "Назад"]],
+                    [["Не учится"], ["Учится"], ["Получил 5 модуль"], ["Устроился"], ["Назад"]],
                     one_time_keyboard=True
                 )
             )
@@ -787,7 +787,7 @@ async def edit_curator(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"Редактирование кураторов для фуллстек студента {student.fio}",
             reply_markup=ReplyKeyboardMarkup(
-                [["Изменить ручного куратора", "Изменить авто куратора"], ["Главное меню"]],
+                [["Изменить ручного куратора"], ["Изменить авто куратора"], ["Главное меню"]],
                 one_time_keyboard=True
             )
         )

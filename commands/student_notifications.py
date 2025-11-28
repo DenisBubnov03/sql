@@ -20,7 +20,7 @@ async def show_notifications_menu(update: Update, context: ContextTypes.DEFAULT_
     await update.message.reply_text(
         "Выберите тип уведомлений:",
         reply_markup=ReplyKeyboardMarkup(
-            [["По звонкам", "По оплате", "Все"], ["🔙 Главное меню"]],
+            [["По звонкам"], ["По оплате"], ["Все"], ["🔙 Главное меню"]],
             one_time_keyboard=True
         )
     )
@@ -49,7 +49,7 @@ async def check_payment_notifications(update: Update, context: ContextTypes.DEFA
     await update.message.reply_text(
         "Выберите тип уведомлений по оплате:",
         reply_markup=ReplyKeyboardMarkup(
-            [["По предоплате", "По постоплате"], ["🔙 Назад"]],
+            [["По предоплате"], ["По постоплате"], ["🔙 Назад"]],
             one_time_keyboard=True
         )
     )

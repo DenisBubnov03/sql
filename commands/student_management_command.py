@@ -191,7 +191,7 @@ async def add_student_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"Дата начала обучения установлена: {date_text}.\nВыберите тип обучения:",
             reply_markup=ReplyKeyboardMarkup(
-                [['Ручное тестирование', 'Автотестирование', 'Фуллстек']],
+                [['Ручное тестирование'], ['Автотестирование'], ['Фуллстек']],
                 one_time_keyboard=True
             )
         )
@@ -273,7 +273,7 @@ async def add_student_paid_amount(update: Update, context: ContextTypes.DEFAULT_
             await update.message.reply_text(
                 "По реферальной ли системе пришел студент?",
                 reply_markup=ReplyKeyboardMarkup(
-                    [["Да", "Нет"]],
+                    [["Да"], ["Нет"]],
                     one_time_keyboard=True
                 )
             )
@@ -312,7 +312,7 @@ async def add_student_is_referral(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text(
             "Откуда пришел студент?",
             reply_markup=ReplyKeyboardMarkup(
-                [["ОМ", "Ютуб", "Инстаграм"], ["Авито", "Сайт", "Через знакомых"], ["Пусто"]],
+                [["ОМ"], ["Ютуб"], ["Инстаграм"], ["Авито"], ["Сайт"], ["Через знакомых"], ["Пусто"]],
                 one_time_keyboard=True
             )
         )
@@ -321,7 +321,7 @@ async def add_student_is_referral(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text(
             "Пожалуйста, выберите 'Да' или 'Нет'.",
             reply_markup=ReplyKeyboardMarkup(
-                [["Да", "Нет"]],
+                [["Да"], ["Нет"]],
                 one_time_keyboard=True
             )
         )
@@ -356,7 +356,7 @@ async def add_student_referrer_telegram(update: Update, context: ContextTypes.DE
     await update.message.reply_text(
         "Откуда пришел студент?",
         reply_markup=ReplyKeyboardMarkup(
-            [["ОМ", "Ютуб", "Инстаграм"], ["Авито", "Сайт", "Через знакомых"], ["Пусто"]],
+            [["ОМ"], ["Ютуб"], ["Инстаграм"], ["Авито"], ["Сайт"], ["Через знакомых"], ["Пусто"]],
             one_time_keyboard=True
         )
     )
@@ -375,7 +375,7 @@ async def add_student_source(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(
             f"Пожалуйста, выберите один из предложенных вариантов: {', '.join(valid_sources)}",
             reply_markup=ReplyKeyboardMarkup(
-                [["ОМ", "Ютуб", "Инстаграм"], ["Авито", "Сайт", "Через знакомых"], ["Пусто"]],
+                [["ОМ"], ["Ютуб"], ["Инстаграм"], ["Авито"], ["Сайт"], ["Через знакомых"], ["Пусто"]],
                 one_time_keyboard=True
             )
         )

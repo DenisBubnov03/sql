@@ -39,7 +39,7 @@ async def find_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             response,
             reply_markup=ReplyKeyboardMarkup(
-                [[str(i) for i in range(1, len(matching_students) + 1)], ["Назад"]],
+                [[str(i)] for i in range(1, len(matching_students) + 1)] + [["Назад"]],
                 one_time_keyboard=True
             )
         )

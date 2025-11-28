@@ -24,7 +24,7 @@ async def edit_student_employment(update: Update, context: ContextTypes.DEFAULT_
     if student.company:
         await update.message.reply_text(
             f"Студент уже устроился в {student.company}. Хотите изменить данные?",
-            reply_markup=ReplyKeyboardMarkup([["Да, изменить данные", "Отмена"]], one_time_keyboard=True)
+            reply_markup=ReplyKeyboardMarkup([["Да, изменить данные"], ["Отмена"]], one_time_keyboard=True)
         )
         return CONFIRMATION
 
