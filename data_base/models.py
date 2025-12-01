@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean, ForeignKey, Numeric, Text
+from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean, ForeignKey, Numeric, Text, DateTime
 from sqlalchemy.orm import relationship
 
 
@@ -286,3 +286,19 @@ class AutoProgress(Base):
     m5_topic_passed_date = Column(Date)
     m6_topic_passed_date = Column(Date)
     m7_topic_passed_date = Column(Date)
+
+
+class Commission(Base):
+    """
+    Модель данных для таблицы зарплаты (salary).
+    Фиксирует расчет суммы, причитающейся куратору за конкретное поступление.
+    """
+    __tablename__ = 'salary'
+    salary_id = Column(Integer, primary_key=True)
+    payment_id = Column(Integer, ForeignKey('receipts.payment_id'), nullable=False)
+    mentor_id = Column(Integer, nullable=False)
+    calculated_amount = Column(DECIMAL(10, 2), nullable=False)
+    is_paid = Column(Boolean, default=False, nullable=False)
+    date_calculated = Column(DateTime, nullable=True)
+    def __repr__(self):
+        return f"<Commission(id={self.salary_id}, payment_id={self.payment_id}, amount={self.calculated_amount}, paid={self.is_paid})>"
