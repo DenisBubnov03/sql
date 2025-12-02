@@ -581,6 +581,7 @@ async def calculate_salary(update: Update, context):
             return ConversationHandler.END
 
         mentor_salaries = {mentor.id: 0 for mentor in all_mentors.values()}
+        premium_total = 0.0
 
         # Выбираем платежи за период
         logger.info(f"📊 Выполняем запрос к payments...")
@@ -893,12 +894,17 @@ async def calculate_salary(update: Update, context):
             logger.info("🛡️ Страховочные выплаты для кураторов отключены (CURATOR_INSURANCE_ENABLED = False)")
 
         # 🎁 Учет премий (выплаты с комментарием "Премия")
+        premium_comment = func.lower(func.coalesce(Payment.comment, ""))
+        premium_total = 0.0
         premium_payments = session.query(Payment).filter(
             Payment.payment_date >= start_date,
             Payment.payment_date <= end_date,
             Payment.status == "подтвержден",
-            Payment.comment.ilike("%преми%")  # ловим "Премия", "премия", "ПРЕМИЯ" и т.д.
+            Payment.mentor_id.isnot(None),  # без ментора не начисляем
+            premium_comment.like("%Премия%")  # ловим "Премия", "премия", "ПРЕМИЯ" и т.д.
         ).order_by(Payment.payment_date.asc()).all()
+
+        logger.info(f"🎁 Начинаем учет премий: найдено {len(premium_payments)}")
 
         for payment in premium_payments:
             bonus_amount = float(payment.amount)
@@ -906,10 +912,14 @@ async def calculate_salary(update: Update, context):
             if mentor_id not in mentor_salaries:
                 mentor_salaries[mentor_id] = 0
             mentor_salaries[mentor_id] += bonus_amount
+            premium_total += bonus_amount
 
             detailed_logs.setdefault(mentor_id, []).append(
                 f"🎁 Премия {payment.amount} руб. | {payment.payment_date} | +{bonus_amount} руб."
             )
+
+        if premium_payments:
+            logger.info(f"🎁 Суммарно начислено премий: {premium_total} руб.")
 
         # 🛡️ ВЫЧЕТ СТРАХОВКИ ПРИ ПОЛУЧЕНИИ КОМИССИИ
         logger.info("🛡️ Проверяем вычет страховки при получении комиссии")
@@ -1642,6 +1652,10 @@ async def calculate_salary(update: Update, context):
         # Итого менторов с НДФЛ
         total_mentor_salaries_with_tax = round(total_mentor_salaries * 1.06, 2)
         salary_report += f"📈 Итого менторов: {int(total_mentor_salaries):,} руб. (с НДФЛ {int(total_mentor_salaries_with_tax):,})\n\n"
+        if premium_total > 0:
+            salary_report += f"🎁 Премии (учтены в суммах): {int(premium_total):,} руб.\n\n"
+        else:
+            salary_report += "🎁 Премии: не найдено в выбранном периоде.\n\n"
         
         # Отчет по карьерным консультантам
         if career_consultant_salaries:

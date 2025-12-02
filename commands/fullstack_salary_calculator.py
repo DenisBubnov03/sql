@@ -43,6 +43,26 @@ def calculate_fullstack_salary(start_date: date, end_date: date):
         func.date(FullstackTopicAssign.assigned_at) >= start_date,
         func.date(FullstackTopicAssign.assigned_at) <= end_date
     ).all()
+
+    # Из-за повторных прогонов бота в БД иногда появляются дубли одинаковых записей.
+    # Дедуплируем их, чтобы одна и та же сдача темы не считалась несколько раз.
+    unique_assignments = {}
+    for assignment in topic_assignments:
+        key = (
+            assignment.student_id,
+            assignment.mentor_id,
+            assignment.topic_manual,
+            assignment.topic_auto,
+            assignment.assigned_at.date(),
+        )
+        if key not in unique_assignments:
+            unique_assignments[key] = assignment
+    if len(unique_assignments) != len(topic_assignments):
+        logger.warning(
+            f"⚠️ Обнаружены дубликаты записей принятых тем: было {len(topic_assignments)}, "
+            f"после дедупликации {len(unique_assignments)}"
+        )
+    topic_assignments = list(unique_assignments.values())
     
     logger.info(f"📊 Найдено записей принятых тем за период: {len(topic_assignments)}")
     
@@ -188,14 +208,14 @@ def calculate_fullstack_salary(start_date: date, end_date: date):
                     )
                     
                     # 10% ручному директору направления (только если студент НЕ на ручном директоре)
-                    if student.mentor_id != 1:  # Студент НЕ на ручном директоре
-                        director_salaries[1] += total_cost * 0.10
-                        logger.info(f"📊 Ручной директор (ID 1): бонус +{round(total_cost * 0.10, 2)} руб. за студента {student.fio} (куратор {curator_id})")
-                    else:
-                        logger.debug(f"🚫 Ручному директору НЕ начислен бонус: студент {student.fio} на ручном директоре")
-                    
-                    logger.info(f"📊 Ручной куратор {curator_id}: принял {curator_manual_topics} тем у студента {student.fio}, ЗП +{round(curator_salary, 2)} руб. (расчет: {manual_course_cost} × 0.20 / 8 = {round(manual_call_price, 2)} за тему)")
-                    
+                    # if student.mentor_id != 1:  # Студент НЕ на ручном директоре
+                    #     director_salaries[1] += total_cost * 0.10
+                    #     logger.info(f"📊 Ручной директор (ID 1): бонус +{round(total_cost * 0.10, 2)} руб. за студента {student.fio} (куратор {curator_id})")
+                    # else:
+                    #     logger.debug(f"🚫 Ручному директору НЕ начислен бонус: студент {student.fio} на ручном директоре")
+                    #
+                    # logger.info(f"📊 Ручной куратор {curator_id}: принял {curator_manual_topics} тем у студента {student.fio}, ЗП +{round(curator_salary, 2)} руб. (расчет: {manual_course_cost} × 0.20 / 8 = {round(manual_call_price, 2)} за тему)")
+                    #
                 else:  # auto
                     # === АВТО КУРАТОР: 20% от стоимости авто курса, делим на 6 модулей ===
                     # Рассчитываем стоимость одного созвона (20% от стоимости авто курса)
@@ -218,15 +238,15 @@ def calculate_fullstack_salary(start_date: date, end_date: date):
                         f"Принял {curator_auto_topics} модулей по {round(auto_call_price, 2)} руб. | +{round(curator_salary, 2)} руб."
                     )
                     
-                    # 10% авто директору направления (только если студент НЕ на авто директоре)
-                    if student.auto_mentor_id != 3:  # Студент НЕ на авто директоре
-                        director_salaries[3] += total_cost * 0.10
-                        logger.info(f"📊 Авто директор (ID 3): бонус +{round(total_cost * 0.10, 2)} руб. за студента {student.fio} (куратор {curator_id})")
-                    else:
-                        logger.debug(f"🚫 Авто директору НЕ начислен бонус: студент {student.fio} на авто директоре")
-                    
-                    logger.info(f"📊 Авто куратор {curator_id}: принял {curator_auto_topics} модулей у студента {student.fio}, ЗП +{round(curator_salary, 2)} руб. (расчет: {auto_course_cost} × 0.20 / 6 = {round(auto_call_price, 2)} за модуль)")
-            
+                    # # 10% авто директору направления (только если студент НЕ на авто директоре)
+                    # if student.auto_mentor_id != 3:  # Студент НЕ на авто директоре
+                    #     director_salaries[3] += total_cost * 0.10
+                    #     logger.info(f"📊 Авто директор (ID 3): бонус +{round(total_cost * 0.10, 2)} руб. за студента {student.fio} (куратор {curator_id})")
+                    # else:
+                    #     logger.debug(f"🚫 Авто директору НЕ начислен бонус: студент {student.fio} на авто директоре")
+                    #
+                    # logger.info(f"📊 Авто куратор {curator_id}: принял {curator_auto_topics} модулей у студента {student.fio}, ЗП +{round(curator_salary, 2)} руб. (расчет: {auto_course_cost} × 0.20 / 6 = {round(auto_call_price, 2)} за модуль)")
+                    #
         else:
             # === ОБРАБОТКА СТУДЕНТОВ ДИРЕКТОРОВ НАПРАВЛЕНИЯ ===
             # Рассчитываем стоимость одного созвона (30% от total_cost)
