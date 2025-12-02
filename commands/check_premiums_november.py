@@ -35,7 +35,8 @@ def fetch_november_premiums(year: Optional[int] = None):
             Payment.payment_date >= start,
             Payment.payment_date <= end,
             Payment.status == "подтвержден",
-            premium_comment.like("%Преми%"),
+            # привели к нижнему регистру, поэтому ищем по нижнему
+            premium_comment.like("%преми%"),
         )
         .order_by(Payment.payment_date.asc())
         .all()

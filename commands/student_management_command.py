@@ -901,7 +901,8 @@ async def calculate_salary(update: Update, context):
             Payment.payment_date <= end_date,
             Payment.status == "подтвержден",
             Payment.mentor_id.isnot(None),  # без ментора не начисляем
-            premium_comment.like("%Премия%")  # ловим "Премия", "премия", "ПРЕМИЯ" и т.д.
+            # привели к нижнему регистру, поэтому ищем по нижнему
+            premium_comment.like("%премия%")
         ).order_by(Payment.payment_date.asc()).all()
 
         logger.info(f"🎁 Начинаем учет премий: найдено {len(premium_payments)}")
