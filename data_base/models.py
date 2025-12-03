@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean, ForeignKey, Numeric, Text, DateTime
+from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean, ForeignKey, Numeric, Text, DateTime, TIMESTAMP, \
+    func
 from sqlalchemy.orm import relationship
 
 
@@ -302,3 +303,18 @@ class Commission(Base):
     date_calculated = Column(DateTime, nullable=True)
     def __repr__(self):
         return f"<Commission(id={self.salary_id}, payment_id={self.payment_id}, amount={self.calculated_amount}, paid={self.is_paid})>"
+
+class CuratorCommission(Base):
+    __tablename__ = "curator_commissions"
+
+    id = Column(Integer, primary_key=True)
+    student_id = Column(Integer, ForeignKey("students.id"), unique=True, nullable=False)
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)  # было nullable=False
+    curator_id = Column(Integer, nullable=False)
+    total_amount = Column(Numeric(12, 2), nullable=False)
+    paid_amount = Column(Numeric(12, 2), nullable=False, default=0)
+    updated_at = Column(
+        TIMESTAMP,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

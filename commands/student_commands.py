@@ -10,7 +10,7 @@ from commands.start_commands import exit_to_main_menu
 from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM, WAIT_FOR_PAYMENT_DATE, SIGN_CONTRACT, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR
 from commands.student_info_commands import calculate_commission
 from data_base.db import session
-from data_base.models import Student, Payment, CuratorInsuranceBalance, Mentor, ManualProgress
+from data_base.models import Student, Payment, CuratorInsuranceBalance, Mentor, ManualProgress, CuratorCommission
 from data_base.operations import get_all_students, update_student, get_student_by_fio_or_telegram, delete_student
 from telegram import ReplyKeyboardMarkup, KeyboardButton
 
@@ -241,6 +241,7 @@ async def handle_student_deletion(update: Update, context: ContextTypes.DEFAULT_
 
 async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from datetime import datetime
+    from config import Config
 
     student = context.user_data.get("student")
     field_to_edit = context.user_data.get("field_to_edit")
@@ -348,34 +349,42 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 salary = int(new_value)
                 if salary <= 0:
                     raise ValueError("Зарплата должна быть положительным числом.")
-                context.user_data["salary"] = salary
-                context.user_data["employment_step"] = "commission"
-                await update.message.reply_text(
-                    "Введите данные о комиссии в формате: количество выплат, процент (например: 2, 55%):"
-                )
-                return WAIT_FOR_NEW_VALUE
-            except ValueError:
-                await update.message.reply_text("Некорректная зарплата. Введите положительное число.")
-                return WAIT_FOR_NEW_VALUE
 
-        if employment_step == "commission":
-            try:
-                payments, percentage = map(str.strip, new_value.split(","))
-                payments = int(payments)
-                percentage = int(percentage.strip('%'))
-                if payments <= 0 or percentage <= 0:
-                    raise ValueError("Количество выплат и процент должны быть положительными числами.")
-                commission = f"{payments}, {percentage}%"
+                context.user_data["salary"] = salary
+
+                # Обновляем данные студента в базе
                 update_student(
                     student.id,
                     {
                         "company": context.user_data["company_name"],
                         "employment_date": context.user_data["employment_date"],
                         "salary": context.user_data["salary"],
-                        "commission": commission,
-                        "training_status": "Устроился"  # Обновляем статус обучения
+                        "training_status": "Устроился",  # Обновляем статус обучения
                     }
                 )
+
+                # Перечитываем студента из БД, чтобы рассчитать комиссию по актуальным данным
+                updated_student = session.query(Student).get(student.id)
+                context.user_data["student"] = updated_student
+
+                # 💰 Создаём запись комиссии куратора в curator_commissions
+                try:
+                    total_commission = calculate_commission(updated_student)[0]
+                    curator_id = updated_student.mentor_id  # сюда подставляем нужного куратора
+                    percent = Config.STANDARD_PERCENT
+                    if curator_id:
+                        new_commission_record = CuratorCommission(
+                            payment_id=None,  # платеж привяжешь позже, когда он появится
+                            curator_id=curator_id,
+                            total_amount=total_commission*percent,
+                            paid_amount=updated_student.commission_paid or 0,
+                            student_id=student.id
+                        )
+                        session.add(new_commission_record)
+                        session.commit()
+                except Exception as e:
+                    # Не роняем бота, если что-то пошло не так с записью комиссии
+                    print(f"Ошибка при создании записи комиссии куратора: {e}")
 
                 # 🛡️ ОБРАБОТКА СТРАХОВКИ ПРИ УСТРОЙСТВЕ СТУДЕНТА
                 await process_insurance_on_employment(student.id)
@@ -384,7 +393,6 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"Компания: {context.user_data['company_name']}\n"
                     f"Дата устройства: {context.user_data['employment_date']}\n"
                     f"Зарплата: {context.user_data['salary']}\n"
-                    f"Комиссия: {commission}\n"
                     f"Статус обучения: Устроился"
                 )
                 context.user_data.pop("employment_step", None)
