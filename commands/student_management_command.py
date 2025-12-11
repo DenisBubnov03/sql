@@ -3,6 +3,8 @@ import logging
 import asyncio
 from sqlalchemy import func
 from sqlalchemy import select
+
+from classes.salary import SalaryManager
 from commands.authorized_users import AUTHORIZED_USERS
 from commands.logger import custom_logger
 from commands.start_commands import exit_to_main_menu
@@ -494,13 +496,15 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
 
 def record_initial_payment(student_id, paid_amount, mentor_id):
     """
-    Записывает первоначальный платёж в `payments`.
+    Записывает первоначальный платёж в `payments` и начисляет бонус директору.
     """
     try:
         if mentor_id is None:
             print(f"❌ DEBUG: Платёж не записан — не передан mentor_id для студента {student_id}")
             return
+
         if paid_amount > 0:
+            # 1. Создаем и сохраняем платеж
             new_payment = Payment(
                 student_id=student_id,
                 mentor_id=mentor_id,
@@ -511,13 +515,34 @@ def record_initial_payment(student_id, paid_amount, mentor_id):
             )
 
             session.add(new_payment)
-            session.commit()
-            print(f"✅ DEBUG: Платёж записан в payments! {paid_amount} руб.")
+            session.commit()  # В этот момент у new_payment появляется ID
+            print(f"✅ DEBUG: Платёж записан в payments! {paid_amount} руб. (ID: {new_payment.id})")
+
+            # 2. Начисляем бонус директору (ДОБАВЛЕННАЯ ЧАСТЬ)
+            try:
+                # Нам нужен объект студента для проверки типа обучения
+                student = session.query(Student).filter(Student.id == student_id).first()
+
+                if student:
+                    salary_manager = SalaryManager()
+                    # Передаем сессию, студента и ID только что созданного платежа
+                    salary_manager.init_director_bonus_commission(
+                        session=session,
+                        student=student,
+                        payment_id=new_payment.id
+                    )
+                    session.commit()  # Фиксируем записи в salary и curator_commissions
+                    print(f"✅ DEBUG: Бонус директора обработан для платежа {new_payment.id}")
+                else:
+                    print(f"⚠️ Warn: Студент {student_id} не найден, бонус директора пропущен.")
+
+            except Exception as e:
+                print(f"❌ Ошибка при начислении бонуса директора: {e}")
+                # Не прерываем выполнение, так как сам платеж уже записан
 
     except Exception as e:
+        print(f"❌ Ошибка в record_initial_payment: {e}")
         session.rollback()
-        print(f"❌ DEBUG: Ошибка при записи платежа: {e}")
-
 
 async def request_salary_period(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
