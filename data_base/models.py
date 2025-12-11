@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean, ForeignKey, Numeric, Text, DateTime, TIMESTAMP, \
-    func
+    func, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 
@@ -305,16 +305,41 @@ class Commission(Base):
         return f"<Commission(id={self.salary_id}, payment_id={self.payment_id}, amount={self.calculated_amount}, paid={self.is_paid})>"
 
 class CuratorCommission(Base):
+    """
+        Таблица учета 'Потолка' (Общего обязательства) перед ментором/директором.
+        Создается при трудоустройстве.
+        """
     __tablename__ = "curator_commissions"
 
-    id = Column(Integer, primary_key=True)
-    student_id = Column(Integer, ForeignKey("students.id"), unique=True, nullable=False)
-    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)  # было nullable=False
-    curator_id = Column(Integer, nullable=False)
-    total_amount = Column(Numeric(12, 2), nullable=False)
-    paid_amount = Column(Numeric(12, 2), nullable=False, default=0)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Ссылка на студента (Обязательно)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+
+    # Ментор или Директор, которому мы должны
+    curator_id = Column(Integer, ForeignKey("mentors.id"), nullable=False)
+
+    # Ссылка на платеж (Опционально, обычно NULL при создании долга)
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)
+
+    # Общая сумма, которую мы обещаем выплатить (Потолок)
+    total_amount = Column(Numeric(10, 2), nullable=False, default=0)
+
+    # Сколько уже выплатили по факту
+    paid_amount = Column(Numeric(10, 2), nullable=False, default=0)
+
     updated_at = Column(
         TIMESTAMP,
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+    # Уникальность ПАРЫ: Один студент не может иметь два долга перед ОДНИМ и тем же ментором.
+    # Но может иметь долги перед разными менторами.
+    __table_args__ = (
+        UniqueConstraint('student_id', 'curator_id', name='uq_student_curator_debt'),
+    )
+
+    # Связи
+    student = relationship("Student", backref="commissions_debt")
+    curator = relationship("Mentor")

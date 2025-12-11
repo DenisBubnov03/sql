@@ -4,6 +4,7 @@ from sqlalchemy import func
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
+from classes.comission import AdminCommissionManager
 from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from commands.logger import log_student_change
 from commands.start_commands import exit_to_main_menu
@@ -366,25 +367,16 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # Перечитываем студента из БД, чтобы рассчитать комиссию по актуальным данным
                 updated_student = session.query(Student).get(student.id)
                 context.user_data["student"] = updated_student
-
                 # 💰 Создаём запись комиссии куратора в curator_commissions
                 try:
-                    total_commission = calculate_commission(updated_student)[0]
-                    curator_id = updated_student.mentor_id  # сюда подставляем нужного куратора
-                    percent = Config.STANDARD_PERCENT
-                    if curator_id:
-                        new_commission_record = CuratorCommission(
-                            payment_id=None,  # платеж привяжешь позже, когда он появится
-                            curator_id=curator_id,
-                            total_amount=total_commission*percent,
-                            paid_amount=updated_student.commission_paid or 0,
-                            student_id=student.id
-                        )
-                        session.add(new_commission_record)
-                        session.commit()
+                    commission_manager = AdminCommissionManager()
+                    result_message = commission_manager.calculate_and_save_debts(session, updated_student.id)
+                    # Логируем результат
+                    print(f"Log Commission: {result_message}")
                 except Exception as e:
                     # Не роняем бота, если что-то пошло не так с записью комиссии
                     print(f"Ошибка при создании записи комиссии куратора: {e}")
+                session.commit()
 
                 # 🛡️ ОБРАБОТКА СТРАХОВКИ ПРИ УСТРОЙСТВЕ СТУДЕНТА
                 await process_insurance_on_employment(student.id)
