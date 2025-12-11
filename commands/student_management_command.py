@@ -3,6 +3,8 @@ import logging
 import asyncio
 from sqlalchemy import func
 from sqlalchemy import select
+
+from classes.salary import SalaryManager
 from commands.authorized_users import AUTHORIZED_USERS
 from commands.logger import custom_logger
 from commands.start_commands import exit_to_main_menu
@@ -492,14 +494,19 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
         return ConversationHandler.END
 
 
+# student_management_command.py (Обновленная функция record_initial_payment)
+
 def record_initial_payment(student_id, paid_amount, mentor_id):
     """
-    Записывает первоначальный платёж в `payments`.
+    Записывает первоначальный платёж в `payments` и инициирует 10% бонус Директора.
+    Возвращает объект нового платежа (new_payment).
     """
     try:
         if mentor_id is None:
             print(f"❌ DEBUG: Платёж не записан — не передан mentor_id для студента {student_id}")
-            return
+            return None
+
+        new_payment = None
         if paid_amount > 0:
             new_payment = Payment(
                 student_id=student_id,
@@ -511,12 +518,44 @@ def record_initial_payment(student_id, paid_amount, mentor_id):
             )
 
             session.add(new_payment)
+            session.flush()  # Получаем new_payment.id
+
+            # 1. Получаем объект студента
+            student = session.query(Student).filter_by(id=student_id).first()
+
+            if student:
+                # 2. Инициализация 10% ОБЩЕГО ДОЛГА Директора (в CuratorCommission)
+                # Вызов только этой функции, как и требовалось
+                salary_manager = SalaryManager()
+                bonus_debt = salary_manager.init_director_bonus_commission(session=session, student=student)
+
+                if bonus_debt:
+                    print(f"✅ DEBUG: Инициирован 10% Общий Долг Директору ({bonus_debt.total_amount:.2f} руб.).")
+                else:
+                    print(f"⚠️ DEBUG: Общий Долг Директору не инициирован (условия не выполнены).")
+            else:
+                print(f"❌ DEBUG: Студент с ID {student_id} не найден.")
+
+            # Коммит всех изменений (Payment и CuratorCommission)
             session.commit()
+
             print(f"✅ DEBUG: Платёж записан в payments! {paid_amount} руб.")
+
+        return new_payment
 
     except Exception as e:
         session.rollback()
-        print(f"❌ DEBUG: Ошибка при записи платежа: {e}")
+        print(f"❌ DEBUG: Ошибка при записи платежа или инициировании долга: {e}")
+        return None
+
+    except Exception as e:
+        session.rollback()
+        print(f"❌ DEBUG: Ошибка при записи платежа или инициировании долга: {e}")
+        return None
+
+    except Exception as e:
+        session.rollback()
+        print(f"❌ DEBUG: Ошибка при записи платежа или инициировании бонуса: {e}")
 
 
 async def request_salary_period(update: Update, context: ContextTypes.DEFAULT_TYPE):
