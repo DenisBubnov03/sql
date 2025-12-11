@@ -289,20 +289,20 @@ class AutoProgress(Base):
     m7_topic_passed_date = Column(Date)
 
 
-class Commission(Base):
-    """
-    Модель данных для таблицы зарплаты (salary).
-    Фиксирует расчет суммы, причитающейся куратору за конкретное поступление.
-    """
-    __tablename__ = 'salary'
-    salary_id = Column(Integer, primary_key=True)
-    payment_id = Column(Integer, ForeignKey('receipts.payment_id'), nullable=False)
-    mentor_id = Column(Integer, nullable=False)
-    calculated_amount = Column(DECIMAL(10, 2), nullable=False)
-    is_paid = Column(Boolean, default=False, nullable=False)
-    date_calculated = Column(DateTime, nullable=True)
-    def __repr__(self):
-        return f"<Commission(id={self.salary_id}, payment_id={self.payment_id}, amount={self.calculated_amount}, paid={self.is_paid})>"
+# class Commission(Base):
+#     """
+#     Модель данных для таблицы зарплаты (salary).
+#     Фиксирует расчет суммы, причитающейся куратору за конкретное поступление.
+#     """
+#     __tablename__ = 'salary'
+#     salary_id = Column(Integer, primary_key=True)
+#     payment_id = Column(Integer, ForeignKey('receipts.payment_id'), nullable=False)
+#     mentor_id = Column(Integer, nullable=False)
+#     calculated_amount = Column(DECIMAL(10, 2), nullable=False)
+#     is_paid = Column(Boolean, default=False, nullable=False)
+#     date_calculated = Column(DateTime, nullable=True)
+#     def __repr__(self):
+#         return f"<Commission(id={self.salary_id}, payment_id={self.payment_id}, amount={self.calculated_amount}, paid={self.is_paid})>"
 
 class CuratorCommission(Base):
     """
@@ -343,3 +343,22 @@ class CuratorCommission(Base):
     # Связи
     student = relationship("Student", backref="commissions_debt")
     curator = relationship("Mentor")
+
+
+class Salary(Base):
+    """
+    Модель данных для таблицы Начислений (Salary).
+    Фиксирует расчет суммы, причитающейся куратору за конкретное поступление.
+    """
+    __tablename__ = 'salary'
+    salary_id = Column(Integer, primary_key=True)
+    payment_id = Column(Integer, ForeignKey('payments.id'), nullable=False)
+    calculated_amount = Column(DECIMAL(10, 2), nullable=False)
+    is_paid = Column(Boolean, default=False, nullable=False)
+    comment = Column(Text, nullable=True)
+    mentor_id = Column(Integer, nullable=False)
+
+    def __repr__(self):
+        # Используем self.salary_id для соответствия имени колонки
+        return (f"<Salary(id={self.salary_id}, payment_id={self.payment_id}, "
+                f"amount={self.calculated_amount}, paid={self.is_paid}, comment='{self.comment[:20]}...')>")

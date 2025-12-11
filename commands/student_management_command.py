@@ -494,20 +494,17 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
         return ConversationHandler.END
 
 
-# student_management_command.py (Обновленная функция record_initial_payment)
-
 def record_initial_payment(student_id, paid_amount, mentor_id):
     """
-    Записывает первоначальный платёж в `payments` и инициирует 10% бонус Директора.
-    Возвращает объект нового платежа (new_payment).
+    Записывает первоначальный платёж в `payments` и начисляет бонус директору.
     """
     try:
         if mentor_id is None:
             print(f"❌ DEBUG: Платёж не записан — не передан mentor_id для студента {student_id}")
-            return None
+            return
 
-        new_payment = None
         if paid_amount > 0:
+            # 1. Создаем и сохраняем платеж
             new_payment = Payment(
                 student_id=student_id,
                 mentor_id=mentor_id,
@@ -518,45 +515,34 @@ def record_initial_payment(student_id, paid_amount, mentor_id):
             )
 
             session.add(new_payment)
-            session.flush()  # Получаем new_payment.id
+            session.commit()  # В этот момент у new_payment появляется ID
+            print(f"✅ DEBUG: Платёж записан в payments! {paid_amount} руб. (ID: {new_payment.id})")
 
-            # 1. Получаем объект студента
-            student = session.query(Student).filter_by(id=student_id).first()
+            # 2. Начисляем бонус директору (ДОБАВЛЕННАЯ ЧАСТЬ)
+            try:
+                # Нам нужен объект студента для проверки типа обучения
+                student = session.query(Student).filter(Student.id == student_id).first()
 
-            if student:
-                # 2. Инициализация 10% ОБЩЕГО ДОЛГА Директора (в CuratorCommission)
-                # Вызов только этой функции, как и требовалось
-                salary_manager = SalaryManager()
-                bonus_debt = salary_manager.init_director_bonus_commission(session=session, student=student)
-
-                if bonus_debt:
-                    print(f"✅ DEBUG: Инициирован 10% Общий Долг Директору ({bonus_debt.total_amount:.2f} руб.).")
+                if student:
+                    salary_manager = SalaryManager()
+                    # Передаем сессию, студента и ID только что созданного платежа
+                    salary_manager.init_director_bonus_commission(
+                        session=session,
+                        student=student,
+                        payment_id=new_payment.id
+                    )
+                    session.commit()  # Фиксируем записи в salary и curator_commissions
+                    print(f"✅ DEBUG: Бонус директора обработан для платежа {new_payment.id}")
                 else:
-                    print(f"⚠️ DEBUG: Общий Долг Директору не инициирован (условия не выполнены).")
-            else:
-                print(f"❌ DEBUG: Студент с ID {student_id} не найден.")
+                    print(f"⚠️ Warn: Студент {student_id} не найден, бонус директора пропущен.")
 
-            # Коммит всех изменений (Payment и CuratorCommission)
-            session.commit()
-
-            print(f"✅ DEBUG: Платёж записан в payments! {paid_amount} руб.")
-
-        return new_payment
+            except Exception as e:
+                print(f"❌ Ошибка при начислении бонуса директора: {e}")
+                # Не прерываем выполнение, так как сам платеж уже записан
 
     except Exception as e:
+        print(f"❌ Ошибка в record_initial_payment: {e}")
         session.rollback()
-        print(f"❌ DEBUG: Ошибка при записи платежа или инициировании долга: {e}")
-        return None
-
-    except Exception as e:
-        session.rollback()
-        print(f"❌ DEBUG: Ошибка при записи платежа или инициировании долга: {e}")
-        return None
-
-    except Exception as e:
-        session.rollback()
-        print(f"❌ DEBUG: Ошибка при записи платежа или инициировании бонуса: {e}")
-
 
 async def request_salary_period(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
