@@ -1,8 +1,8 @@
 # admin_commission_manager.py
 from sqlalchemy.orm import Session
 from data_base.models import Student, CuratorCommission
+import config
 
-# ID Директоров (проверьте, что они совпадают с реальными в БД)
 DIRECTOR_MANUAL_ID = 1
 DIRECTOR_AUTO_ID = 3
 
@@ -15,51 +15,55 @@ class AdminCommissionManager:
 
     def calculate_and_save_debts(self, session: Session, student_id: int):
         student = session.query(Student).filter_by(id=student_id).first()
-        if not student or not student.salary:
-            return "❌ Ошибка: Нет студента или не указана ЗП."
+        if not student:
+            return "❌ Ошибка: Студент не найден."
 
-        salary = float(student.salary)
-
-        # Определяем, фуллстек это или нет
-        # (Простая логика: если есть оба ментора. Можете заменить на проверку training_type)
+        # 1. ОПРЕДЕЛЯЕМ БАЗУ ДЛЯ РАСЧЕТА (ЗП или Стоимость Курса)
         is_fullstack = (student.mentor_id is not None) and (student.auto_mentor_id is not None)
 
-        # Словарь для накопления долгов: {mentor_id: amount}
+        # Логика выбора суммы:
+        if not is_fullstack and student.total_cost and float(student.total_cost) > 0:
+            # Если обычный студент и есть цена курса -> считаем от Цены Курса
+            base_amount = float(student.total_cost)
+            calculation_source = f"Стоимости курса ({base_amount})"
+        elif student.salary and float(student.salary) > 0:
+            # Иначе (Фуллстек или нет цены) -> считаем от Зарплаты
+            base_amount = float(student.salary)
+            calculation_source = f"Зарплаты ({base_amount})"
+        else:
+            return "❌ Ошибка: Не указана ни ЗП, ни Стоимость курса (total_cost)."
+
         debts_map = {}
 
         # ==========================================
-        # 1. ЛОГИКА ФУЛЛСТЕК (FULLSTACK)
+        # 2. ЛОГИКА ФУЛЛСТЕК (Остается на базе ЗП, т.к. is_fullstack=True попадет в ветку salary)
         # ==========================================
         if is_fullstack:
+            # ... (логика фуллстека без изменений, она обычно от ЗП) ...
 
-            # --- А. Ручная часть ---
+            # А. Ручная часть
             if student.mentor_id:
                 if student.mentor_id == DIRECTOR_MANUAL_ID:
-                    # Директор ведет сам -> 30%
-                    self._add_debt(debts_map, DIRECTOR_MANUAL_ID, salary * 0.30)
+                    self._add_debt(debts_map, DIRECTOR_MANUAL_ID, base_amount * 0.30)
                 else:
-                    # Обычный ментор -> 15% + Директор -> 7.5%
-                    self._add_debt(debts_map, student.mentor_id, salary * 0.15)
-                    self._add_debt(debts_map, DIRECTOR_MANUAL_ID, salary * 0.075)
+                    self._add_debt(debts_map, student.mentor_id, base_amount * 0.15)
+                    self._add_debt(debts_map, DIRECTOR_MANUAL_ID, base_amount * 0.06)  # 6% бонус
 
-            # --- Б. Авто часть ---
+            # Б. Авто часть
             if student.auto_mentor_id:
                 if student.auto_mentor_id == DIRECTOR_AUTO_ID:
-                    # Директор ведет сам -> 30%
-                    self._add_debt(debts_map, DIRECTOR_AUTO_ID, salary * 0.30)
+                    self._add_debt(debts_map, DIRECTOR_AUTO_ID, base_amount * 0.30)
                 else:
-                    # Обычный ментор -> 15% + Директор -> 7.5%
-                    self._add_debt(debts_map, student.auto_mentor_id, salary * 0.15)
-                    self._add_debt(debts_map, DIRECTOR_AUTO_ID, salary * 0.075)
+                    self._add_debt(debts_map, student.auto_mentor_id, base_amount * 0.15)
+                    self._add_debt(debts_map, DIRECTOR_AUTO_ID, base_amount * 0.06)  # 6% бонус
 
         # ==========================================
-        # 2. ЛОГИКА ОБЫЧНОГО ОБУЧЕНИЯ
+        # 3. ЛОГИКА ОБЫЧНОГО ОБУЧЕНИЯ (Теперь может быть от total_cost)
         # ==========================================
         else:
-            # Определяем активного ментора (он будет либо в mentor_id, либо в auto_mentor_id)
             active_mentor_id = student.mentor_id or student.auto_mentor_id
 
-            # Определяем, кто директор этого направления
+            # Кто директор?
             if student.mentor_id:
                 director_id = DIRECTOR_MANUAL_ID
             else:
@@ -68,15 +72,15 @@ class AdminCommissionManager:
             if active_mentor_id:
                 if active_mentor_id == director_id:
                     # Директор ведет сам -> 30%
-                    self._add_debt(debts_map, director_id, salary * 0.30)
+                    self._add_debt(debts_map, director_id, base_amount * 0.30)
                 else:
                     # Обычный ментор -> 20%
-                    self._add_debt(debts_map, active_mentor_id, salary * 0.20)
+                    self._add_debt(debts_map, active_mentor_id, base_amount * 0.20)
                     # Бонус Директору -> 10%
-                    self._add_debt(debts_map, director_id, salary * 0.10)
+                    self._add_debt(debts_map, director_id, base_amount * 0.10)
 
         # ==========================================
-        # 3. ЗАПИСЬ В БД
+        # 4. ЗАПИСЬ В БД
         # ==========================================
         count = 0
         for m_id, amount in debts_map.items():
@@ -84,18 +88,15 @@ class AdminCommissionManager:
                 self._create_or_update_record(session, student_id, m_id, amount)
                 count += 1
 
-        # session.commit() вызывается во внешнем коде
-        return f"✅ Создано записей о долгах: {count}"
+        return f"✅ Расчет выполнен от {calculation_source}. Создано записей: {count}"
 
     def _add_debt(self, debts_map, mentor_id, amount):
-        """Суммирует долг, если ID встречаются несколько раз"""
         if mentor_id in debts_map:
             debts_map[mentor_id] += amount
         else:
             debts_map[mentor_id] = amount
 
     def _create_or_update_record(self, session, student_id, mentor_id, total):
-        """Пишет в таблицу CuratorCommission"""
         rec = session.query(CuratorCommission).filter_by(
             student_id=student_id, curator_id=mentor_id
         ).first()

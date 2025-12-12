@@ -169,7 +169,11 @@ def main():
         entry_points=[MessageHandler(filters.Regex("^📊 Рассчитать зарплату$"), request_salary_period)],
         states={
             "WAIT_FOR_SALARY_DATES": [MessageHandler(filters.TEXT & ~filters.COMMAND, calculate_salary)],
-            WAIT_FOR_DETAILED_SALARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_detailed_salary_request)]
+            WAIT_FOR_DETAILED_SALARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_detailed_salary_request)],
+            "SALARY_MAIN_MENU": [MessageHandler(filters.TEXT, handle_salary_main_menu)],
+            "SALARY_DETAIL_SELECT": [MessageHandler(filters.TEXT, handle_detail_selection)],
+            "SALARY_PAY_SELECT": [MessageHandler(filters.TEXT, handle_payment_selection)],
+            "SALARY_CONFIRM_PAY": [MessageHandler(filters.TEXT, confirm_payout)],
         },
         fallbacks=[MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu)]
     )

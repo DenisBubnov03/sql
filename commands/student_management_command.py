@@ -1,28 +1,23 @@
-from datetime import datetime
 import logging
 import asyncio
+import logging
+# Импорты
+from datetime import datetime, date
+
 from sqlalchemy import func
-from sqlalchemy import select
-
-from classes.salary import SalaryManager
-from commands.authorized_users import AUTHORIZED_USERS
-from commands.logger import custom_logger
-from commands.start_commands import exit_to_main_menu
-from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, \
-    SELECT_MENTOR, MAIN_MENU, IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE
-
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
+from classes.salary import SalaryManager
+from commands.start_commands import exit_to_main_menu
+from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, \
+    SELECT_MENTOR, IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE
 from data_base.db import session
-from data_base.models import Payment, Mentor, Student, CareerConsultant
+from data_base.models import Payment, Student
+from data_base.models import Payout, Salary, Mentor
+from data_base.models import StudentMeta
 from data_base.operations import get_student_by_fio_or_telegram
 from student_management.student_management import add_student
-
-# Импорты
-from datetime import datetime, date
-from data_base.db import session
-from data_base.models import StudentMeta, Mentor
 
 logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
 
@@ -556,1185 +551,570 @@ async def request_salary_period(update: Update, context: ContextTypes.DEFAULT_TY
     return "WAIT_FOR_SALARY_DATES"
 
 
-async def calculate_salary(update: Update, context):
+# async def calculate_salary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     """
+#     Рассчитывает зарплату, агрегируя готовые данные из таблицы Salary,
+#     и добавляет периодические начисления (KPI, КК).
+#     """
+#     try:
+#         from datetime import datetime, date
+#         from sqlalchemy import func
+#         # Импортируем модель Salary, так как теперь это главный источник
+#         from data_base.models import Salary, Mentor, CareerConsultant, Payment
+#
+#         # 1. Парсинг дат
+#         date_range = update.message.text.strip()
+#         if " - " not in date_range:
+#             await update.message.reply_text("❌ Неверный формат! Используйте: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
+#             return "WAIT_FOR_SALARY_DATES"
+#
+#         start_date_str, end_date_str = map(str.strip, date_range.split("-"))
+#         try:
+#             start_date = datetime.strptime(start_date_str, "%d.%m.%Y").date()
+#             end_date = datetime.strptime(end_date_str, "%d.%m.%Y").date()
+#         except ValueError:
+#             await update.message.reply_text("❌ Ошибка в дате.")
+#             return "WAIT_FOR_SALARY_DATES"
+#
+#         await update.message.reply_text(f"📊 Сбор данных из таблицы Salary за {start_date_str} - {end_date_str}...")
+#
+#         # Структуры для отчета
+#         mentor_salaries = {}  # {mentor_id: float}
+#         detailed_logs = {}  # {mentor_id: [str]}
+#         all_mentors = {m.id: m for m in session.query(Mentor).all()}
+#
+#         # =================================================================================
+#         # 🟢 1. ГЛАВНЫЙ СБОР: ТРАНЗАКЦИИ ИЗ SALARY
+#         # =================================================================================
+#         # Используем поле date_calculated, которое вы показали на скриншоте
+#         salary_records = session.query(Salary).filter(
+#             func.date(Salary.date_calculated) >= start_date,
+#             func.date(Salary.date_calculated) <= end_date
+#         ).all()
+#
+#         logger.info(f"Найдено {len(salary_records)} записей в таблице Salary.")
+#
+#         for record in salary_records:
+#             m_id = record.mentor_id
+#             if not m_id: continue
+#
+#             amount = float(record.calculated_amount)
+#
+#             # Инициализация
+#             if m_id not in mentor_salaries:
+#                 mentor_salaries[m_id] = 0.0
+#                 detailed_logs[m_id] = []
+#
+#             mentor_salaries[m_id] += amount
+#
+#             # Формируем красивую строку лога
+#             # Берем дату из date_calculated
+#             date_log = record.date_calculated.strftime("%d.%m") if record.date_calculated else "??"
+#             status_icon = "✅" if record.is_paid else "⏳"
+#
+#             log_line = f"{status_icon} {date_log}: {record.comment} | +{amount:,.2f} руб."
+#             detailed_logs[m_id].append(log_line)
+#
+#         # =================================================================================
+#         # 🟠 2. ДОПОЛНИТЕЛЬНЫЕ РАСЧЕТЫ (KPI, Страховка, Премии)
+#         # =================================================================================
+#         # Эти данные часто считаются "поверх" базы, в конце месяца.
+#
+#         from config import Config
+#
+#         # --- А. Учет ПРЕМИЙ (Ручные платежи с комментом "Премия") ---
+#         # Если вы не проводите премии через SalaryManager, оставляем этот блок
+#         premium_payments = session.query(Payment).filter(
+#             Payment.payment_date >= start_date,
+#             Payment.payment_date <= end_date,
+#             Payment.status == "подтвержден",
+#             Payment.mentor_id.isnot(None),
+#             func.lower(Payment.comment).like("%премия%")
+#         ).all()
+#
+#         for p in premium_payments:
+#             amt = float(p.amount)
+#             if p.mentor_id not in mentor_salaries:
+#                 mentor_salaries[p.mentor_id] = 0.0
+#                 detailed_logs[p.mentor_id] = []
+#
+#             mentor_salaries[p.mentor_id] += amt
+#             detailed_logs[p.mentor_id].append(f"🎁 Премия (из Payments): {p.comment} | +{amt} руб.")
+#
+#         # --- Б. Страховка Кураторов (Ваш старый код) ---
+#         if Config.CURATOR_INSURANCE_ENABLED:
+#             # ... (Вставьте сюда ваш код расчета страховки из предыдущей версии) ...
+#             # Главное - добавляйте результат в mentor_salaries[id] += bonus
+#             pass
+#
+#             # --- В. KPI (Ваш старый код) ---
+#         if Config.KPI_ENABLED:
+#             # ... (Вставьте сюда ваш код расчета KPI) ...
+#             pass
+#
+#         # =================================================================================
+#         # 🟣 3. КАРЬЕРНЫЕ КОНСУЛЬТАНТЫ (Отдельная логика)
+#         # =================================================================================
+#         # Если КК еще не переведены на SalaryManager, оставляем старый расчет
+#         career_consultant_salaries = {}
+#         all_consultants = {c.id: c for c in session.query(CareerConsultant).filter_by(is_active=True).all()}
+#
+#         # ... (Вставьте сюда ваш цикл расчета КК, он у вас был сложный с датой 18.11) ...
+#         # Или, если вы начнете писать КК тоже в таблицу Salary, этот блок можно будет убрать.
+#
+#         # =================================================================================
+#         # 🏁 4. ФИНАЛЬНЫЙ ОТЧЕТ
+#         # =================================================================================
+#         total_mentors = sum(mentor_salaries.values())
+#         total_cc = sum(career_consultant_salaries.values())
+#         grand_total = total_mentors + total_cc
+#
+#         report = f"📊 ОТЧЕТ ПО ЗАРПЛАТЕ ({start_date_str} - {end_date_str})\n"
+#         report += f"Использована таблица транзакций (Salary)\n\n"
+#
+#         report += "👨‍🏫 Менторы:\n"
+#         for m_id, amount in mentor_salaries.items():
+#             if amount == 0: continue
+#             mentor = all_mentors.get(m_id)
+#             name = mentor.full_name if mentor else f"ID {m_id}"
+#
+#             # Считаем налог для отображения
+#             with_tax = amount * 1.06
+#             report += f"• {name}: {amount:,.2f} руб. (с налогом: {with_tax:,.2f})\n"
+#
+#         if total_cc > 0:
+#             report += f"\n💼 Карьерные консультанты: {total_cc:,.2f} руб.\n"
+#
+#         report += f"\n💰 ИТОГО К ВЫПЛАТЕ: {grand_total:,.2f} руб."
+#
+#         # Сохраняем контекст для детального отчета (кнопка "Показать подробности")
+#         context.user_data['detailed_salary_data'] = {
+#             'mentor_salaries': mentor_salaries,
+#             'career_consultant_salaries': career_consultant_salaries,
+#             'detailed_logs': detailed_logs,
+#             'start_date': start_date_str,
+#             'end_date': end_date_str,
+#             'all_mentors': all_mentors,
+#             'all_consultants': all_consultants
+#         }
+#
+#         await update.message.reply_text(
+#             report,
+#             reply_markup=ReplyKeyboardMarkup(
+#                 [["Да, показать подробности"], ["Нет, достаточно"]],
+#                 one_time_keyboard=True
+#             )
+#         )
+#         return "WAIT_FOR_DETAILED_SALARY"
+#
+#     except Exception as e:
+#         logger.error(f"Error calculating salary: {e}", exc_info=True)
+#         await update.message.reply_text(f"❌ Ошибка расчета: {e}")
+#         return "WAIT_FOR_SALARY_DATES"
+
+# student_management_command.py
+
+# ... (импорты остаются) ...
+
+# === ШАГ 1: РАСЧЕТ И ОТОБРАЖЕНИЕ ОБЩЕГО МЕНЮ ===
+
+# === ОБРАБОТЧИКИ МЕНЮ (С исправленными кнопками и поиском имен) ===
+# === ШАГ 1: РАСЧЕТ И ОТОБРАЖЕНИЕ ОТЧЕТА ===
+
+async def calculate_salary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Рассчитывает зарплату менторов за указанный период.
+    Рассчитывает зарплату и сразу выводит список сотрудников с суммами.
     """
     try:
-        # Импортируем date в начале функции, чтобы избежать конфликтов
-        from datetime import date
-        from datetime import date as date_class  # Дополнительный импорт для избежания конфликтов
-        # Импортируем Config ДО использования, чтобы убедиться, что date доступен
-        from config import Config
-        # Импортируем новый калькулятор фуллстеков
-        from commands.fullstack_salary_calculator import calculate_fullstack_salary
+        from datetime import datetime, time
+        # 1. Парсинг дат
         date_range = update.message.text.strip()
-
         if " - " not in date_range:
-            await update.message.reply_text(
-                "❌ Неверный формат! Используйте формат: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ\n"
-                "Пример: 01.03.2025 - 31.03.2025"
-            )
+            await update.message.reply_text("❌ Неверный формат! Используйте: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
             return "WAIT_FOR_SALARY_DATES"
 
         start_date_str, end_date_str = map(str.strip, date_range.split("-"))
-        
         try:
             start_date = datetime.strptime(start_date_str, "%d.%m.%Y").date()
             end_date = datetime.strptime(end_date_str, "%d.%m.%Y").date()
-        except ValueError as e:
-            await update.message.reply_text(
-                f"❌ Ошибка в формате даты: {e}\n"
-                "Используйте формат ДД.ММ.ГГГГ\n"
-                "Пример: 01.03.2025 - 31.03.2025"
-            )
+        except ValueError:
+            await update.message.reply_text("❌ Ошибка в дате.")
             return "WAIT_FOR_SALARY_DATES"
 
-        if start_date > end_date:
-            await update.message.reply_text(
-                "❌ Дата начала не может быть позже даты окончания.\n"
-                "Попробуйте снова:"
-            )
-            return "WAIT_FOR_SALARY_DATES"
+        # Фильтр по времени (весь день до 23:59:59)
+        start_dt = datetime.combine(start_date, time.min)
+        end_dt = datetime.combine(end_date, time.max)
 
-        logger.info(f"📊 Запрашиваем всех менторов...")
-        all_mentors = {mentor.id: mentor for mentor in session.query(Mentor).all()}
+        context.user_data['salary_period'] = {'start': start_date, 'end': end_date}
+        context.user_data['salary_period_str'] = f"{start_date_str} - {end_date_str}"
 
-        if not all_mentors:
-            logger.warning("⚠️ ВНИМАНИЕ: mentors не загружены! Проверь БД или session.commit()")
-            await update.message.reply_text("❌ Ошибка: не удалось загрузить список менторов.")
-            return ConversationHandler.END
-
-        mentor_salaries = {mentor.id: 0 for mentor in all_mentors.values()}
-        premium_total = 0.0
-
-        # Выбираем платежи за период
-        logger.info(f"📊 Выполняем запрос к payments...")
-        payments = session.query(
-            Payment.mentor_id, func.sum(Payment.amount)
-        ).filter(
-            Payment.payment_date >= start_date,
-            Payment.payment_date <= end_date
-        ).group_by(Payment.mentor_id).all()
-
-        logger.info(f"📊 Найдено платежей: {len(payments)}")
-
-        if not payments:
-            logger.warning("⚠️ Нет платежей за этот период!")
-            payments = []
-        # Подробный лог для каждого ментора
-        detailed_logs = {}
-
-        detailed_payments = session.query(Payment).filter(
-            Payment.payment_date >= start_date,
-            Payment.payment_date <= end_date,
-            Payment.status == "подтвержден",
-            ~Payment.comment.ilike("%преми%")  # исключаем премии из основного расчёта
-        ).order_by(Payment.payment_date.asc(), Payment.mentor_id.asc()).all()
-
-        logger.info(f"📊 Найдено детальных платежей: {len(detailed_payments)}")
-
-        # Дата начала новой системы расчета для ручных и авто кураторов
-        new_system_start_date = Config.NEW_PAYMENT_SYSTEM_START_DATE
-
-        for payment in detailed_payments:
-            mentor_id = payment.mentor_id
-            student = session.query(Student).filter(Student.id == payment.student_id).first()
-            if not student:
-                continue
-
-            if student.training_type == "Фуллстек":
-                continue  # Fullstack оплачивается отдельно: фикс 5000 ментору 1, 30% ментору 3
-
-            # ВАЖНО: Старая форма расчета (20% от платежей) применяется только для студентов,
-            # пришедших ДО new_system_start_date. Даже если их платеж был после этой даты,
-            # он все равно считается по старой системе (20% от суммы платежа).
-            # Студенты, пришедшие ПОСЛЕ new_system_start_date, рассчитываются только по новой системе
-            # (по темам/модулям) и НЕ получают 20% от платежей.
-            if student.training_type in ["Ручное тестирование", "Автотестирование"]:
-                if student.start_date and student.start_date >= new_system_start_date:
-                    logger.debug(f"⏭️ Пропускаем студента {student.fio} (ID {student.id}): пришел {student.start_date} >= {new_system_start_date}, будет рассчитан по новой системе")
-                    continue  # Пропускаем - эти студенты рассчитываются по новой системе (только по темам/модулям)
-                else:
-                    logger.debug(f"✅ Старая система: студент {student.fio} (ID {student.id}), пришел {student.start_date}, платеж {payment.payment_date}, сумма {payment.amount} руб.")
-
-            if mentor_id == 1 and student.training_type == "Ручное тестирование":
-                percent = 0.3
-            elif mentor_id == 3 and student.training_type == "Автотестирование":
-                percent = 0.3
-            else:
-                percent = 0.2
-
-            # Для комиссионных платежей используем новую формулу расчета от базового дохода
-            comment_lower = (payment.comment or "").lower()
-            if "комисси" in comment_lower and student.commission:
-                from data_base.operations import calculate_base_income_and_salary
-                base_income, curator_salary = calculate_base_income_and_salary(
-                    float(payment.amount),
-                    student.commission,
-                    percent
-                )
-                
-                if curator_salary is not None:
-                    payout = curator_salary
-                    line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб. (базовый доход: {base_income} руб.), {int(percent * 100)}%, {round(payout, 2)} руб."
-                else:
-                    # Fallback на старую формулу, если не удалось рассчитать по новой
-                    payout = float(payment.amount) * percent
-                    line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., {int(percent * 100)}%, {round(payout, 2)} руб."
-            else:
-                # Для остальных платежей используем старую формулу
-                payout = float(payment.amount) * percent
-                line = f"{student.fio} (ID {student.id}) {student.training_type}, {payment.payment_date}, {payment.amount} {payment.comment} руб., {int(percent * 100)}%, {round(payout, 2)} руб."
-
-            if mentor_id not in mentor_salaries:
-                mentor_salaries[mentor_id] = 0
-            mentor_salaries[mentor_id] += payout
-
-            if mentor_id not in detailed_logs:
-                detailed_logs[mentor_id] = []
-            detailed_logs[mentor_id].append(line)
-
-        # 🔁 Бонусы 10% за чужих студентов (кроме Fullstack)
-        # ВАЖНО: Бонусы директорам (ментор 1 и ментор 3) начисляются независимо от даты перехода
-        # на новую систему. Они работают для всех студентов, независимо от того, когда студент пришел.
-        for payment in detailed_payments:
-            student = session.query(Student).filter(Student.id == payment.student_id).first()
-            if not student:
-                continue
-
-            if student.training_type == "Фуллстек":
-                continue  # ❌ Бонус не начисляется за Fullstack
-
-            # НЕ проверяем дату для бонусов директорам - они начисляются всегда
-
-            if 1 not in detailed_logs:
-                detailed_logs[1] = []
-            if 3 not in detailed_logs:
-                detailed_logs[3] = []
-
-            # 🔹 Ментор 1 получает 10% за всех чужих студентов (только ручное тестирование)
-            if payment.mentor_id != 1 and student.training_type.lower().strip() == "ручное тестирование":
-                bonus = float(payment.amount) * 0.1
-                if 1 not in mentor_salaries:
-                    mentor_salaries[1] = 0
-                mentor_salaries[1] += bonus
-                detailed_logs[1].append(
-                    f"🔁 10% бонус ментору 1 за чужого ученика {student.fio} ({student.training_type}) | "
-                    f"{payment.payment_date}, {payment.amount} руб. | +{round(bonus, 2)} руб."
-                )
-
-            # 🔹 Ментор 3 получает 10% только за чужих автотест-студентов
-            if (
-                    student.training_type == "Автотестирование"
-                    and payment.mentor_id != 3
-            ):
-                bonus = float(payment.amount) * 0.1
-                if 3 not in mentor_salaries:
-                    mentor_salaries[3] = 0
-                mentor_salaries[3] += bonus
-                detailed_logs[3].append(
-                    f"🔁 10% бонус ментору 3 за чужого автотест ученика {student.fio} | "
-                    f"{payment.payment_date}, {payment.amount} руб. | +{round(bonus, 2)} руб."
-                )
-
-        # Фуллстек бонусы
-        fullstack_students = session.query(Student).filter(
-            Student.training_type == "Фуллстек",
-            Student.total_cost >= 50000,
-            Student.start_date >= start_date,
-            Student.start_date <= end_date
+        # 2. Сбор данных из Salary
+        salary_records = session.query(Salary).filter(
+            Salary.date_calculated >= start_dt,
+            Salary.date_calculated <= end_dt
         ).all()
 
-        # if fullstack_students:
-        #     bonus = len(fullstack_students) * 5000
-        #     if 1 not in mentor_salaries:
-        #         mentor_salaries[1] = 0
-        #     mentor_salaries[1] += bonus
-        #     for student in fullstack_students:
-        #         log_line = f"Бонус за фуллстек: {student.fio} (ID {student.id}) | +5000 руб."
-        #         if 1 not in detailed_logs:
-        #             detailed_logs[1] = []
-        #         detailed_logs[1].append(log_line)
+        report_data = {}
+        # Загружаем карту менторов {ID: Имя}
+        mentors_query = session.query(Mentor).all()
+        mentors_map = {m.id: m.full_name for m in mentors_query}
+        context.user_data['mentors_map'] = mentors_map
 
-        # 🎯 НОВЫЙ РАСЧЕТ ФУЛЛСТЕКОВ ПО ПРИНЯТЫМ ТЕМАМ
-        logger.info("🎯 Запускаем новый расчет фуллстеков по принятым темам")
-        try:
-            fullstack_result = calculate_fullstack_salary(start_date, end_date)
-            
-            # Добавляем результаты директоров к основному расчету
-            for director_id, salary in fullstack_result['director_salaries'].items():
-                if director_id not in mentor_salaries:
-                    mentor_salaries[director_id] = 0
-                mentor_salaries[director_id] += salary
-            
-            # Добавляем результаты кураторов к основному расчету
-            for curator_id, salary in fullstack_result['curator_salaries'].items():
-                if curator_id not in mentor_salaries:
-                    mentor_salaries[curator_id] = 0
-                mentor_salaries[curator_id] += salary
-            
-            # Добавляем логи директоров
-            for director_id, logs in fullstack_result['logs'].items():
-                if director_id not in detailed_logs:
-                    detailed_logs[director_id] = []
-                detailed_logs[director_id].extend(logs)
-            
-            # Добавляем логи кураторов
-            for curator_id, logs in fullstack_result['curator_logs'].items():
-                if curator_id not in detailed_logs:
-                    detailed_logs[curator_id] = []
-                detailed_logs[curator_id].extend(logs)
-            
-            # Добавляем статистику
-            logger.info(f"🎯 Фуллстек расчет завершен: обработано {fullstack_result['students_processed']} студентов, {fullstack_result['topics_processed']} тем")
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка при расчете фуллстеков: {e}")
-            # Продолжаем расчет без фуллстеков
+        # Агрегация данных
+        for record in salary_records:
+            m_id = record.mentor_id
+            if not m_id: continue
 
-        # 🎯 РАСЧЕТ ЗП РУЧНЫХ И АВТО КУРАТОРОВ ПО ПРИНЯТЫМ ТЕМАМ/МОДУЛЯМ
-        logger.info("🎯 Запускаем расчет ЗП ручных и авто кураторов по принятым темам/модулям")
-        try:
-            from commands.manual_auto_curator_salary_calculator import calculate_manual_auto_curator_salary
-            manual_auto_result = calculate_manual_auto_curator_salary(start_date, end_date)
-            
-            # Добавляем результаты кураторов к основному расчету
-            for curator_id, salary in manual_auto_result['curator_salaries'].items():
-                if curator_id not in mentor_salaries:
-                    mentor_salaries[curator_id] = 0
-                mentor_salaries[curator_id] += salary
-            
-            # Добавляем логи кураторов
-            for curator_id, logs in manual_auto_result['logs'].items():
-                if curator_id not in detailed_logs:
-                    detailed_logs[curator_id] = []
-                detailed_logs[curator_id].extend(logs)
-            
-            # Добавляем статистику
-            stats = manual_auto_result['students_processed']
-            logger.info(f"🎯 Расчет ручных/авто кураторов завершен: обработано {stats['total']} студентов (ручных: {stats['manual']}, авто: {stats['auto']}), кураторов: {manual_auto_result['curators_count']}")
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка при расчете ручных/авто кураторов: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            # Продолжаем расчет без ручных/авто кураторов
+            amount = float(record.calculated_amount)
 
-        # 🛡️ СТРАХОВКА ДЛЯ КУРАТОРОВ РУЧНОГО НАПРАВЛЕНИЯ
-        from config import Config
+            if m_id not in report_data:
+                report_data[m_id] = {'total': 0.0, 'paid': 0.0, 'to_pay': 0.0, 'logs': []}
 
-        if Config.CURATOR_INSURANCE_ENABLED:
-            logger.info("🛡️ Запускаем расчет страховки для кураторов ручного направления")
+            report_data[m_id]['total'] += amount
 
-            # Импортируем модели
-            from data_base.models import CuratorInsuranceBalance, ManualProgress
-
-            # Получаем всех кураторов ручного направления (кроме директора ID=1)
-            manual_curators = session.query(Mentor).filter(
-                Mentor.direction == "Ручное тестирование",
-                Mentor.id != 1  # Исключаем директора
-            ).all()
-
-            for curator in manual_curators:
-                # Получаем активные страховки куратора за период
-                active_insurance = session.query(CuratorInsuranceBalance).filter(
-                    CuratorInsuranceBalance.curator_id == curator.id,
-                    CuratorInsuranceBalance.is_active == True,
-                    CuratorInsuranceBalance.created_at >= start_date,
-                    CuratorInsuranceBalance.created_at <= end_date
-                ).all()
-
-                if active_insurance:
-                    total_insurance = sum(float(ins.insurance_amount) for ins in active_insurance)
-
-                    # Добавляем страховку к ЗП куратора
-                    if curator.id not in mentor_salaries:
-                        mentor_salaries[curator.id] = 0
-                    mentor_salaries[curator.id] += total_insurance
-
-                    # Добавляем логи страховки
-                    if curator.id not in detailed_logs:
-                        detailed_logs[curator.id] = []
-
-                    detailed_logs[curator.id].append(f"🛡️ Страховка за {len(active_insurance)} студентов: +{round(total_insurance, 2)} руб.")
-
-                    # Детальные логи по каждому студенту
-                    for insurance in active_insurance:
-                        student = session.query(Student).filter(Student.id == insurance.student_id).first()
-                        if student:
-                            detailed_logs[curator.id].append(
-                                f"  📋 {student.fio} (ID {student.id}) - 5 модуль | +{float(insurance.insurance_amount)} руб."
-                            )
-
-                    logger.info(f"🛡️ Куратор {curator.full_name}: страховка {total_insurance} руб. за {len(active_insurance)} студентов")
-
-                # 🔍 АВТОМАТИЧЕСКОЕ НАЧИСЛЕНИЕ СТРАХОВКИ НА ОСНОВЕ ДАТЫ 5 МОДУЛЯ ИЗ MANUAL_PROGRESS
-                # Получаем студентов куратора с прогрессом по 5 модулю
-                students_with_module_5 = session.query(Student, ManualProgress).join(
-                    ManualProgress, Student.id == ManualProgress.student_id
-                ).filter(
-                    Student.mentor_id == curator.id,
-                    Student.training_type == "Ручное тестирование",
-                    ManualProgress.m5_start_date.isnot(None),
-                    ManualProgress.m5_start_date >= start_date,
-                    ManualProgress.m5_start_date <= end_date
-                ).all()
-
-                for student, progress in students_with_module_5:
-                    module_5_date = progress.m5_start_date
-
-                    # Проверяем, нет ли уже страховки за этого студента
-                    existing_insurance = session.query(CuratorInsuranceBalance).filter(
-                        CuratorInsuranceBalance.student_id == student.id,
-                        CuratorInsuranceBalance.is_active == True
-                    ).first()
-
-                    if not existing_insurance:
-                        # Создаем новую страховку
-                        new_insurance = CuratorInsuranceBalance(
-                            curator_id=curator.id,
-                            student_id=student.id,
-                            insurance_amount=5000.00,
-                            created_at=module_5_date,
-                            is_active=True
-                        )
-                        session.add(new_insurance)
-                        session.commit()
-
-                        # Добавляем к ЗП куратора
-                        if curator.id not in mentor_salaries:
-                            mentor_salaries[curator.id] = 0
-                        mentor_salaries[curator.id] += 5000.00
-
-                        # Добавляем логи
-                        if curator.id not in detailed_logs:
-                            detailed_logs[curator.id] = []
-                        detailed_logs[curator.id].append(
-                            f"🛡️ Авто-страховка за {student.fio} (ID {student.id}) - 5 модуль {module_5_date} | +5000 руб."
-                        )
-
-                        logger.info(f"🛡️ Авто-начислена страховка куратору {curator.full_name} за студента {student.fio}: 5000 руб.")
-        else:
-            logger.info("🛡️ Страховочные выплаты для кураторов отключены (CURATOR_INSURANCE_ENABLED = False)")
-
-        # 🎁 Учет премий (выплаты с комментарием "Премия")
-        premium_comment = func.lower(func.coalesce(Payment.comment, ""))
-        premium_total = 0.0
-        premium_payments = session.query(Payment).filter(
-            Payment.payment_date >= start_date,
-            Payment.payment_date <= end_date,
-            Payment.status == "подтвержден",
-            Payment.mentor_id.isnot(None),  # без ментора не начисляем
-            # привели к нижнему регистру, поэтому ищем по нижнему
-            premium_comment.like("%премия%")
-        ).order_by(Payment.payment_date.asc()).all()
-
-        logger.info(f"🎁 Начинаем учет премий: найдено {len(premium_payments)}")
-
-        for payment in premium_payments:
-            bonus_amount = float(payment.amount)
-            mentor_id = payment.mentor_id
-            if mentor_id not in mentor_salaries:
-                mentor_salaries[mentor_id] = 0
-            mentor_salaries[mentor_id] += bonus_amount
-            premium_total += bonus_amount
-
-            detailed_logs.setdefault(mentor_id, []).append(
-                f"🎁 Премия {payment.amount} руб. | {payment.payment_date} | +{bonus_amount} руб."
-            )
-
-        if premium_payments:
-            logger.info(f"🎁 Суммарно начислено премий: {premium_total} руб.")
-
-        # 🛡️ ВЫЧЕТ СТРАХОВКИ ПРИ ПОЛУЧЕНИИ КОМИССИИ
-        logger.info("🛡️ Проверяем вычет страховки при получении комиссии")
-
-        # Импортируем модели для работы со страховкой
-        from data_base.models import CuratorInsuranceBalance
-
-        # Получаем все платежи с комментарием "Комиссия" за период
-        commission_payments = session.query(Payment).filter(
-            Payment.payment_date >= start_date,
-            Payment.payment_date <= end_date,
-            Payment.status == "подтвержден",
-            Payment.comment == "Комиссия"
-        ).order_by(Payment.payment_date.asc()).all()
-        
-        for payment in commission_payments:
-            student_id = payment.student_id
-            if not student_id:
-                continue
-                
-            # Получаем студента
-            student = session.query(Student).filter(Student.id == student_id).first()
-            if not student or student.training_type != "Ручное тестирование":
-                continue
-                
-            # Получаем куратора студента
-            curator_id = student.mentor_id
-            if not curator_id:
-                continue
-                
-            # Проверяем, есть ли активная страховка за этого студента
-            active_insurance = session.query(CuratorInsuranceBalance).filter(
-                CuratorInsuranceBalance.student_id == student_id,
-                CuratorInsuranceBalance.curator_id == curator_id,
-                CuratorInsuranceBalance.is_active == True
-            ).first()
-            
-            if active_insurance:
-                # Вычитаем страховку из ЗП куратора
-                insurance_amount = float(active_insurance.insurance_amount)
-                if curator_id not in mentor_salaries:
-                    mentor_salaries[curator_id] = 0
-                mentor_salaries[curator_id] -= insurance_amount
-                
-                # Деактивируем страховку
-                active_insurance.is_active = False
-                session.commit()
-                
-                # Добавляем логи
-                if curator_id not in detailed_logs:
-                    detailed_logs[curator_id] = []
-                detailed_logs[curator_id].append(
-                    f"🛡️ Вычет страховки за {student.fio} (ID {student_id}) - комиссия {payment.amount} руб. | -{insurance_amount} руб."
-                )
-                
-                logger.info(f"🛡️ Вычтена страховка {insurance_amount} руб. у куратора {curator_id} за студента {student.fio} при получении комиссии")
-
-        # 🎯 KPI ДЛЯ ВСЕХ КУРАТОРОВ (кроме директоров)
-        from config import Config
-
-        if Config.KPI_ENABLED:
-            logger.info("🎯 Рассчитываем KPI для всех кураторов")
-
-            # Импортируем модель для отслеживания KPI студентов
-            from data_base.models import CuratorKpiStudents
-
-            # Получаем всех кураторов (кроме директоров ID=1,3)
-            all_curators_for_kpi = session.query(Mentor).filter(
-                ~Mentor.id.in_([1, 3])  # Исключаем директоров
-            ).all()
-
-            for curator in all_curators_for_kpi:
-                # Определяем типы обучения для куратора (свое направление + фуллстек)
-                curator_training_types = []
-                if curator.direction == "Ручное тестирование":
-                    curator_training_types = ["Ручное тестирование", "Фуллстек"]
-                elif curator.direction == "Автоматизация" or curator.direction == "Автотестирование":
-                    curator_training_types = ["Автоматизация", "Автотестирование", "Фуллстек"]
-                else:
-                    # Для других направлений добавляем фуллстек
-                    curator_training_types = [curator.direction, "Фуллстек"]
-
-                # Получаем студентов куратора подходящих типов
-                # Для автоматизации проверяем auto_mentor_id, для остальных - mentor_id
-                if curator.direction in ["Автоматизация", "Автотестирование"]:
-                    students = session.query(Student).filter(
-                        Student.auto_mentor_id == curator.id,
-                        Student.training_type.in_(curator_training_types)
-                    ).all()
-                else:
-                    students = session.query(Student).filter(
-                        Student.mentor_id == curator.id,
-                        Student.training_type.in_(curator_training_types)
-                    ).all()
-                student_ids = [s.id for s in students]
-
-                if not student_ids:
-                    continue
-
-                # Получаем первоначальные платежи студентов в периоде
-                initial_payments = session.query(Payment).filter(
-                    Payment.student_id.in_(student_ids),
-                    Payment.payment_date >= start_date,
-                    Payment.payment_date <= end_date,
-                    Payment.status == "подтвержден",
-                    Payment.comment == "Первоначальный платёж при регистрации"
-                ).order_by(Payment.payment_date.asc()).all()
-
-                # Считаем уникальных студентов, купивших в периоде
-                unique_students = set(p.student_id for p in initial_payments)
-                student_count = len(unique_students)
-
-                # Определяем процент KPI через конфигурацию
-                kpi_percent = Config.get_kpi_percent(student_count)
-
-                if kpi_percent > 0:
-                    # 📝 СОХРАНЯЕМ СТУДЕНТОВ, ПОПАВШИХ ПОД KPI
-                    for student_id in unique_students:
-                        # Проверяем, нет ли уже записи для этого студента в этом периоде
-                        existing_kpi = session.query(CuratorKpiStudents).filter(
-                            CuratorKpiStudents.curator_id == curator.id,
-                            CuratorKpiStudents.student_id == student_id,
-                            CuratorKpiStudents.period_start == start_date,
-                            CuratorKpiStudents.period_end == end_date
-                        ).first()
-
-                        if not existing_kpi:
-                            # Создаем новую запись
-                            kpi_student = CuratorKpiStudents(
-                                curator_id=curator.id,
-                                student_id=student_id,
-                                kpi_percent=kpi_percent,
-                                period_start=start_date,
-                                period_end=end_date,
-                                created_at=datetime.now().date()
-                            )
-                            session.add(kpi_student)
-
-                    # Суммируем первоначальные платежи
-                    total_initial_payments = sum(float(p.amount) for p in initial_payments)
-
-                    # Вычисляем разницу между KPI процентом и стандартным процентом
-                    standard_percent = Config.STANDARD_PERCENT
-                    kpi_bonus = total_initial_payments * (kpi_percent - standard_percent)
-
-                    # Добавляем разницу к зарплате (так как 20% уже учтены в основном расчете)
-                    if curator.id not in mentor_salaries:
-                        mentor_salaries[curator.id] = 0
-                    mentor_salaries[curator.id] += kpi_bonus
-
-                    # Добавляем логи
-                    if curator.id not in detailed_logs:
-                        detailed_logs[curator.id] = []
-                    detailed_logs[curator.id].append(
-                        f"🎯 KPI ({curator.direction}): {student_count} студентов → {int(kpi_percent * 100)}% вместо {int(standard_percent * 100)}% (доплата +{int((kpi_percent - standard_percent) * 100)}%) | +{kpi_bonus:.2f} руб."
-                    )
-
-                    logger.info(f"🎯 KPI начислен куратору {curator.full_name} ({curator.direction}): {student_count} студентов, {kpi_percent * 100}% вместо {standard_percent * 100}%, доплата {kpi_bonus:.2f} руб.")
-
-            # 🎯 ДОПОЛНИТЕЛЬНЫЙ KPI ДЛЯ ДОПЛАТ ОТ KPI-СТУДЕНТОВ
-            logger.info("🎯 Рассчитываем дополнительный KPI для доплат от KPI-студентов")
-
-            # Получаем всех студентов, которые попали под KPI в любом периоде
-            kpi_students = session.query(CuratorKpiStudents).all()
-
-            for kpi_record in kpi_students:
-                curator_id = kpi_record.curator_id
-                student_id = kpi_record.student_id
-                kpi_percent = float(kpi_record.kpi_percent)
-
-                # Получаем доплаты этого студента в текущем периоде расчета
-                additional_payments = session.query(Payment).filter(
-                    Payment.student_id == student_id,
-                    Payment.payment_date >= start_date,
-                    Payment.payment_date <= end_date,
-                    Payment.status == "подтвержден",
-                    Payment.comment == "Доплата за обучение"
-                ).order_by(Payment.payment_date.asc()).all()
-
-                if additional_payments:
-                    # Суммируем доплаты
-                    total_additional_payments = sum(float(p.amount) for p in additional_payments)
-
-                    # Вычисляем разницу между KPI процентом и стандартным процентом
-                    standard_percent = Config.STANDARD_PERCENT
-                    additional_kpi_bonus = total_additional_payments * (kpi_percent - standard_percent)
-
-                    # Добавляем к зарплате куратора
-                    if curator_id not in mentor_salaries:
-                        mentor_salaries[curator_id] = 0
-                    mentor_salaries[curator_id] += additional_kpi_bonus
-
-                    # Получаем информацию о студенте для логов
-                    student = session.query(Student).filter(Student.id == student_id).first()
-                    student_name = student.fio if student else f"ID {student_id}"
-
-                    # Добавляем логи
-                    if curator_id not in detailed_logs:
-                        detailed_logs[curator_id] = []
-                    detailed_logs[curator_id].append(
-                        f"🎯 KPI доплаты от {student_name}: {int(kpi_percent * 100)}% вместо {int(standard_percent * 100)}% с {total_additional_payments:.2f} руб. | +{additional_kpi_bonus:.2f} руб."
-                    )
-
-                    logger.info(f"🎯 Дополнительный KPI начислен куратору {curator_id} за доплаты студента {student_name}: {additional_kpi_bonus:.2f} руб.")
-
-            # Коммитим изменения в базу данных
-            session.commit()
-        else:
-            logger.info("🎯 KPI система отключена (KPI_ENABLED = False)")
-
-        # 💼 Расчет зарплат карьерных консультантов
-        career_consultant_salaries = {}
-        all_consultants = session.query(CareerConsultant).filter(CareerConsultant.is_active == True).all()
-        
-        for consultant in all_consultants:
-            salary = 0
-            total_commission = 0
-            
-            # Получаем всех студентов, закрепленных за консультантом
-            students = session.query(Student).filter(Student.career_consultant_id == consultant.id).all()
-            student_ids = [student.id for student in students]
-            
-            if not student_ids:
-                continue
-            
-            # Получаем все подтвержденные платежи с комментарием "Комиссия" за период
-            all_student_payments = session.query(Payment).filter(
-                Payment.student_id.in_(student_ids),
-                Payment.payment_date >= start_date,
-                Payment.payment_date <= end_date,
-                Payment.status == "подтвержден"
-            ).order_by(Payment.payment_date.asc()).all()
-            
-            # Фильтруем по комиссии
-            commission_payments = [p for p in all_student_payments if "комисси" in p.comment.lower()]
-            
-            # Рассчитываем комиссию: 20% если КК с ID=1 взял студента после 18.11.2025, иначе 10%
-            COMMISSION_CHANGE_DATE = date_class(2025, 11, 18)
-            
-            total_commission = 0
-            salary = 0
-            for payment in commission_payments:
-                student = session.query(Student).filter(Student.id == payment.student_id).first()
-                if not student:
-                    continue
-                
-                # Определяем процент КК
-                if student and student.consultant_start_date:
-                    # Если КК взял студента после 18.11.2025 и КК с ID=1, то 20%, иначе 10%
-                    if student.consultant_start_date >= COMMISSION_CHANGE_DATE and student.career_consultant_id == 1:
-                        consultant_percent = 0.2
-                    else:
-                        consultant_percent = 0.1
-                else:
-                    # Если дата не установлена, используем старую ставку 10%
-                    consultant_percent = 0.1
-                
-                # Используем новую формулу расчета от базового дохода
-                from data_base.operations import calculate_base_income_and_salary
-                base_income, consultant_salary = calculate_base_income_and_salary(
-                    float(payment.amount),
-                    student.commission,
-                    consultant_percent
-                )
-                
-                if consultant_salary is not None:
-                    salary += consultant_salary
-                else:
-                    # Fallback на старую формулу, если не удалось рассчитать по новой
-                    salary += float(payment.amount) * consultant_percent
-                
-                total_commission += float(payment.amount)
-            
-            # 🛡️ СТРАХОВКА ДЛЯ КАРЬЕРНЫХ КОНСУЛЬТАНТОВ
-            from data_base.models import ConsultantInsuranceBalance
-            from config import Config
-            
-            if Config.CONSULTANT_INSURANCE_ENABLED:
-                logger.info(f"🛡️ Запускаем расчет страховки для КК {consultant.full_name}")
-                
-                total_insurance = 0.0
-                insurance_students_count = 0
-                
-                # СНАЧАЛА: Учитываем ВСЕ активные страховки КК (для студентов, взяттых ранее)
-                all_active_insurance = session.query(ConsultantInsuranceBalance).filter(
-                    ConsultantInsuranceBalance.consultant_id == consultant.id,
-                    ConsultantInsuranceBalance.is_active == True
-                ).all()
-                
-                logger.info(f"🛡️ Найдено активных страховок КК {consultant.full_name}: {len(all_active_insurance)}")
-                
-                processed_student_ids = set()
-                
-                # Учитываем все активные страховки
-                for ins in all_active_insurance:
-                    total_insurance += float(ins.insurance_amount)
-                    insurance_students_count += 1
-                    processed_student_ids.add(ins.student_id)
-                    student = session.query(Student).filter(Student.id == ins.student_id).first()
-                    if student:
-                        created_date = ins.created_at.strftime("%d.%m.%Y") if ins.created_at else "неизвестно"
-                        detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
-                            f"🛡️ Страховка за {student.fio} (ID {ins.student_id}) - активная (создана {created_date}) | +{float(ins.insurance_amount)} руб."
-                        )
-                        logger.info(f"🛡️ Учитывается активная страховка КК {consultant.full_name} за студента {student.fio}: {float(ins.insurance_amount)} руб.")
-                
-                # ЗАТЕМ: Проверяем студентов, взятых КК В ЭТОМ ПЕРИОДЕ (consultant_start_date в периоде)
-                # Сначала получаем всех студентов КК для отладки
-                all_students_consultant = session.query(Student).filter(
-                    Student.career_consultant_id == consultant.id
-                ).all()
-                
-                logger.info(f"🛡️ Всего студентов у КК {consultant.full_name} (ID {consultant.id}): {len(all_students_consultant)}")
-                for stud in all_students_consultant:
-                    logger.info(f"   📋 Студент {stud.fio} (ID {stud.id}): consultant_start_date = {stud.consultant_start_date}, career_consultant_id = {stud.career_consultant_id}")
-                
-                students_taken_in_period = session.query(Student).filter(
-                    Student.career_consultant_id == consultant.id,
-                    Student.consultant_start_date.isnot(None),
-                    Student.consultant_start_date >= start_date,
-                    Student.consultant_start_date <= end_date
-                ).all()
-                
-                logger.info(f"🛡️ Период расчета: {start_date} - {end_date}")
-                logger.info(f"🛡️ Найдено студентов, взятых КК в периоде: {len(students_taken_in_period)}")
-                for stud in students_taken_in_period:
-                    logger.info(f"   ✅ Студент {stud.fio} (ID {stud.id}): consultant_start_date = {stud.consultant_start_date}")
-                
-                # Создаем страховку для студентов, взятых в периоде (если её еще нет)
-                for student in students_taken_in_period:
-                    if student.id not in processed_student_ids:
-                        # Проверяем, нет ли уже страховки (на всякий случай)
-                        existing_insurance = session.query(ConsultantInsuranceBalance).filter(
-                            ConsultantInsuranceBalance.student_id == student.id,
-                            ConsultantInsuranceBalance.consultant_id == consultant.id,
-                            ConsultantInsuranceBalance.is_active == True
-                        ).first()
-                        
-                        if not existing_insurance:
-                            # Создаем новую страховку
-                            new_insurance = ConsultantInsuranceBalance(
-                                consultant_id=consultant.id,
-                                student_id=student.id,
-                                insurance_amount=1000.00,
-                                created_at=student.consultant_start_date,
-                                is_active=True
-                            )
-                            session.add(new_insurance)
-                            total_insurance += 1000.00
-                            insurance_students_count += 1
-                            
-                            date_str = student.consultant_start_date.strftime("%d.%m.%Y") if student.consultant_start_date else "неизвестно"
-                            detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
-                                f"🛡️ Страховка за {student.fio} (ID {student.id}) - взял в работу {date_str} | +1000 руб."
-                            )
-                            logger.info(f"🛡️ Начислена страховка КК {consultant.full_name} за студента {student.fio}: 1000 руб. (дата: {date_str})")
-                        else:
-                            # Страховка уже есть (не должно быть, но на всякий случай)
-                            total_insurance += float(existing_insurance.insurance_amount)
-                            insurance_students_count += 1
-                            logger.info(f"🛡️ Страховка уже существует для студента {student.fio}, учитываем её")
-                        
-                        processed_student_ids.add(student.id)
-                
-                if total_insurance > 0:
-                    salary += total_insurance
-                    detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
-                        f"🛡️ Итого страховка за {insurance_students_count} студентов: +{round(total_insurance, 2)} руб."
-                    )
-                    logger.info(f"🛡️ КК {consultant.full_name}: страховка {total_insurance} руб. за {insurance_students_count} студентов")
-                else:
-                    logger.info(f"🛡️ КК {consultant.full_name}: страховка не начислена (нет активных страховок или студентов, взятых в периоде)")
-                
-                session.commit()
-            
-            # 🛡️ ВЫЧЕТ СТРАХОВКИ КК ПРИ ПОЛУЧЕНИИ КОМИССИИ (без детализации)
-            # Вычитаем страховку за студентов, по которым поступила комиссия в этом периоде
-            if Config.CONSULTANT_INSURANCE_ENABLED and commission_payments:
-                logger.info(f"🛡️ Проверяем вычет страховки КК {consultant.full_name} при получении комиссии")
-                
-                for payment in commission_payments:
-                    student_id = payment.student_id
-                    if not student_id:
-                        continue
-                    
-                    # Проверяем, есть ли активная страховка за этого студента
-                    active_insurance = session.query(ConsultantInsuranceBalance).filter(
-                        ConsultantInsuranceBalance.student_id == student_id,
-                        ConsultantInsuranceBalance.consultant_id == consultant.id,
-                        ConsultantInsuranceBalance.is_active == True
-                    ).first()
-                    
-                    if active_insurance:
-                        # Вычитаем страховку из ЗП КК
-                        insurance_amount = float(active_insurance.insurance_amount)
-                        salary -= insurance_amount
-                        
-                        # Деактивируем страховку
-                        active_insurance.is_active = False
-                        session.commit()
-                        
-                        # Логируем (но НЕ добавляем в детализацию, как требовал пользователь)
-                        student = session.query(Student).filter(Student.id == student_id).first()
-                        student_name = student.fio if student else f"ID {student_id}"
-                        logger.info(f"🛡️ Вычтена страховка {insurance_amount} руб. у КК {consultant.full_name} за студента {student_name} при получении комиссии {payment.amount} руб. (НЕ показано в детализации)")
-            
-            career_consultant_salaries[consultant.id] = round(salary, 2)
-            
-            # Подробное логирование каждого платежа комиссии
-            if commission_payments:
-                detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
-                    f"💼 Карьерный консультант {consultant.full_name} | "
-                    f"Комиссии: {total_commission} руб. | Итого: {salary} руб."
-                )
-                
-                # Логируем каждый платеж комиссии отдельно
-                for payment in commission_payments:
-                    student = session.query(Student).filter(Student.id == payment.student_id).first()
-                    if student:
-                        detailed_logs[f"cc_{consultant.id}"].append(
-                            f"  📄 Студент {student.fio} ({student.telegram}) | "
-                            f"Платеж: {payment.amount} руб. | "
-                            f"Дата: {payment.payment_date} | "
-                            f"Комментарий: {payment.comment}"
-                        )
-            elif total_commission > 0:
-                detailed_logs.setdefault(f"cc_{consultant.id}", []).append(
-                    f"💼 Карьерный консультант {consultant.full_name} | "
-                    f"Комиссии: {total_commission} руб. | Итого: {salary} руб."
-                )
-
-        # Вывод логов в файл
-        for mentor_id, logs in detailed_logs.items():
-            if isinstance(mentor_id, str) and mentor_id.startswith("cc_"):
-                # Логи для карьерных консультантов
-                consultant_id = int(mentor_id.split("_")[1])
-                consultant = next((c for c in all_consultants if c.id == consultant_id), None)
-                if consultant:
-                    logger.info(f"\n📘 Карьерный консультант: {consultant.full_name} ({consultant.telegram})")
-                    for log in logs:
-                        logger.info(f"— {log}")
-                    salary = career_consultant_salaries.get(consultant_id, 0)
-                    salary_with_tax = round(salary * 1.06, 2)
-                    logger.info(f"Итог: {salary} руб. (с НДФЛ {salary_with_tax})")
+            if record.is_paid:
+                report_data[m_id]['paid'] += amount
             else:
-                # Логи для менторов
-                mentor = all_mentors.get(mentor_id)
-                if mentor:
-                    logger.info(f"\n📘 Ментор: {mentor.full_name} ({mentor.telegram})")
-                    for log in logs:
-                        logger.info(f"— {log}")
-                    salary = round(mentor_salaries[mentor_id], 2)
-                    salary_with_tax = round(salary * 1.06, 2)
-                    logger.info(f"Итог: {salary} руб. (с НДФЛ {salary_with_tax})")
-                else:
-                    logger.info(f"\n📘 Ментор ID {mentor_id}:")
-                    for log in logs:
-                        logger.info(f"— {log}")
-                    salary = round(mentor_salaries.get(mentor_id, 0), 2)
-                    salary_with_tax = round(salary * 1.06, 2)
-                    logger.info(f"Итог: {salary} руб. (с НДФЛ {salary_with_tax})")
+                report_data[m_id]['to_pay'] += amount
 
-        # 💰 РАСЧЕТ ХОЛДИРОВАНИЯ ДЛЯ ФУЛЛСТЕК КУРАТОРОВ
-        from config import Config
-        from data_base.models import HeldAmount
-        from data_base.operations import calculate_held_amount
-        from datetime import date
-        
-        # Настраиваем отдельный логгер для холдирования
-        held_logger = logging.getLogger('held_amounts')
-        held_logger.setLevel(logging.INFO)
-        # Проверяем, есть ли уже обработчик (избегаем дублирования)
-        if not held_logger.handlers:
-            held_file_handler = logging.FileHandler('held_amounts.log', encoding='utf-8')
-            held_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-            held_logger.addHandler(held_file_handler)
-        
-        total_held_amount = 0.0
-        
-        if Config.HELD_AMOUNTS_ENABLED:
-            logger.info("💰 Запускаем расчет холдирования для фуллстек кураторов")
-            held_logger.info(f"=" * 80)
-            held_logger.info(f"💰 Расчет холдирования за период {start_date_str} - {end_date_str}")
-            held_logger.info(f"=" * 80)
-            
-            # Дата начала действия системы холдирования
-            from datetime import date as date_class
-            held_amounts_start_date = date_class(2025, 9, 1)
-            
-            # 🔄 ПРОВЕРЯЕМ И ОБНОВЛЯЕМ СТАТУСЫ ЗАПИСЕЙ В held_amounts
-            # Если у студента training_status = "Не учится" или "Отчислен", 
-            # помечаем все его записи как released
-            held_logger.info("🔄 Проверяем статусы студентов в held_amounts...")
-            all_held_records = session.query(HeldAmount).all()
-            students_to_deactivate = set()
-            
-            for held_record in all_held_records:
-                student = session.query(Student).filter(Student.id == held_record.student_id).first()
-                if student and student.training_status in ["Не учится", "Отчислен"]:
-                    students_to_deactivate.add(student.id)
-                    if held_record.status == "active":
-                        held_record.status = "released"
-                        held_logger.info(f"🔴 Помечено как released: студент ID {student.id} ({student.fio}), training_status={student.training_status}")
-            
-            if students_to_deactivate:
-                session.commit()
-                held_logger.info(f"✅ Обновлено записей для {len(students_to_deactivate)} студентов со статусом 'Не учится' или 'Отчислен'")
-            
-            # Получаем активных студентов фуллстек, которые:
-            # 1. Начали обучение с 1 сентября 2025
-            # 2. Не отчислены (training_status != "Отчислен")
-            # 3. Статус обучения не равен "Не учится" (training_status != "Не учится")
-            # ВАЖНО: Создаем/обновляем холдирование для ВСЕХ студентов >= 01.09.2025,
-            # независимо от периода расчета зарплаты, чтобы записи всегда были актуальными
-            fullstack_students = session.query(Student).filter(
-                Student.training_type == "Фуллстек",
-                Student.start_date >= held_amounts_start_date,
-                Student.training_status != "Отчислен",
-                Student.training_status != "Не учится"
-            ).all()
-            
-            # Дополнительная фильтрация в Python для надежности
-            fullstack_students = [
-                s for s in fullstack_students 
-                if s.training_status not in ["Отчислен", "Не учится"]
-            ]
-            
-            logger.info(f"💰 Найдено активных студентов фуллстек (>= 01.09.2025): {len(fullstack_students)}")
-            held_logger.info(f"💰 Найдено активных студентов фуллстек для обработки: {len(fullstack_students)}")
-            
-            if len(fullstack_students) == 0:
-                held_logger.info("⚠️ Студенты не найдены. Проверьте фильтры:")
-                held_logger.info(f"   - training_type == 'Фуллстек'")
-                held_logger.info(f"   - training_status != 'Отчислен'")
-                held_logger.info(f"   - start_date >= {held_amounts_start_date}")
-            
-            for student in fullstack_students:
-                try:
-                    # 🔍 РУЧНОЕ НАПРАВЛЕНИЕ: проверяем, кто назначен куратором
-                    if student.mentor_id == Config.DIRECTOR_MANUAL_ID:
-                        # Директор ручного направления - холдим 30% от total_cost
-                        manual_result = calculate_held_amount(student.id, "manual", Config.DIRECTOR_MANUAL_ID, is_director=True)
-                        direction_for_db = "manual"  # Используем обычный direction для хранения
-                        is_director_manual = True
-                    elif student.mentor_id:
-                        # Обычный куратор ручного направления - холдим 20% от стоимости курса
-                        manual_result = calculate_held_amount(student.id, "manual", student.mentor_id, is_director=False)
-                        direction_for_db = "manual"
-                        is_director_manual = False
-                    else:
-                        # Куратор не назначен - создаем холдирование для куратора (20% от стоимости)
-                        manual_result = calculate_held_amount(student.id, "manual", None, is_director=False)
-                        direction_for_db = "manual"
-                        is_director_manual = False
-                    
-                    if manual_result:
-                        held_amount = manual_result['held_amount']
-                        potential_amount = manual_result['potential_amount']
-                        paid_amount = manual_result['paid_amount']
-                        modules_completed = manual_result['modules_completed']
-                        total_modules = manual_result['total_modules']
-                        mentor_id_for_db = student.mentor_id if student.mentor_id else Config.DIRECTOR_MANUAL_ID if is_director_manual else None
-                        
-                        # Создаем или обновляем запись холдирования для ручного направления
-                        held_record = session.query(HeldAmount).filter(
-                            HeldAmount.student_id == student.id,
-                            HeldAmount.direction == "manual"
-                        ).first()
-                        
-                        if held_record:
-                            # Обновляем существующую запись
-                            held_record.mentor_id = mentor_id_for_db
-                            held_record.held_amount = held_amount
-                            held_record.potential_amount = potential_amount
-                            held_record.paid_amount = paid_amount
-                            held_record.modules_completed = modules_completed
-                            held_record.total_modules = total_modules
-                            held_record.updated_at = date.today()
-                            if held_record.status == "released":
-                                held_record.status = "active"
-                            
-                            role_text = "ДИРЕКТОР" if is_director_manual else "КУРАТОР"
-                            held_logger.info(f"📝 Обновлено холдирование РУЧНОЕ ({role_text}): Студент {student.fio} (ID {student.id}) | "
-                                            f"ID: {mentor_id_for_db or 'не назначен'} | "
-                                            f"Модулей: {modules_completed}/{total_modules} | "
-                                            f"Потенциально: {potential_amount} руб. | "
-                                            f"Выплачено: {paid_amount} руб. | "
-                                            f"Холдировано: {held_amount} руб.")
-                        else:
-                            # Создаем новую запись
-                            held_record = HeldAmount(
-                                student_id=student.id,
-                                mentor_id=mentor_id_for_db,
-                                direction="manual",
-                                held_amount=held_amount,
-                                potential_amount=potential_amount,
-                                paid_amount=paid_amount,
-                                modules_completed=modules_completed,
-                                total_modules=total_modules,
-                                status="active",
-                                created_at=date.today(),
-                                updated_at=date.today()
-                            )
-                            session.add(held_record)
-                            
-                            role_text = "ДИРЕКТОР" if is_director_manual else "КУРАТОР"
-                            held_logger.info(f"➕ Создано холдирование РУЧНОЕ ({role_text}): Студент {student.fio} (ID {student.id}) | "
-                                            f"ID: {mentor_id_for_db or 'не назначен'} | "
-                                            f"Модулей: {modules_completed}/{total_modules} | "
-                                            f"Потенциально: {potential_amount} руб. | "
-                                            f"Выплачено: {paid_amount} руб. | "
-                                            f"Холдировано: {held_amount} руб.")
-                        
-                        total_held_amount += held_amount
-                    
-                    # 🔍 АВТО НАПРАВЛЕНИЕ: проверяем, кто назначен куратором
-                    if student.auto_mentor_id == Config.DIRECTOR_AUTO_ID:
-                        # Директор авто направления - холдим 30% от total_cost
-                        auto_result = calculate_held_amount(student.id, "auto", Config.DIRECTOR_AUTO_ID, is_director=True)
-                        direction_for_db = "auto"
-                        is_director_auto = True
-                    elif student.auto_mentor_id:
-                        # Обычный куратор авто направления - холдим 20% от стоимости курса
-                        auto_result = calculate_held_amount(student.id, "auto", student.auto_mentor_id, is_director=False)
-                        direction_for_db = "auto"
-                        is_director_auto = False
-                    else:
-                        # Куратор не назначен - создаем холдирование для куратора (20% от стоимости)
-                        auto_result = calculate_held_amount(student.id, "auto", None, is_director=False)
-                        direction_for_db = "auto"
-                        is_director_auto = False
-                    
-                    if auto_result:
-                        held_amount = auto_result['held_amount']
-                        potential_amount = auto_result['potential_amount']
-                        paid_amount = auto_result['paid_amount']
-                        modules_completed = auto_result['modules_completed']
-                        total_modules = auto_result['total_modules']
-                        mentor_id_for_db = student.auto_mentor_id if student.auto_mentor_id else Config.DIRECTOR_AUTO_ID if is_director_auto else None
-                        
-                        # Создаем или обновляем запись холдирования для авто направления
-                        held_record = session.query(HeldAmount).filter(
-                            HeldAmount.student_id == student.id,
-                            HeldAmount.direction == "auto"
-                        ).first()
-                        
-                        if held_record:
-                            # Обновляем существующую запись
-                            held_record.mentor_id = mentor_id_for_db
-                            held_record.held_amount = held_amount
-                            held_record.potential_amount = potential_amount
-                            held_record.paid_amount = paid_amount
-                            held_record.modules_completed = modules_completed
-                            held_record.total_modules = total_modules
-                            held_record.updated_at = date.today()
-                            if held_record.status == "released":
-                                held_record.status = "active"
-                            
-                            role_text = "ДИРЕКТОР" if is_director_auto else "КУРАТОР"
-                            held_logger.info(f"📝 Обновлено холдирование АВТО ({role_text}): Студент {student.fio} (ID {student.id}) | "
-                                            f"ID: {mentor_id_for_db or 'не назначен'} | "
-                                            f"Модулей: {modules_completed}/{total_modules} | "
-                                            f"Потенциально: {potential_amount} руб. | "
-                                            f"Выплачено: {paid_amount} руб. | "
-                                            f"Холдировано: {held_amount} руб.")
-                        else:
-                            # Создаем новую запись
-                            held_record = HeldAmount(
-                                student_id=student.id,
-                                mentor_id=mentor_id_for_db,
-                                direction="auto",
-                                held_amount=held_amount,
-                                potential_amount=potential_amount,
-                                paid_amount=paid_amount,
-                                modules_completed=modules_completed,
-                                total_modules=total_modules,
-                                status="active",
-                                created_at=date.today(),
-                                updated_at=date.today()
-                            )
-                            session.add(held_record)
-                            
-                            role_text = "ДИРЕКТОР" if is_director_auto else "КУРАТОР"
-                            held_logger.info(f"➕ Создано холдирование АВТО ({role_text}): Студент {student.fio} (ID {student.id}) | "
-                                            f"ID: {mentor_id_for_db or 'не назначен'} | "
-                                            f"Модулей: {modules_completed}/{total_modules} | "
-                                            f"Потенциально: {potential_amount} руб. | "
-                                            f"Выплачено: {paid_amount} руб. | "
-                                            f"Холдировано: {held_amount} руб.")
-                        
-                        total_held_amount += held_amount
-                    
-                    session.commit()
-                    
-                except Exception as e:
-                    logger.error(f"❌ Ошибка при расчете холдирования для студента {student.id}: {e}")
-                    held_logger.error(f"❌ Ошибка при расчете холдирования для студента {student.fio} (ID {student.id}): {e}")
-                    session.rollback()
-            
-            held_logger.info(f"💰 ИТОГО холдирование за период: {round(total_held_amount, 2)} руб.")
-            held_logger.info(f"=" * 80)
-            logger.info(f"💰 Расчет холдирования завершен. Итого холдировано: {round(total_held_amount, 2)} руб.")
-        else:
-            logger.info("💰 Система холдирования отключена (HELD_AMOUNTS_ENABLED = False)")
+            # Логи
+            status_icon = "✅" if record.is_paid else "⏳"
+            date_log = record.date_calculated.strftime("%d.%m") if record.date_calculated else "??"
+            report_data[m_id]['logs'].append(f"{status_icon} {date_log}: {record.comment} | {amount:,.2f}р.")
 
-        # Вычисляем общий бюджет на зарплаты (включая карьерных консультантов)
-        total_mentor_salaries = sum(mentor_salaries.values())
-        total_career_consultant_salaries = sum(career_consultant_salaries.values())
-        total_salaries = total_mentor_salaries + total_career_consultant_salaries
-        
-        # Сохраняем для последующего использования
-        context.user_data['total_salaries'] = total_salaries
-        context.user_data['total_mentor_salaries'] = total_mentor_salaries
-        context.user_data['total_career_consultant_salaries'] = total_career_consultant_salaries
-        
-        # Формируем отчет
-        salary_report = f"📊 Расчёт зарплат за {start_date_str} - {end_date_str}\n\n"
-        
-        # Отчет по менторам
-        salary_report += "👨‍🏫 Зарплата менторов:\n"
-        for mentor in all_mentors.values():
-            salary = round(mentor_salaries.get(mentor.id, 0), 2)
-            if salary > 0:
-                # Расчет с учетом НДФЛ 6%
-                salary_with_tax = round(salary * 1.06, 2)
-                salary_report += f"💰 {mentor.full_name} ({mentor.telegram}): {salary} руб. (с НДФЛ {salary_with_tax})\n"
-            else:
-                salary_report += f"❌ {mentor.full_name} ({mentor.telegram}): У ментора нет платежей за этот период\n"
-        
-        # Итого менторов с НДФЛ
-        total_mentor_salaries_with_tax = round(total_mentor_salaries * 1.06, 2)
-        salary_report += f"📈 Итого менторов: {int(total_mentor_salaries):,} руб. (с НДФЛ {int(total_mentor_salaries_with_tax):,})\n\n"
-        if premium_total > 0:
-            salary_report += f"🎁 Премии (учтены в суммах): {int(premium_total):,} руб.\n\n"
-        else:
-            salary_report += "🎁 Премии: не найдено в выбранном периоде.\n\n"
-        
-        # Отчет по карьерным консультантам
-        if career_consultant_salaries:
-            salary_report += "💼 Зарплата карьерных консультантов:\n"
-            for consultant in all_consultants:
-                salary = career_consultant_salaries.get(consultant.id, 0)
-                if salary > 0:
-                    # Расчет с учетом НДФЛ 6%
-                    salary_with_tax = round(salary * 1.06, 2)
-                    salary_report += f"💰 {consultant.full_name} ({consultant.telegram}): {salary} руб. (с НДФЛ {salary_with_tax})\n"
-                else:
-                    salary_report += f"❌ {consultant.full_name} ({consultant.telegram}): У консультанта нет комиссий за этот период\n"
-            
-            # Итого КК с НДФЛ
-            total_career_consultant_salaries_with_tax = round(total_career_consultant_salaries * 1.06, 2)
-            salary_report += f"📈 Итого КК: {int(total_career_consultant_salaries):,} руб. (с НДФЛ {int(total_career_consultant_salaries_with_tax):,})\n\n"
-        
-        # Общий итог с НДФЛ
-        total_salaries_with_tax = round(total_salaries * 1.06, 2)
-        salary_report += f"💸 Общий итог: {int(total_salaries):,} руб. (с НДФЛ {int(total_salaries_with_tax):,})\n"
+        context.user_data['salary_report_data'] = report_data
 
-        # Добавляем кнопку для подробной информации
-        salary_report += "\n🔍 Хотите увидеть подробное формирование зарплаты по каждому сотруднику?"
-        
-        # Сохраняем данные для подробного отчета
-        context.user_data['detailed_salary_data'] = {
-            'mentor_salaries': mentor_salaries,
-            'career_consultant_salaries': career_consultant_salaries,
-            'detailed_logs': detailed_logs,
-            'start_date': start_date_str,
-            'end_date': end_date_str,
-            'all_mentors': {m.id: m for m in all_mentors.values()},
-            'all_consultants': {c.id: c for c in all_consultants}
-        }
+        # 3. Формирование текста отчета
+        text = f"📊 <b>ОТЧЕТ ПО ЗАРПЛАТЕ ({start_date_str} - {end_date_str})</b>\n"
+        text += "Использована таблица транзакций (Salary)\n\n"
+        text += "👨‍🏫 <b>Менторы:</b>\n"
+
+        total_to_pay_global = 0.0
+        found_any = False
+
+        for m_id, data in report_data.items():
+            to_pay = data['to_pay']
+            paid = data['paid']
+
+            if to_pay == 0 and paid == 0: continue
+
+            found_any = True
+            name = mentors_map.get(m_id, f"ID {m_id}")
+
+            with_tax = to_pay * 1.06
+            total_to_pay_global += to_pay
+
+            line = f"• {name}: <b>{to_pay:,.2f} руб.</b> (с налогом: {with_tax:,.2f})"
+            if paid > 0:
+                line += f" | <i>выплачено: {paid:,.2f} руб.</i>"
+            text += line + "\n"
+
+        if not found_any:
+            text += "Нет начислений за этот период.\n"
+
+        text += f"\n💰 <b>ИТОГО К ВЫПЛАТЕ: {total_to_pay_global:,.2f} руб.</b>\n\n"
+        text += "Выберите действие:"
+
+        keyboard = [
+            ["💸 Выплатить ЗП"],
+            ["📜 Показать историю операций"],
+            ["🔙 Возврат в меню"]
+        ]
 
         await update.message.reply_text(
-            salary_report,
-            reply_markup=ReplyKeyboardMarkup(
-                [["Да, показать подробности"], ["Нет, достаточно"]],
-                one_time_keyboard=True
-            )
+            text,
+            reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True),
+            parse_mode="HTML"
         )
-        return "WAIT_FOR_DETAILED_SALARY"
-    except ValueError as e:
-        await update.message.reply_text(f"❌ Ошибка: {e}")
-        return "WAIT_FOR_SALARY_DATES"
-    except Exception as e:
-        logger.error(f"❌ Неожиданная ошибка при расчете зарплаты: {e}")
-        logger.error(f"❌ Тип ошибки: {type(e).__name__}")
-        logger.error(f"❌ Детали ошибки: {str(e)}")
-        await update.message.reply_text(f"❌ Произошла ошибка при расчете зарплаты: {str(e)}")
-        return "WAIT_FOR_SALARY_DATES"
+        return "SALARY_MAIN_MENU"
 
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        await update.message.reply_text(f"Ошибка: {e}")
+        return ConversationHandler.END
+
+
+# === ШАГ 2: ОБРАБОТЧИК ГЛАВНОГО МЕНЮ ===
+
+async def handle_salary_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    choice = update.message.text
+
+    if choice == "🔙 Возврат в меню":
+        return await exit_to_main_menu(update, context)
+
+    elif choice == "📜 Показать историю операций":
+        await update.message.reply_text(
+            "По кому показать историю?",
+            reply_markup=ReplyKeyboardMarkup([["👥 По всем сразу"], ["👤 Выбрать сотрудника"], ["🔙 Возврат в меню"]],
+                                             one_time_keyboard=True)
+        )
+        return "SALARY_DETAIL_SELECT"
+
+    elif choice == "💸 Выплатить ЗП":
+        report_data = context.user_data.get('salary_report_data', {})
+        total_to_pay = sum(d['to_pay'] for d in report_data.values())
+
+        if total_to_pay <= 0:
+            await update.message.reply_text("✅ Все начисления уже выплачены! Платить нечего.",
+                                            reply_markup=ReplyKeyboardMarkup([["🔙 Возврат в меню"]],
+                                                                             one_time_keyboard=True))
+            return "SALARY_MAIN_MENU"
+
+        await update.message.reply_text(
+            f"К выплате доступно: {total_to_pay:,.2f} руб.\nКому производим выплату?",
+            reply_markup=ReplyKeyboardMarkup([["👥 Выплатить ВСЕМ"], ["👤 Выбрать сотрудника"], ["🔙 Возврат в меню"]],
+                                             one_time_keyboard=True)
+        )
+        return "SALARY_PAY_SELECT"
+
+
+# === ШАГ 3: ЛОГИКА ИСТОРИИ ОПЕРАЦИЙ (ДЕТАЛИЗАЦИЯ) ===
+
+async def handle_detail_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    choice = update.message.text
+    report_data = context.user_data.get('salary_report_data', {})
+    mentors_map = context.user_data.get('mentors_map', {})
+
+    # 1. Навигация
+    if choice == "🔙 Возврат в меню":
+        period_str = context.user_data.get('salary_period_str', '')
+        await update.message.reply_text(
+            f"Меню отчета ({period_str}).",
+            reply_markup=ReplyKeyboardMarkup(
+                [["💸 Выплатить ЗП"], ["📜 Показать историю операций"], ["🔙 Возврат в меню"]], one_time_keyboard=True)
+        )
+        return "SALARY_MAIN_MENU"
+
+    # 2. Вывод всех сразу
+    if choice == "👥 По всем сразу":
+        full_text = "📋 <b>История операций по всем:</b>\n\n"
+        for m_id, data in report_data.items():
+            name = mentors_map.get(m_id, f"ID {m_id}")
+            full_text += f"👤 <b>{name}</b>\n"
+            if data['logs']:
+                for log in data['logs']:
+                    full_text += f"   - {log}\n"
+            else:
+                full_text += "   (Нет операций)\n"
+            full_text += "\n"
+
+        for part in split_long_message(full_text):
+            await update.message.reply_text(part, parse_mode="HTML")
+
+        await update.message.reply_text("Действия:", reply_markup=ReplyKeyboardMarkup([["🔙 Возврат в меню"]],
+                                                                                      one_time_keyboard=True))
+        return "SALARY_MAIN_MENU"
+
+    # 3. Выбор конкретного сотрудника (Генерация кнопок)
+    elif choice == "👤 Выбрать сотрудника":
+        buttons = []
+        button_map = {}  # Карта для поиска ID по тексту кнопки
+
+        for m_id, data in report_data.items():
+            name = mentors_map.get(m_id, f"ID {m_id}")
+            # Формируем кнопку с долгом
+            btn_text = f"{name} (Долг: {data['to_pay']}р)"
+            buttons.append([btn_text])
+            button_map[btn_text] = m_id  # Запоминаем ID
+
+        context.user_data['salary_detail_button_map'] = button_map  # Сохраняем карту
+
+        buttons.append(["🔙 Возврат в меню"])
+        await update.message.reply_text("Выберите сотрудника:",
+                                        reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True))
+        return "SALARY_DETAIL_SELECT"
+
+    # 4. Обработка нажатия на кнопку сотрудника
+    else:
+        # Ищем ID ментора по тексту кнопки через нашу карту
+        button_map = context.user_data.get('salary_detail_button_map', {})
+        selected_id = button_map.get(choice)
+
+        if not selected_id:
+            await update.message.reply_text("Не нашел такого сотрудника. Используйте кнопки.")
+            return "SALARY_DETAIL_SELECT"
+
+        data = report_data[selected_id]
+        name = mentors_map.get(selected_id)
+
+        text = f"👤 <b>{name}</b>\n"
+        text += f"🔹 Начислено: {data['total']} | 🔻 К выплате: {data['to_pay']}\n\n"
+        text += "📜 История:\n" + "\n".join(data['logs'])
+
+        context.user_data['selected_mentor_for_pay'] = selected_id
+
+        keyboard = [["🔙 Возврат в меню"]]
+        if data['to_pay'] > 0:
+            keyboard.insert(0, ["💸 Выплатить этому сотруднику"])
+
+        await update.message.reply_text(text, reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True),
+                                        parse_mode="HTML")
+        return "SALARY_PAY_SELECT"
+
+
+# === ШАГ 4: ЛОГИКА ВЫБОРА ОПЛАТЫ ===
+
+async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    choice = update.message.text
+    report_data = context.user_data.get('salary_report_data', {})
+    mentors_map = context.user_data.get('mentors_map', {})
+
+    if choice == "🔙 Возврат в меню":
+        period_str = context.user_data.get('salary_period_str', '')
+        await update.message.reply_text(f"Меню отчета ({period_str}).", reply_markup=ReplyKeyboardMarkup(
+            [["💸 Выплатить ЗП"], ["📜 Показать историю операций"], ["🔙 Возврат в меню"]], one_time_keyboard=True))
+        return "SALARY_MAIN_MENU"
+
+    target_ids = []
+    total_amount = 0.0
+    confirm_msg = ""
+
+    # СЦЕНАРИЙ: ПЛАТИМ ВСЕМ
+    if choice == "👥 Выплатить ВСЕМ":
+        for m_id, data in report_data.items():
+            if data['to_pay'] > 0:
+                target_ids.append(m_id)
+                total_amount += data['to_pay']
+        confirm_msg = f"❗ <b>ВНИМАНИЕ</b> ❗\nВыплата для <b>{len(target_ids)} сотрудников</b>.\nОбщая сумма: <b>{total_amount:,.2f} руб.</b>\n\nПодтверждаете?"
+
+    # СЦЕНАРИЙ: ОПЛАТА КОНКРЕТНОМУ (из детализации)
+    elif choice == "💸 Выплатить этому сотруднику":
+        m_id = context.user_data.get('selected_mentor_for_pay')
+        if m_id:
+            amount = report_data[m_id]['to_pay']
+            target_ids.append(m_id)
+            total_amount = amount
+            name = mentors_map.get(m_id)
+            confirm_msg = f"Выплата сотруднику: <b>{name}</b>.\nСумма: <b>{total_amount:,.2f} руб.</b>\n\nПодтверждаете?"
+        else:
+            await update.message.reply_text("Ошибка выбора.")
+            return "SALARY_MAIN_MENU"
+
+    # СЦЕНАРИЙ: ВЫБРАТЬ ИЗ СПИСКА
+    elif choice == "👤 Выбрать сотрудника":
+        buttons = []
+        button_map = {}
+        for m_id, data in report_data.items():
+            if data['to_pay'] > 0:
+                name = mentors_map.get(m_id)
+                btn_text = f"{name} ({data['to_pay']:,.0f}р)"
+                buttons.append([btn_text])
+                button_map[btn_text] = m_id
+
+        context.user_data['salary_payment_button_map'] = button_map  # Сохраняем карту для оплаты
+
+        buttons.append(["🔙 Возврат в меню"])
+        await update.message.reply_text("Кому выплачиваем?",
+                                        reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True))
+        return "SALARY_PAY_SELECT"
+
+    # СЦЕНАРИЙ: НАЖАЛИ НА КНОПКУ СОТРУДНИКА
+    else:
+        # Ищем ID по карте
+        button_map = context.user_data.get('salary_payment_button_map', {})
+        selected_id = button_map.get(choice)
+
+        if selected_id and report_data[selected_id]['to_pay'] > 0:
+            target_ids.append(selected_id)
+            total_amount = report_data[selected_id]['to_pay']
+            name = mentors_map.get(selected_id)
+            confirm_msg = f"Выплачиваем: <b>{name}</b>\nСумма: <b>{total_amount:,.2f} руб.</b>\n\nПодтверждаете?"
+        else:
+            await update.message.reply_text("Не нашел сотрудника или ему нечего платить.")
+            return "SALARY_PAY_SELECT"
+
+    # Сохраняем контекст оплаты
+    context.user_data['payment_context'] = {
+        'target_ids': target_ids,
+        'total_amount': total_amount
+    }
+
+    await update.message.reply_text(
+        confirm_msg,
+        reply_markup=ReplyKeyboardMarkup([["✅ ДА, ВЫПЛАТИТЬ"], ["❌ ОТМЕНА"]], one_time_keyboard=True),
+        parse_mode="HTML"
+    )
+    return "SALARY_CONFIRM_PAY"
+
+
+# confirm_payout остается прежним, только убедитесь, что кнопка возврата там "🔙 Возврат в меню"
+
+
+# === ШАГ 5: ФИНАЛЬНОЕ ПОДТВЕРЖДЕНИЕ И ЗАПИСЬ В БД ===
+
+async def confirm_payout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    choice = update.message.text
+    if choice != "✅ ДА, ВЫПЛАТИТЬ":
+        await update.message.reply_text("Выплата отменена.", reply_markup=ReplyKeyboardMarkup([["🔙 В главное меню"]],
+                                                                                              one_time_keyboard=True))
+        return "SALARY_MAIN_MENU"
+
+    # НАЧИНАЕМ ТРАНЗАКЦИЮ
+    pay_ctx = context.user_data.get('payment_context')
+    if not pay_ctx:
+        await update.message.reply_text("Ошибка контекста.")
+        return "SALARY_MAIN_MENU"
+
+    target_ids = pay_ctx['target_ids']
+    period_start = context.user_data['salary_period']['start']
+    period_end = context.user_data['salary_period']['end']
+
+    try:
+        processed_count = 0
+        total_recorded = 0.0
+
+        for m_id in target_ids:
+            # 1. Находим все неоплаченные записи Salary этого ментора за этот период
+            unpaid_salaries = session.query(Salary).filter(
+                Salary.mentor_id == m_id,
+                func.date(Salary.date_calculated) >= period_start,
+                func.date(Salary.date_calculated) <= period_end,
+                Salary.is_paid == False  # Только те, что еще не оплачены
+            ).all()
+
+            if not unpaid_salaries:
+                continue
+
+            # Сумма к выплате по факту
+            amount_to_pay = sum(float(s.calculated_amount) for s in unpaid_salaries)
+
+            if amount_to_pay <= 0: continue
+
+            # 2. Создаем запись в Payouts
+            new_payout = Payout(
+                mentor_id=m_id,
+                period_start=period_start,
+                period_end=period_end,
+                total_amount=amount_to_pay,
+                payout_status='completed',
+                date_processed=datetime.utcnow()
+            )
+            session.add(new_payout)
+            session.flush()  # Чтобы получить ID
+
+            # 3. Обновляем Salary (ставим галочку "Выплачено")
+            for sal in unpaid_salaries:
+                sal.is_paid = True
+                # Если вы добавите payout_id в Salary, то: sal.payout_id = new_payout.payout_id
+                session.add(sal)
+
+            total_recorded += amount_to_pay
+            processed_count += 1
+
+        session.commit()
+
+        await update.message.reply_text(
+            f"✅ <b>Успешно!</b>\n\nСоздано выплат: {processed_count}\nОбщая сумма: {total_recorded:,.2f} руб.\n\nДанные внесены в реестр выплат.",
+            parse_mode="HTML",
+            reply_markup=ReplyKeyboardMarkup([["🔙 В главное меню"]], one_time_keyboard=True)
+        )
+        return "SALARY_MAIN_MENU"
+
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Payout Error: {e}")
+        await update.message.reply_text(f"❌ Ошибка при сохранении выплаты: {e}")
+        return ConversationHandler.END
 
 async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -1972,8 +1352,7 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
     Генерирует подробный отчет по зарплате ментора.
     """
     # Импортируем date в начале функции, чтобы избежать конфликтов
-    from datetime import date
-    
+
     logger.info(f"Начинаю формирование отчета для ментора {mentor.full_name}")
     
     try:

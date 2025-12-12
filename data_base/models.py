@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean, ForeignKey, Numeric, Text, DateTime, TIMESTAMP, \
     func, UniqueConstraint
 from sqlalchemy.orm import relationship
@@ -162,6 +164,14 @@ class ManualProgress(Base):
     m4_5_homework = Column(Boolean)
     m4_mock_exam_passed_date = Column(Date)
     m5_start_date = Column(Date)
+    m1_mentor_id = Column(Integer, nullable=True)
+    m2_1_2_2_mentor_id = Column(Integer, nullable=True)
+    m2_3_3_1_mentor_id = Column(Integer, nullable=True)
+    m3_2_mentor_id = Column(Integer, nullable=True)
+    m3_3_mentor_id = Column(Integer, nullable=True)
+    m4_1_mentor_id = Column(Integer, nullable=True)
+    m4_2_4_3_mentor_id = Column(Integer, nullable=True)
+    m4_mock_exam_mentor_id = Column(Integer, nullable=True)
     # Поле m5_topic_passed_date отсутствует в реальной таблице
     # Используем m5_start_date как дату получения 5 модуля
     
@@ -287,6 +297,12 @@ class AutoProgress(Base):
     m5_topic_passed_date = Column(Date)
     m6_topic_passed_date = Column(Date)
     m7_topic_passed_date = Column(Date)
+    m2_exam_mentor_id = Column(Integer, nullable=True)
+    m3_exam_mentor_id = Column(Integer, nullable=True)
+    m4_topic_mentor_id = Column(Integer, nullable=True)
+    m5_topic_mentor_id = Column(Integer, nullable=True)
+    m6_topic_mentor_id = Column(Integer, nullable=True)
+    m7_topic_mentor_id = Column(Integer, nullable=True)
 
 
 # class Commission(Base):
@@ -357,8 +373,29 @@ class Salary(Base):
     is_paid = Column(Boolean, default=False, nullable=False)
     comment = Column(Text, nullable=True)
     mentor_id = Column(Integer, nullable=False)
+    date_calculated = Column(DateTime, default=datetime.now)  # Или Date
 
     def __repr__(self):
         # Используем self.salary_id для соответствия имени колонки
         return (f"<Salary(id={self.salary_id}, payment_id={self.payment_id}, "
                 f"amount={self.calculated_amount}, paid={self.is_paid}, comment='{self.comment[:20]}...')>")
+
+class Payout(Base):
+    """
+    Реестр фактических выплат кураторам.
+    """
+    __tablename__ = 'payouts'
+
+    payout_id = Column(Integer, primary_key=True)
+    mentor_id = Column(Integer, nullable=False)
+
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+
+    total_amount = Column(DECIMAL(10, 2), nullable=False)
+    payout_status = Column(String(50), nullable=False, default='pending_transfer')
+    payout_method = Column(String(50))
+
+    date_processed = Column(DateTime)
+    transaction_ref = Column(String(255))
+    date_created = Column(DateTime, default=datetime.utcnow)
