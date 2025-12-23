@@ -1,114 +1,143 @@
-# admin_commission_manager.py
+import logging
 from sqlalchemy.orm import Session
-from data_base.models import Student, CuratorCommission
-import config
+from data_base.models import Student, CuratorCommission, ManualProgress, AutoProgress
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 DIRECTOR_MANUAL_ID = 1
 DIRECTOR_AUTO_ID = 3
 
 
 class AdminCommissionManager:
-    """
-    Класс рассчитывает и фиксирует 'Потолок' (Общий Долг) перед менторами и директорами.
-    Запускается 1 раз при трудоустройстве.
-    """
+    # 1. СТАВКИ ДЛЯ SOLO (Обычный ученик)
+    SOLO_CURATOR_RATE = 0.20  # 20%
+    SOLO_DIRECTOR_PASSIVE = 0.10  # 10% (Фикса)
+    SOLO_DIRECTOR_ACTIVE = 0.30  # 30% (За темы)
+
+    # 2. СТАВКИ ДЛЯ FULLSTACK
+    FULL_CURATOR_RATE = 0.15  # 15%
+    FULL_DIRECTOR_PASSIVE = 0.075  # 7.5% (Фикса)
+    FULL_DIRECTOR_ACTIVE = 0.30  # 30% (За темы)
+
+    MANUAL_FIELDS = [
+        'm1_mentor_id', 'm2_1_2_2_mentor_id', 'm2_3_3_1_mentor_id',
+        'm3_2_mentor_id', 'm3_3_mentor_id', 'm4_1_mentor_id',
+        'm4_2_4_3_mentor_id', 'm4_mock_exam_mentor_id'
+    ]
+
+    AUTO_FIELDS = [
+        'm2_exam_mentor_id', 'm3_exam_mentor_id', 'm4_topic_mentor_id',
+        'm5_topic_mentor_id', 'm6_topic_mentor_id', 'm7_topic_mentor_id'
+    ]
 
     def calculate_and_save_debts(self, session: Session, student_id: int):
+        logger.info(f"🏁 --- РАСЧЕТ КОМИССИИ: Студент ID {student_id} ---")
+
         student = session.query(Student).filter_by(id=student_id).first()
         if not student:
-            return "❌ Ошибка: Студент не найден."
+            return "❌ Студент не найден."
 
-        # 1. ОПРЕДЕЛЯЕМ БАЗУ ДЛЯ РАСЧЕТА (ЗП или Стоимость Курса)
+        # Проверка наличия зарплаты
+        if not student.salary or float(student.salary) <= 0:
+            return "❌ Ошибка: Не указана ЗП (salary)."
+
+        base_amount = float(student.salary)
+
+        # ОПРЕДЕЛЯЕМ РЕЖИМ (Fullstack или Solo)
+        # Если у студента заполнены оба ментора в профиле — это Fullstack
         is_fullstack = (student.mentor_id is not None) and (student.auto_mentor_id is not None)
 
-        # Логика выбора суммы:
-        if not is_fullstack and student.total_cost and float(student.total_cost) > 0:
-            # Если обычный студент и есть цена курса -> считаем от Цены Курса
-            base_amount = float(student.total_cost)
-            calculation_source = f"Стоимости курса ({base_amount})"
-        elif student.salary and float(student.salary) > 0:
-            # Иначе (Фуллстек или нет цены) -> считаем от Зарплаты
-            base_amount = float(student.salary)
-            calculation_source = f"Зарплаты ({base_amount})"
+        if is_fullstack:
+            rates = {
+                'curator': self.FULL_CURATOR_RATE,
+                'passive': self.FULL_DIRECTOR_PASSIVE,  # 7.5%
+                'active': self.FULL_DIRECTOR_ACTIVE
+            }
+            mode = "FULLSTACK"
         else:
-            return "❌ Ошибка: Не указана ни ЗП, ни Стоимость курса (total_cost)."
+            rates = {
+                'curator': self.SOLO_CURATOR_RATE,
+                'passive': self.SOLO_DIRECTOR_PASSIVE,  # 10%
+                'active': self.SOLO_DIRECTOR_ACTIVE
+            }
+            mode = "SOLO"
 
+        logger.info(f"💰 База: {base_amount} | Режим: {mode}")
         debts_map = {}
 
-        # ==========================================
-        # 2. ЛОГИКА ФУЛЛСТЕК (Остается на базе ЗП, т.к. is_fullstack=True попадет в ветку salary)
-        # ==========================================
-        if is_fullstack:
-            # ... (логика фуллстека без изменений, она обычно от ЗП) ...
+        # РАСЧЕТ MANUAL
+        m_progress = session.query(ManualProgress).filter_by(student_id=student_id).first()
+        if m_progress:
+            self._process_direction(debts_map, m_progress, self.MANUAL_FIELDS, DIRECTOR_MANUAL_ID, base_amount, rates,
+                                    "Manual")
 
-            # А. Ручная часть
-            if student.mentor_id:
-                if student.mentor_id == DIRECTOR_MANUAL_ID:
-                    self._add_debt(debts_map, DIRECTOR_MANUAL_ID, base_amount * 0.30)
-                else:
-                    self._add_debt(debts_map, student.mentor_id, base_amount * 0.15)
-                    self._add_debt(debts_map, DIRECTOR_MANUAL_ID, base_amount * 0.06)  # 6% бонус
+        # РАСЧЕТ AUTO
+        a_progress = session.query(AutoProgress).filter_by(student_id=student_id).first()
+        if a_progress:
+            self._process_direction(debts_map, a_progress, self.AUTO_FIELDS, DIRECTOR_AUTO_ID, base_amount, rates,
+                                    "Auto")
 
-            # Б. Авто часть
-            if student.auto_mentor_id:
-                if student.auto_mentor_id == DIRECTOR_AUTO_ID:
-                    self._add_debt(debts_map, DIRECTOR_AUTO_ID, base_amount * 0.30)
-                else:
-                    self._add_debt(debts_map, student.auto_mentor_id, base_amount * 0.15)
-                    self._add_debt(debts_map, DIRECTOR_AUTO_ID, base_amount * 0.06)  # 6% бонус
-
-        # ==========================================
-        # 3. ЛОГИКА ОБЫЧНОГО ОБУЧЕНИЯ (Теперь может быть от total_cost)
-        # ==========================================
-        else:
-            active_mentor_id = student.mentor_id or student.auto_mentor_id
-
-            # Кто директор?
-            if student.mentor_id:
-                director_id = DIRECTOR_MANUAL_ID
-            else:
-                director_id = DIRECTOR_AUTO_ID
-
-            if active_mentor_id:
-                if active_mentor_id == director_id:
-                    # Директор ведет сам -> 30%
-                    self._add_debt(debts_map, director_id, base_amount * 0.30)
-                else:
-                    # Обычный ментор -> 20%
-                    self._add_debt(debts_map, active_mentor_id, base_amount * 0.20)
-                    # Бонус Директору -> 10%
-                    self._add_debt(debts_map, director_id, base_amount * 0.10)
-
-        # ==========================================
-        # 4. ЗАПИСЬ В БД
-        # ==========================================
-        count = 0
+        # СОХРАНЕНИЕ
         for m_id, amount in debts_map.items():
             if amount > 0:
                 self._create_or_update_record(session, student_id, m_id, amount)
-                count += 1
+                logger.info(f"   ➕ Итог Ментор ID {m_id}: {amount:.2f}")
 
-        return f"✅ Расчет выполнен от {calculation_source}. Создано записей: {count}"
+        return "✅ Расчет завершен."
+
+    def _process_direction(self, debts_map, progress_obj, fields, director_id, base_amount, rates, label):
+        total_steps = len(fields)
+
+        # 1. Анализируем, кто принимал темы
+        accepted_by_mentor = {}  # {mentor_id: count}
+        any_work_done = False
+
+        for f in fields:
+            mid = getattr(progress_obj, f)
+            if mid:
+                accepted_by_mentor[mid] = accepted_by_mentor.get(mid, 0) + 1
+                any_work_done = True
+
+        if not any_work_done:
+            return
+
+        director_is_active = director_id in accepted_by_mentor
+
+        # 2. НАЧИСЛЕНИЕ ДИРЕКТОРУ
+        if not director_is_active:
+            # ПАССИВНЫЙ РЕЖИМ: Фикса 10% или 7.5% от всей ЗП
+            passive_income = base_amount * rates['passive']
+            self._add_debt(debts_map, director_id, passive_income)
+            logger.info(f"   [{label}] Директор {director_id} ПАССИВЕН: +{passive_income:.2f} (Фикса)")
+        else:
+            # АКТИВНЫЙ РЕЖИМ: Только за свои темы по ставке 30%
+            count = accepted_by_mentor[director_id]
+            active_income = base_amount * rates['active'] * (count / total_steps)
+            self._add_debt(debts_map, director_id, active_income)
+            logger.info(f"   [{label}] Директор {director_id} АКТИВЕН: +{active_income:.2f} (за {count} тем)")
+
+        # 3. НАЧИСЛЕНИЕ КУРАТОРАМ (за работу)
+        for m_id, count in accepted_by_mentor.items():
+            if m_id == director_id:
+                continue  # Пропускаем, так как уже посчитали его выше как активного директора
+
+            # Формула: ЗП * Ставка * (Принято / Всего)
+            work_income = base_amount * rates['curator'] * (count / total_steps)
+            self._add_debt(debts_map, m_id, work_income)
+            logger.info(f"   [{label}] Куратор {m_id}: +{work_income:.2f} (за {count} тем)")
 
     def _add_debt(self, debts_map, mentor_id, amount):
-        if mentor_id in debts_map:
-            debts_map[mentor_id] += amount
-        else:
-            debts_map[mentor_id] = amount
+        debts_map[mentor_id] = debts_map.get(mentor_id, 0) + amount
 
     def _create_or_update_record(self, session, student_id, mentor_id, total):
         rec = session.query(CuratorCommission).filter_by(
             student_id=student_id, curator_id=mentor_id
         ).first()
-
         if rec:
             rec.total_amount = total
         else:
-            new_rec = CuratorCommission(
-                student_id=student_id,
-                curator_id=mentor_id,
-                total_amount=total,
-                paid_amount=0.0,
-                payment_id=None
-            )
-            session.add(new_rec)
+            session.add(CuratorCommission(
+                student_id=student_id, curator_id=mentor_id,
+                total_amount=total, paid_amount=0.0
+            ))

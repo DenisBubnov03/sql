@@ -23,6 +23,62 @@ logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
 
 logger = logging.getLogger(__name__)
 
+import re
+
+
+def create_mentor_report(name, logs):
+    """Универсальная функция: принимает имя и логи, возвращает готовый текст отчета."""
+    sums = {"accepted": 0.0, "bonus": 0.0, "prize": 0.0, "commission": 0.0}
+
+    # 1. Считаем суммы из логов
+    for log in logs:
+        # Ищем число после палки | (например: "| 5,400.00р" или "| 3333.33")
+        match = re.search(r'\|\s*([\d\s,.]+)', log)
+        amount = 0.0
+        if match:
+            # Чистим от пробелов и запятых (превращаем "5,400.00" в 5400.0)
+            clean_str = match.group(1).replace(' ', '').replace(',', '')
+            try:
+                amount = float(clean_str)
+            except ValueError:
+                amount = 0.0
+
+        # Раскидываем по категориям
+        txt = log.lower()
+        if "принял" in txt:
+            sums["accepted"] += amount
+        elif "бонус" in txt:
+            sums["bonus"] += amount
+        elif "премия" in txt:
+            sums["prize"] += amount
+        elif "комиссия" in txt:
+            sums["commission"] += amount
+
+    # 2. Формируем шапку
+    text = f"👤 <b>{name}</b>\n\n"
+
+    def add_line(title, val):
+        if val > 0:
+            return f"   {title} - {val:,.2f}р (с налогом {val * 1.06:,.2f}р)\n".replace(',', ' ')
+        return ""
+
+    text += add_line("За принятые темы", sums["accepted"])
+    text += add_line("Бонус", sums["bonus"])
+    text += add_line("Премия", sums["prize"])
+    text += add_line("За комиссию", sums["commission"])
+
+    if sums["accepted"] + sums["bonus"] + sums["prize"] + sums["commission"] > 0:
+        text += "\n"
+
+    # 3. Добавляем сами логи
+    if logs:
+        for log in logs:
+            text += f"   - {log}\n"
+    else:
+        text += "   (Нет операций)\n"
+
+    return text
+
 
 def split_long_message(text, max_length=4000):
     """
@@ -875,7 +931,7 @@ async def handle_detail_selection(update: Update, context: ContextTypes.DEFAULT_
     report_data = context.user_data.get('salary_report_data', {})
     mentors_map = context.user_data.get('mentors_map', {})
 
-    # 1. Навигация
+    # --- 1. КНОПКА НАЗАД ---
     if choice == "🔙 Возврат в меню":
         period_str = context.user_data.get('salary_period_str', '')
         await update.message.reply_text(
@@ -885,72 +941,65 @@ async def handle_detail_selection(update: Update, context: ContextTypes.DEFAULT_
         )
         return "SALARY_MAIN_MENU"
 
-    # 2. Вывод всех сразу
-    if choice == "👥 По всем сразу":
-        full_text = "📋 <b>История операций по всем:</b>\n\n"
+    # --- 2. ПО ВСЕМ СРАЗУ ---
+    elif choice == "👥 По всем сразу":
+        await update.message.reply_text("📋 <b>История операций по всем:</b>", parse_mode="HTML")
+
         for m_id, data in report_data.items():
             name = mentors_map.get(m_id, f"ID {m_id}")
-            full_text += f"👤 <b>{name}</b>\n"
-            if data['logs']:
-                for log in data['logs']:
-                    full_text += f"   - {log}\n"
-            else:
-                full_text += "   (Нет операций)\n"
-            full_text += "\n"
+            # Вызываем нашу функцию
+            text = create_mentor_report(name, data['logs'])
 
-        for part in split_long_message(full_text):
-            await update.message.reply_text(part, parse_mode="HTML")
+            for part in split_long_message(text):
+                await update.message.reply_text(part, parse_mode="HTML")
 
         await update.message.reply_text("Действия:", reply_markup=ReplyKeyboardMarkup([["🔙 Возврат в меню"]],
                                                                                       one_time_keyboard=True))
         return "SALARY_MAIN_MENU"
 
-    # 3. Выбор конкретного сотрудника (Генерация кнопок)
+    # --- 3. ПОКАЗАТЬ СПИСОК (Кнопки) ---
     elif choice == "👤 Выбрать сотрудника":
         buttons = []
-        button_map = {}  # Карта для поиска ID по тексту кнопки
-
+        button_map = {}
         for m_id, data in report_data.items():
             name = mentors_map.get(m_id, f"ID {m_id}")
-            # Формируем кнопку с долгом
             btn_text = f"{name} (Долг: {data['to_pay']}р)"
             buttons.append([btn_text])
-            button_map[btn_text] = m_id  # Запоминаем ID
+            button_map[btn_text] = m_id  # Запоминаем ID по тексту кнопки
 
-        context.user_data['salary_detail_button_map'] = button_map  # Сохраняем карту
-
+        context.user_data['salary_detail_button_map'] = button_map
         buttons.append(["🔙 Возврат в меню"])
+
         await update.message.reply_text("Выберите сотрудника:",
                                         reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True))
         return "SALARY_DETAIL_SELECT"
 
-    # 4. Обработка нажатия на кнопку сотрудника
+    # --- 4. КОНКРЕТНЫЙ СОТРУДНИК (Нажатие на имя) ---
     else:
-        # Ищем ID ментора по тексту кнопки через нашу карту
+        # Проверяем, есть ли такой текст кнопки в нашей карте
         button_map = context.user_data.get('salary_detail_button_map', {})
-        selected_id = button_map.get(choice)
+        m_id = button_map.get(choice)
 
-        if not selected_id:
-            await update.message.reply_text("Не нашел такого сотрудника. Используйте кнопки.")
+        if m_id:
+            # Если нашли ID, выводим отчет ТОЛЬКО по нему
+            data = report_data.get(m_id)
+            name = mentors_map.get(m_id, f"ID {m_id}")
+
+            # Вызываем ту же функцию
+            text = create_mentor_report(name, data['logs'])
+
+            for part in split_long_message(text):
+                await update.message.reply_text(part, parse_mode="HTML")
+
+            # Оставляем кнопки выбора, чтобы можно было щелкнуть другого
+            await update.message.reply_text("Выберите другого или вернитесь:",
+                                            reply_markup=ReplyKeyboardMarkup([["🔙 Возврат в меню"]],
+                                                                             one_time_keyboard=True))
             return "SALARY_DETAIL_SELECT"
 
-        data = report_data[selected_id]
-        name = mentors_map.get(selected_id)
-
-        text = f"👤 <b>{name}</b>\n"
-        text += f"🔹 Начислено: {data['total']} | 🔻 К выплате: {data['to_pay']}\n\n"
-        text += "📜 История:\n" + "\n".join(data['logs'])
-
-        context.user_data['selected_mentor_for_pay'] = selected_id
-
-        keyboard = [["🔙 Возврат в меню"]]
-        if data['to_pay'] > 0:
-            keyboard.insert(0, ["💸 Выплатить этому сотруднику"])
-
-        await update.message.reply_text(text, reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True),
-                                        parse_mode="HTML")
-        return "SALARY_PAY_SELECT"
-
+        else:
+            await update.message.reply_text("Неизвестная команда или сотрудник. Выберите из меню.")
+            return "SALARY_DETAIL_SELECT"
 
 # === ШАГ 4: ЛОГИКА ВЫБОРА ОПЛАТЫ ===
 
@@ -1044,16 +1093,18 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
 
 async def confirm_payout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     choice = update.message.text
-    if choice != "✅ ДА, ВЫПЛАТИТЬ":
-        await update.message.reply_text("Выплата отменена.", reply_markup=ReplyKeyboardMarkup([["🔙 В главное меню"]],
-                                                                                              one_time_keyboard=True))
-        return "SALARY_MAIN_MENU"
 
-    # НАЧИНАЕМ ТРАНЗАКЦИЮ
+    # Если нажата не кнопка подтверждения — сразу перекидываем в меню
+    if choice != "✅ ДА, ВЫПЛАТИТЬ":
+        await update.message.reply_text("❌ Выплата отменена.")
+        # Вызываем функцию главного меню напрямую
+        return await exit_to_main_menu(update, context)
+
+    # Достаем контекст выплаты
     pay_ctx = context.user_data.get('payment_context')
     if not pay_ctx:
-        await update.message.reply_text("Ошибка контекста.")
-        return "SALARY_MAIN_MENU"
+        await update.message.reply_text("⚠️ Ошибка: контекст выплаты потерян.")
+        return await exit_to_main_menu(update, context)
 
     target_ids = pay_ctx['target_ids']
     period_start = context.user_data['salary_period']['start']
@@ -1064,21 +1115,20 @@ async def confirm_payout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_recorded = 0.0
 
         for m_id in target_ids:
-            # 1. Находим все неоплаченные записи Salary этого ментора за этот период
+            # 1. Находим все неоплаченные записи Salary
             unpaid_salaries = session.query(Salary).filter(
                 Salary.mentor_id == m_id,
                 func.date(Salary.date_calculated) >= period_start,
                 func.date(Salary.date_calculated) <= period_end,
-                Salary.is_paid == False  # Только те, что еще не оплачены
+                Salary.is_paid == False
             ).all()
 
             if not unpaid_salaries:
                 continue
 
-            # Сумма к выплате по факту
             amount_to_pay = sum(float(s.calculated_amount) for s in unpaid_salaries)
-
-            if amount_to_pay <= 0: continue
+            if amount_to_pay <= 0:
+                continue
 
             # 2. Создаем запись в Payouts
             new_payout = Payout(
@@ -1090,12 +1140,12 @@ async def confirm_payout(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 date_processed=datetime.utcnow()
             )
             session.add(new_payout)
-            session.flush()  # Чтобы получить ID
+            session.flush()
 
-            # 3. Обновляем Salary (ставим галочку "Выплачено")
+            # 3. Обновляем статус Salary
             for sal in unpaid_salaries:
                 sal.is_paid = True
-                # Если вы добавите payout_id в Salary, то: sal.payout_id = new_payout.payout_id
+                # sal.payout_id = new_payout.payout_id # Если есть связь в БД
                 session.add(sal)
 
             total_recorded += amount_to_pay
@@ -1103,18 +1153,23 @@ async def confirm_payout(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         session.commit()
 
+        # Выводим отчет об успехе
         await update.message.reply_text(
-            f"✅ <b>Успешно!</b>\n\nСоздано выплат: {processed_count}\nОбщая сумма: {total_recorded:,.2f} руб.\n\nДанные внесены в реестр выплат.",
-            parse_mode="HTML",
-            reply_markup=ReplyKeyboardMarkup([["🔙 В главное меню"]], one_time_keyboard=True)
+            f"✅ <b>Успешно!</b>\n\n"
+            f"Создано выплат: <code>{processed_count}</code>\n"
+            f"Общая сумма: <code>{total_recorded:,.2f}</code> руб.\n\n"
+            f"Данные внесены в реестр.",
+            parse_mode="HTML"
         )
-        return "SALARY_MAIN_MENU"
 
     except Exception as e:
         session.rollback()
-        logger.error(f"Payout Error: {e}")
-        await update.message.reply_text(f"❌ Ошибка при сохранении выплаты: {e}")
-        return ConversationHandler.END
+        await update.message.reply_text(f"❌ Произошла ошибка при транзакции: {e}")
+
+    # АВТОМАТИЧЕСКИЙ ПЕРЕХОД
+    # Вместо return "STRING", мы выполняем функцию меню и возвращаем её результат
+    return await exit_to_main_menu(update, context)
+
 
 async def select_mentor_by_direction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
