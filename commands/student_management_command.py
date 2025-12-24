@@ -13,7 +13,7 @@ from commands.start_commands import exit_to_main_menu
 from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, \
     SELECT_MENTOR, IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE
 from data_base.db import session
-from data_base.models import Payment, Student
+from data_base.models import Payment, Student, CareerConsultant, SalaryKK
 from data_base.models import Payout, Salary, Mentor
 from data_base.models import StudentMeta
 from data_base.operations import get_student_by_fio_or_telegram
@@ -606,177 +606,6 @@ async def request_salary_period(update: Update, context: ContextTypes.DEFAULT_TY
     )
     return "WAIT_FOR_SALARY_DATES"
 
-
-# async def calculate_salary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     """
-#     Рассчитывает зарплату, агрегируя готовые данные из таблицы Salary,
-#     и добавляет периодические начисления (KPI, КК).
-#     """
-#     try:
-#         from datetime import datetime, date
-#         from sqlalchemy import func
-#         # Импортируем модель Salary, так как теперь это главный источник
-#         from data_base.models import Salary, Mentor, CareerConsultant, Payment
-#
-#         # 1. Парсинг дат
-#         date_range = update.message.text.strip()
-#         if " - " not in date_range:
-#             await update.message.reply_text("❌ Неверный формат! Используйте: ДД.ММ.ГГГГ - ДД.ММ.ГГГГ")
-#             return "WAIT_FOR_SALARY_DATES"
-#
-#         start_date_str, end_date_str = map(str.strip, date_range.split("-"))
-#         try:
-#             start_date = datetime.strptime(start_date_str, "%d.%m.%Y").date()
-#             end_date = datetime.strptime(end_date_str, "%d.%m.%Y").date()
-#         except ValueError:
-#             await update.message.reply_text("❌ Ошибка в дате.")
-#             return "WAIT_FOR_SALARY_DATES"
-#
-#         await update.message.reply_text(f"📊 Сбор данных из таблицы Salary за {start_date_str} - {end_date_str}...")
-#
-#         # Структуры для отчета
-#         mentor_salaries = {}  # {mentor_id: float}
-#         detailed_logs = {}  # {mentor_id: [str]}
-#         all_mentors = {m.id: m for m in session.query(Mentor).all()}
-#
-#         # =================================================================================
-#         # 🟢 1. ГЛАВНЫЙ СБОР: ТРАНЗАКЦИИ ИЗ SALARY
-#         # =================================================================================
-#         # Используем поле date_calculated, которое вы показали на скриншоте
-#         salary_records = session.query(Salary).filter(
-#             func.date(Salary.date_calculated) >= start_date,
-#             func.date(Salary.date_calculated) <= end_date
-#         ).all()
-#
-#         logger.info(f"Найдено {len(salary_records)} записей в таблице Salary.")
-#
-#         for record in salary_records:
-#             m_id = record.mentor_id
-#             if not m_id: continue
-#
-#             amount = float(record.calculated_amount)
-#
-#             # Инициализация
-#             if m_id not in mentor_salaries:
-#                 mentor_salaries[m_id] = 0.0
-#                 detailed_logs[m_id] = []
-#
-#             mentor_salaries[m_id] += amount
-#
-#             # Формируем красивую строку лога
-#             # Берем дату из date_calculated
-#             date_log = record.date_calculated.strftime("%d.%m") if record.date_calculated else "??"
-#             status_icon = "✅" if record.is_paid else "⏳"
-#
-#             log_line = f"{status_icon} {date_log}: {record.comment} | +{amount:,.2f} руб."
-#             detailed_logs[m_id].append(log_line)
-#
-#         # =================================================================================
-#         # 🟠 2. ДОПОЛНИТЕЛЬНЫЕ РАСЧЕТЫ (KPI, Страховка, Премии)
-#         # =================================================================================
-#         # Эти данные часто считаются "поверх" базы, в конце месяца.
-#
-#         from config import Config
-#
-#         # --- А. Учет ПРЕМИЙ (Ручные платежи с комментом "Премия") ---
-#         # Если вы не проводите премии через SalaryManager, оставляем этот блок
-#         premium_payments = session.query(Payment).filter(
-#             Payment.payment_date >= start_date,
-#             Payment.payment_date <= end_date,
-#             Payment.status == "подтвержден",
-#             Payment.mentor_id.isnot(None),
-#             func.lower(Payment.comment).like("%премия%")
-#         ).all()
-#
-#         for p in premium_payments:
-#             amt = float(p.amount)
-#             if p.mentor_id not in mentor_salaries:
-#                 mentor_salaries[p.mentor_id] = 0.0
-#                 detailed_logs[p.mentor_id] = []
-#
-#             mentor_salaries[p.mentor_id] += amt
-#             detailed_logs[p.mentor_id].append(f"🎁 Премия (из Payments): {p.comment} | +{amt} руб.")
-#
-#         # --- Б. Страховка Кураторов (Ваш старый код) ---
-#         if Config.CURATOR_INSURANCE_ENABLED:
-#             # ... (Вставьте сюда ваш код расчета страховки из предыдущей версии) ...
-#             # Главное - добавляйте результат в mentor_salaries[id] += bonus
-#             pass
-#
-#             # --- В. KPI (Ваш старый код) ---
-#         if Config.KPI_ENABLED:
-#             # ... (Вставьте сюда ваш код расчета KPI) ...
-#             pass
-#
-#         # =================================================================================
-#         # 🟣 3. КАРЬЕРНЫЕ КОНСУЛЬТАНТЫ (Отдельная логика)
-#         # =================================================================================
-#         # Если КК еще не переведены на SalaryManager, оставляем старый расчет
-#         career_consultant_salaries = {}
-#         all_consultants = {c.id: c for c in session.query(CareerConsultant).filter_by(is_active=True).all()}
-#
-#         # ... (Вставьте сюда ваш цикл расчета КК, он у вас был сложный с датой 18.11) ...
-#         # Или, если вы начнете писать КК тоже в таблицу Salary, этот блок можно будет убрать.
-#
-#         # =================================================================================
-#         # 🏁 4. ФИНАЛЬНЫЙ ОТЧЕТ
-#         # =================================================================================
-#         total_mentors = sum(mentor_salaries.values())
-#         total_cc = sum(career_consultant_salaries.values())
-#         grand_total = total_mentors + total_cc
-#
-#         report = f"📊 ОТЧЕТ ПО ЗАРПЛАТЕ ({start_date_str} - {end_date_str})\n"
-#         report += f"Использована таблица транзакций (Salary)\n\n"
-#
-#         report += "👨‍🏫 Менторы:\n"
-#         for m_id, amount in mentor_salaries.items():
-#             if amount == 0: continue
-#             mentor = all_mentors.get(m_id)
-#             name = mentor.full_name if mentor else f"ID {m_id}"
-#
-#             # Считаем налог для отображения
-#             with_tax = amount * 1.06
-#             report += f"• {name}: {amount:,.2f} руб. (с налогом: {with_tax:,.2f})\n"
-#
-#         if total_cc > 0:
-#             report += f"\n💼 Карьерные консультанты: {total_cc:,.2f} руб.\n"
-#
-#         report += f"\n💰 ИТОГО К ВЫПЛАТЕ: {grand_total:,.2f} руб."
-#
-#         # Сохраняем контекст для детального отчета (кнопка "Показать подробности")
-#         context.user_data['detailed_salary_data'] = {
-#             'mentor_salaries': mentor_salaries,
-#             'career_consultant_salaries': career_consultant_salaries,
-#             'detailed_logs': detailed_logs,
-#             'start_date': start_date_str,
-#             'end_date': end_date_str,
-#             'all_mentors': all_mentors,
-#             'all_consultants': all_consultants
-#         }
-#
-#         await update.message.reply_text(
-#             report,
-#             reply_markup=ReplyKeyboardMarkup(
-#                 [["Да, показать подробности"], ["Нет, достаточно"]],
-#                 one_time_keyboard=True
-#             )
-#         )
-#         return "WAIT_FOR_DETAILED_SALARY"
-#
-#     except Exception as e:
-#         logger.error(f"Error calculating salary: {e}", exc_info=True)
-#         await update.message.reply_text(f"❌ Ошибка расчета: {e}")
-#         return "WAIT_FOR_SALARY_DATES"
-
-# student_management_command.py
-
-# ... (импорты остаются) ...
-
-# === ШАГ 1: РАСЧЕТ И ОТОБРАЖЕНИЕ ОБЩЕГО МЕНЮ ===
-
-# === ОБРАБОТЧИКИ МЕНЮ (С исправленными кнопками и поиском имен) ===
-# === ШАГ 1: РАСЧЕТ И ОТОБРАЖЕНИЕ ОТЧЕТА ===
-
 async def calculate_salary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Рассчитывает зарплату и сразу выводит список сотрудников с суммами.
@@ -800,7 +629,7 @@ async def calculate_salary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Фильтр по времени (весь день до 23:59:59)
         start_dt = datetime.combine(start_date, time.min)
         end_dt = datetime.combine(end_date, time.max)
-
+        kk_report_data = {}  # {kk_id: amount_to_pay}
         context.user_data['salary_period'] = {'start': start_date, 'end': end_date}
         context.user_data['salary_period_str'] = f"{start_date_str} - {end_date_str}"
 
@@ -868,7 +697,49 @@ async def calculate_salary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not found_any:
             text += "Нет начислений за этот период.\n"
 
-        text += f"\n💰 <b>ИТОГО К ВЫПЛАТЕ: {total_to_pay_global:,.2f} руб.</b>\n\n"
+        # --- БЛОК КАРЬЕРНЫХ КОНСУЛЬТАНТОВ ---
+        text += "\n💼 <b>Карьерные Консультанты:</b>\n"
+        kk_total_to_pay = 0.0
+
+        # 1. Используем start_dt и end_dt для TIMESTAMP
+        active_kks = session.query(CareerConsultant).join(SalaryKK).filter(
+            SalaryKK.date_calculated >= start_dt,  # Было start_date
+            SalaryKK.date_calculated <= end_dt,  # Было end_date
+            SalaryKK.is_paid == False  # Добавляем, если ищем только долги
+        ).distinct().all()
+
+        if not active_kks:
+            text += "<i>Начислений по КК не найдено</i>\n"
+        else:
+            for kk in active_kks:
+                # 2. Здесь тоже используем dt с временем
+                kk_items = session.query(SalaryKK).filter(
+                    SalaryKK.kk_id == kk.id,
+                    SalaryKK.date_calculated >= start_dt,
+                    SalaryKK.date_calculated <= end_dt,
+                    SalaryKK.is_paid == False
+                ).all()
+
+                kk_sum = sum(float(item.calculated_amount) for item in kk_items)
+                kk_report_data[kk.id] = kk_sum
+
+                kk_total_to_pay += kk_sum
+                text += f"👤 <b>{kk.full_name}</b>\n"
+
+                for item in kk_items:
+                    student = session.query(Student).filter(Student.id == item.student_id).first()
+                    student_name = student.fio if student else f"ID:{item.student_id}"
+
+                    text += (f"  ▫️ {student_name}: <b>{float(item.calculated_amount):,.2f} руб. (с налогом: {float(item.calculated_amount)*1.06:,.2f})</b> "
+                             f"(Ост. лимит: {float(item.remaining_limit):,.2f})\n")
+
+                # text += f"  💰 <b>Итого по консультанту: {kk_sum:,.2f} руб.</b>\n\n"
+
+        # 5. Итоговая сумма по всему отчету
+        total_to_pay_global += kk_total_to_pay  # Добавляем КК в общий итог
+
+        text += "---"
+        text += f"\n💵 <b>ОБЩИЙ ИТОГ К ВЫПЛАТЕ: {total_to_pay_global:.2f} руб.</b>"
         text += "Выберите действие:"
 
         keyboard = [
@@ -882,6 +753,7 @@ async def calculate_salary(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True),
             parse_mode="HTML"
         )
+        context.user_data['kk_report_data'] = kk_report_data
         return "SALARY_MAIN_MENU"
 
     except Exception as e:
@@ -961,46 +833,107 @@ async def handle_detail_selection(update: Update, context: ContextTypes.DEFAULT_
     elif choice == "👤 Выбрать сотрудника":
         buttons = []
         button_map = {}
+
+        # 1. Сначала добавляем Менторов из report_data
         for m_id, data in report_data.items():
             name = mentors_map.get(m_id, f"ID {m_id}")
-            btn_text = f"{name} (Долг: {data['to_pay']}р)"
+            btn_text = f"👨‍🏫 {name}"
             buttons.append([btn_text])
-            button_map[btn_text] = m_id  # Запоминаем ID по тексту кнопки
+            button_map[btn_text] = ("mentor", m_id)  # Запоминаем, что это ментор
+
+        # 2. 🔥 ДОБАВЛЯЕМ КК ИЗ kk_report_data
+        kk_report = context.user_data.get('kk_report_data', {})
+        for kk_id in kk_report.keys():
+            kk_obj = session.query(CareerConsultant).filter_by(id=kk_id).first()
+            if kk_obj:
+                btn_text = f"💼 {kk_obj.full_name}"
+                buttons.append([btn_text])
+                button_map[btn_text] = ("kk", kk_id)  # Запоминаем, что это КК
 
         context.user_data['salary_detail_button_map'] = button_map
         buttons.append(["🔙 Возврат в меню"])
 
-        await update.message.reply_text("Выберите сотрудника:",
-                                        reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True))
+        await update.message.reply_text(
+            "Выберите сотрудника для просмотра истории:",
+            reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True)
+        )
         return "SALARY_DETAIL_SELECT"
 
-    # --- 4. КОНКРЕТНЫЙ СОТРУДНИК (Нажатие на имя) ---
+        # --- 4. КОНКРЕТНЫЙ СОТРУДНИК (Нажатие на имя) ---
     else:
-        # Проверяем, есть ли такой текст кнопки в нашей карте
         button_map = context.user_data.get('salary_detail_button_map', {})
-        m_id = button_map.get(choice)
+        res = button_map.get(choice)
 
-        if m_id:
-            # Если нашли ID, выводим отчет ТОЛЬКО по нему
-            data = report_data.get(m_id)
-            name = mentors_map.get(m_id, f"ID {m_id}")
+        if res:
+            res_type, res_id = res  # Распаковываем тип (mentor/kk) и ID
 
-            # Вызываем ту же функцию
-            text = create_mentor_report(name, data['logs'])
+            if res_type == "mentor":
+                # Старая логика для менторов
+                data = report_data.get(res_id)
+                if data:
+                    name = mentors_map.get(res_id, f"ID {res_id}")
+                    text = create_mentor_report(name, data['logs'])
+                    for part in split_long_message(text):
+                        await update.message.reply_text(part, parse_mode="HTML")
 
-            for part in split_long_message(text):
-                await update.message.reply_text(part, parse_mode="HTML")
+            elif res_type == "kk":
 
-            # Оставляем кнопки выбора, чтобы можно было щелкнуть другого
+             # Логика для Карьерного Консультанта
+
+                kk_obj = session.query(CareerConsultant).filter_by(id=res_id).first()
+
+                name = kk_obj.full_name if kk_obj else "КК"
+
+                # Собираем историю начислений КК (используем func.date для точности)
+
+                kk_items = session.query(SalaryKK).filter(
+
+                    SalaryKK.kk_id == res_id,
+
+                    func.date(SalaryKK.date_calculated) >= context.user_data['salary_period']['start'],
+
+                    func.date(SalaryKK.date_calculated) <= context.user_data['salary_period']['end']
+
+                ).order_by(SalaryKK.date_calculated.desc()).all()
+
+                text = f"💼 <b>История операций КК: {name}</b>\n\n"
+
+                if not kk_items:
+
+                    text += "<i>Записей за этот период не найдено.</i>"
+
+                else:
+
+                    for item in kk_items:
+                        # Получаем данные студента
+
+                        student = session.query(Student).filter(Student.id == item.student_id).first()
+
+                        st_name = student.fio if student else "Студент"
+
+                        # 🔥 ПОЛУЧАЕМ ДАННЫЕ ОРИГИНАЛЬНОГО ПЛАТЕЖА
+
+                        payment = session.query(Payment).filter(Payment.id == item.payment_id).first()
+
+                        p_amount = float(payment.amount) if payment else 0.0
+
+                        status = "✅" if item.is_paid else "⏳"
+
+                        date_str = item.date_calculated.strftime('%d.%m')
+
+                        # Формируем красивую строку
+
+                        text += (f"{status} <b>{date_str}</b> | {st_name}\n"
+                
+                                 f"   └ Платёж: {p_amount:,.2f}р. | Бонус: <b>+{float(item.calculated_amount):,.2f}р.</b>\n")
+
+                for part in split_long_message(text):
+                    await update.message.reply_text(part, parse_mode="HTML")
+
             await update.message.reply_text("Выберите другого или вернитесь:",
                                             reply_markup=ReplyKeyboardMarkup([["🔙 Возврат в меню"]],
                                                                              one_time_keyboard=True))
             return "SALARY_DETAIL_SELECT"
-
-        else:
-            await update.message.reply_text("Неизвестная команда или сотрудник. Выберите из меню.")
-            return "SALARY_DETAIL_SELECT"
-
 # === ШАГ 4: ЛОГИКА ВЫБОРА ОПЛАТЫ ===
 
 async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1015,6 +948,7 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
         return "SALARY_MAIN_MENU"
 
     target_ids = []
+    target_kk_ids = []  # Добавляем список для КК
     total_amount = 0.0
     confirm_msg = ""
 
@@ -1024,6 +958,10 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
             if data['to_pay'] > 0:
                 target_ids.append(m_id)
                 total_amount += data['to_pay']
+        kk_report = context.user_data.get('kk_report_data', {})
+        for k_id, amount in kk_report.items():
+            target_kk_ids.append(k_id)
+            total_amount += amount
         confirm_msg = f"❗ <b>ВНИМАНИЕ</b> ❗\nВыплата для <b>{len(target_ids)} сотрудников</b>.\nОбщая сумма: <b>{total_amount:,.2f} руб.</b>\n\nПодтверждаете?"
 
     # СЦЕНАРИЙ: ОПЛАТА КОНКРЕТНОМУ (из детализации)
@@ -1043,30 +981,55 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
     elif choice == "👤 Выбрать сотрудника":
         buttons = []
         button_map = {}
+
+        # 1. Менторы
         for m_id, data in report_data.items():
             if data['to_pay'] > 0:
                 name = mentors_map.get(m_id)
-                btn_text = f"{name} ({data['to_pay']:,.0f}р)"
+                btn_text = f"👨‍🏫 {name} ({data['to_pay']:,.0f}р)"
                 buttons.append([btn_text])
-                button_map[btn_text] = m_id
+                button_map[btn_text] = ("mentor", m_id)
 
-        context.user_data['salary_payment_button_map'] = button_map  # Сохраняем карту для оплаты
+        # 2. 🔥 КК
+        kk_report = context.user_data.get('kk_report_data', {})
+        for kk_id, amount in kk_report.items():
+            if amount > 0:
+                kk_obj = session.query(CareerConsultant).filter_by(id=kk_id).first()
+                if kk_obj:
+                    btn_text = f"💼 {kk_obj.full_name} ({amount:,.0f}р)"
+                    buttons.append([btn_text])
+                    button_map[btn_text] = ("kk", kk_id)
 
+        context.user_data['salary_payment_button_map'] = button_map
         buttons.append(["🔙 Возврат в меню"])
-        await update.message.reply_text("Кому выплачиваем?",
-                                        reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True))
+
+        await update.message.reply_text(
+            "Кому выплачиваем?",
+            reply_markup=ReplyKeyboardMarkup(buttons, one_time_keyboard=True)
+        )
         return "SALARY_PAY_SELECT"
 
     # СЦЕНАРИЙ: НАЖАЛИ НА КНОПКУ СОТРУДНИКА
+        # СЦЕНАРИЙ: НАЖАЛИ НА КНОПКУ СОТРУДНИКА
     else:
-        # Ищем ID по карте
         button_map = context.user_data.get('salary_payment_button_map', {})
-        selected_id = button_map.get(choice)
+        res = button_map.get(choice)
 
-        if selected_id and report_data[selected_id]['to_pay'] > 0:
-            target_ids.append(selected_id)
-            total_amount = report_data[selected_id]['to_pay']
-            name = mentors_map.get(selected_id)
+        if res:
+            res_type, res_id = res
+            if res_type == "mentor":
+                # Логика для ментора
+                target_ids = [res_id]
+                total_amount = report_data[res_id]['to_pay']
+                name = mentors_map.get(res_id)
+            else:
+                # 🔥 Логика для КК
+                target_kk_ids = [res_id]
+                kk_report = context.user_data.get('kk_report_data', {})
+                total_amount = kk_report.get(res_id, 0.0)
+                kk_obj = session.query(CareerConsultant).filter_by(id=res_id).first()
+                name = kk_obj.full_name if kk_obj else "КК"
+
             confirm_msg = f"Выплачиваем: <b>{name}</b>\nСумма: <b>{total_amount:,.2f} руб.</b>\n\nПодтверждаете?"
         else:
             await update.message.reply_text("Не нашел сотрудника или ему нечего платить.")
@@ -1075,9 +1038,9 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
     # Сохраняем контекст оплаты
     context.user_data['payment_context'] = {
         'target_ids': target_ids,
+        'target_kk_ids': target_kk_ids,  # Передаем ID консультантов
         'total_amount': total_amount
     }
-
     await update.message.reply_text(
         confirm_msg,
         reply_markup=ReplyKeyboardMarkup([["✅ ДА, ВЫПЛАТИТЬ"], ["❌ ОТМЕНА"]], one_time_keyboard=True),
@@ -1086,27 +1049,18 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
     return "SALARY_CONFIRM_PAY"
 
 
-# confirm_payout остается прежним, только убедитесь, что кнопка возврата там "🔙 Возврат в меню"
-
-
 # === ШАГ 5: ФИНАЛЬНОЕ ПОДТВЕРЖДЕНИЕ И ЗАПИСЬ В БД ===
 
 async def confirm_payout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     choice = update.message.text
-
-    # Если нажата не кнопка подтверждения — сразу перекидываем в меню
     if choice != "✅ ДА, ВЫПЛАТИТЬ":
         await update.message.reply_text("❌ Выплата отменена.")
-        # Вызываем функцию главного меню напрямую
         return await exit_to_main_menu(update, context)
 
-    # Достаем контекст выплаты
     pay_ctx = context.user_data.get('payment_context')
-    if not pay_ctx:
-        await update.message.reply_text("⚠️ Ошибка: контекст выплаты потерян.")
-        return await exit_to_main_menu(update, context)
+    target_ids = pay_ctx.get('target_ids', [])
+    target_kk_ids = pay_ctx.get('target_kk_ids', [])  # Получаем КК
 
-    target_ids = pay_ctx['target_ids']
     period_start = context.user_data['salary_period']['start']
     period_end = context.user_data['salary_period']['end']
 
@@ -1114,60 +1068,56 @@ async def confirm_payout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         processed_count = 0
         total_recorded = 0.0
 
+        # ВЫПЛАТА МЕНТОРАМ
         for m_id in target_ids:
-            # 1. Находим все неоплаченные записи Salary
-            unpaid_salaries = session.query(Salary).filter(
+            unpaid = session.query(Salary).filter(
                 Salary.mentor_id == m_id,
                 func.date(Salary.date_calculated) >= period_start,
                 func.date(Salary.date_calculated) <= period_end,
                 Salary.is_paid == False
             ).all()
+            if unpaid:
+                amount = sum(float(s.calculated_amount) for s in unpaid)
+                new_payout = Payout(mentor_id=m_id, total_amount=amount, period_start=period_start,kk_id=None,
+                                    period_end=period_end, payout_status='completed', date_processed=datetime.utcnow())
+                session.add(new_payout)
+                for s in unpaid: s.is_paid = True
+                total_recorded += amount
+                processed_count += 1
 
-            if not unpaid_salaries:
-                continue
+        # ВЫПЛАТА КАРЬЕРНЫМ КОНСУЛЬТАНТАМ
+        for k_id in target_kk_ids:
+            unpaid_kk = session.query(SalaryKK).filter(
+                SalaryKK.kk_id == k_id,
+                func.date(SalaryKK.date_calculated) >= period_start,
+                func.date(SalaryKK.date_calculated) <= period_end,
+                SalaryKK.is_paid == False
+            ).all()
 
-            amount_to_pay = sum(float(s.calculated_amount) for s in unpaid_salaries)
-            if amount_to_pay <= 0:
-                continue
-
-            # 2. Создаем запись в Payouts
-            new_payout = Payout(
-                mentor_id=m_id,
-                period_start=period_start,
-                period_end=period_end,
-                total_amount=amount_to_pay,
-                payout_status='completed',
-                date_processed=datetime.utcnow()
-            )
-            session.add(new_payout)
-            session.flush()
-
-            # 3. Обновляем статус Salary
-            for sal in unpaid_salaries:
-                sal.is_paid = True
-                # sal.payout_id = new_payout.payout_id # Если есть связь в БД
-                session.add(sal)
-
-            total_recorded += amount_to_pay
-            processed_count += 1
+            if unpaid_kk:
+                amount = sum(float(s.calculated_amount) for s in unpaid_kk)
+                # 🔥 Добавляем kk_id=k_id в конструктор
+                new_payout = Payout(
+                    mentor_id=None,
+                    kk_id=k_id,  # Обязательно добавь это поле!
+                    total_amount=amount,
+                    period_start=period_start,
+                    period_end=period_end,
+                    payout_status='completed',
+                    date_processed=datetime.utcnow()
+                )
+                session.add(new_payout)
+                for s in unpaid_kk:
+                    s.is_paid = True
+                total_recorded += amount
+                processed_count += 1
 
         session.commit()
-
-        # Выводим отчет об успехе
-        await update.message.reply_text(
-            f"✅ <b>Успешно!</b>\n\n"
-            f"Создано выплат: <code>{processed_count}</code>\n"
-            f"Общая сумма: <code>{total_recorded:,.2f}</code> руб.\n\n"
-            f"Данные внесены в реестр.",
-            parse_mode="HTML"
-        )
-
+        await update.message.reply_text(f"✅ Успешно! Выплачено: {total_recorded:,.2f} руб.")
     except Exception as e:
         session.rollback()
-        await update.message.reply_text(f"❌ Произошла ошибка при транзакции: {e}")
+        await update.message.reply_text(f"❌ Ошибка: {e}")
 
-    # АВТОМАТИЧЕСКИЙ ПЕРЕХОД
-    # Вместо return "STRING", мы выполняем функцию меню и возвращаем её результат
     return await exit_to_main_menu(update, context)
 
 

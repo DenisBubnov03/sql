@@ -387,8 +387,10 @@ class Payout(Base):
     __tablename__ = 'payouts'
 
     payout_id = Column(Integer, primary_key=True)
-    mentor_id = Column(Integer, nullable=False)
+    mentor_id = Column(Integer, ForeignKey("mentors.id"), nullable=True)
 
+    # 🔥 НОВОЕ ПОЛЕ: Ссылка на карьерного консультанта
+    kk_id = Column(Integer, ForeignKey("career_consultants.id"), nullable=True)
     period_start = Column(Date, nullable=False)
     period_end = Column(Date, nullable=False)
 
@@ -399,3 +401,34 @@ class Payout(Base):
     date_processed = Column(DateTime)
     transaction_ref = Column(String(255))
     date_created = Column(DateTime, default=datetime.utcnow)
+
+
+class SalaryKK(Base):
+    """
+    Таблица начислений для Карьерных Консультантов (КК).
+    """
+    __tablename__ = 'salary_kk'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    payment_id = Column(Integer, ForeignKey('payments.id'), nullable=False)
+    kk_id = Column(Integer, ForeignKey('career_consultants.id'), nullable=False)
+    student_id = Column(Integer, ForeignKey('students.id'), nullable=False)
+
+    # 10% от текущего платежа
+    calculated_amount = Column(Numeric(10, 2), nullable=False)
+
+    # Сколько ВСЕГО КК должен получить (10% от ЗП студента)
+    total_potential = Column(Numeric(10, 2), nullable=False)
+
+    # Сколько ОСТАЛОСЬ получить после этого начисления
+    remaining_limit = Column(Numeric(10, 2), nullable=False)
+
+    is_paid = Column(Boolean, default=False, nullable=False)
+    date_calculated = Column(DateTime, default=datetime.utcnow)
+    comment = Column(Text, nullable=True)
+
+    # Отношения
+    student = relationship("Student")
+    kk = relationship("CareerConsultant")
+    payment = relationship("Payment")
+

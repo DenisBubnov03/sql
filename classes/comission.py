@@ -1,6 +1,10 @@
 import logging
+from datetime import datetime
+from decimal import Decimal
+
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
-from data_base.models import Student, CuratorCommission, ManualProgress, AutoProgress
+from data_base.models import Student, CuratorCommission, ManualProgress, AutoProgress, Payout, SalaryKK
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -141,3 +145,49 @@ class AdminCommissionManager:
                 student_id=student_id, curator_id=mentor_id,
                 total_amount=total, paid_amount=0.0
             ))
+
+    @staticmethod
+    def process_kk_payout(session, kk_id: int, start_date: datetime, end_date: datetime, method: str = 'card'):
+        """
+        Проводит фактическую выплату для КК:
+        1. Находит все неоплаченные записи в salary_kk за период.
+        2. Помечает их как is_paid = True.
+        3. Создает запись в таблице payouts.
+        """
+        # 1. Ищем неоплаченные начисления КК за указанный период
+        unpaid_records = session.query(SalaryKK).filter(
+            and_(
+                SalaryKK.kk_id == kk_id,
+                SalaryKK.is_paid == False,
+                SalaryKK.date_calculated >= start_date,
+                SalaryKK.date_calculated <= end_date
+            )
+        ).all()
+
+        if not unpaid_records:
+            return None, "Нет начислений для выплаты за этот период."
+
+        # 2. Считаем итоговую сумму к выплате
+        total_payout_amount = sum(Decimal(str(rec.calculated_amount)) for rec in unpaid_records)
+
+        # 3. Создаем запись в общем реестре выплат (Payouts)
+        new_payout = Payout(
+            kk_id=kk_id,  # Используем новое поле
+            mentor_id=None, # Для КК mentor_id пустой
+            period_start=start_date.date(),
+            period_end=end_date.date(),
+            total_amount=total_payout_amount,
+            payout_status='completed', # Или 'pending_transfer'
+            payout_method=method,
+            date_processed=datetime.now(),
+            date_created=datetime.now()
+        )
+        session.add(new_payout)
+        session.flush() # Получаем ID новой выплаты
+
+        # 4. Помечаем все записи в salary_kk как оплаченные
+        for rec in unpaid_records:
+            rec.is_paid = True
+            rec.comment = f"{rec.comment or ''} | Оплачено в выплате #{new_payout.payout_id}".strip()
+
+        return new_payout, f"Успешно выплачено {total_payout_amount} руб."
