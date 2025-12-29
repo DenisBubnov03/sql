@@ -25,57 +25,81 @@ logger = logging.getLogger(__name__)
 
 import re
 
+import re
+
 
 def create_mentor_report(name, logs):
-    """Универсальная функция: принимает имя и логи, возвращает готовый текст отчета."""
-    sums = {"accepted": 0.0, "bonus": 0.0, "prize": 0.0, "commission": 0.0}
+    """
+    Универсальная функция: формирует детальный отчет с группировкой по категориям.
+    """
+    # 1. Инициализация категорий
+    sums = {
+        "accepted": 0.0,  # Темы
+        "commission": 0.0,  # Комиссии, Доплаты, Legacy
+        "bonus": 0.0,  # Бонусы
+        "prize": 0.0,  # Премии
+        "other": 0.0  # Неопознанное
+    }
+    total_base = 0.0
 
-    # 1. Считаем суммы из логов
+    # 2. Парсинг и распределение сумм
     for log in logs:
-        # Ищем число после палки | (например: "| 5,400.00р" или "| 3333.33")
+        # Ищем число после символа '|'
         match = re.search(r'\|\s*([\d\s,.]+)', log)
         amount = 0.0
         if match:
-            # Чистим от пробелов и запятых (превращаем "5,400.00" в 5400.0)
             clean_str = match.group(1).replace(' ', '').replace(',', '')
             try:
                 amount = float(clean_str)
             except ValueError:
                 amount = 0.0
 
-        # Раскидываем по категориям
+        # Суммируем в общий котел (чтобы итого был точным)
+        total_base += amount
+
+        # Распределяем по категориям для сводки
         txt = log.lower()
         if "принял" in txt:
             sums["accepted"] += amount
+        elif any(word in txt for word in ["комиссия", "доплата", "legacy"]):
+            sums["commission"] += amount
         elif "бонус" in txt:
             sums["bonus"] += amount
         elif "премия" in txt:
             sums["prize"] += amount
-        elif "комиссия" in txt:
-            sums["commission"] += amount
+        else:
+            sums["other"] += amount
 
-    # 2. Формируем шапку
+    # 3. Формирование текста отчета
     text = f"👤 <b>{name}</b>\n\n"
 
-    def add_line(title, val):
+    # Внутренняя функция для красивых строк сводки
+    def format_summary_line(title, val):
         if val > 0:
-            return f"   {title} - {val:,.2f}р (с налогом {val * 1.06:,.2f}р)\n".replace(',', ' ')
+            return f"   ▫️ {title}: <b>{val:,.2f}р.</b> (с нал. {val * 1.06:,.2f}р.)\n"
         return ""
 
-    text += add_line("За принятые темы", sums["accepted"])
-    text += add_line("Бонус", sums["bonus"])
-    text += add_line("Премия", sums["prize"])
-    text += add_line("За комиссию", sums["commission"])
+    # Сводка (кратко)
+    text += "📊 <b>Сводка по категориям:</b>\n"
+    text += format_summary_line("Принятые темы", sums["accepted"])
+    text += format_summary_line("Доплаты и Legacy", sums["commission"])
+    text += format_summary_line("Бонусы", sums["bonus"])
+    text += format_summary_line("Премии", sums["prize"])
+    text += format_summary_line("Прочее", sums["other"])
 
-    if sums["accepted"] + sums["bonus"] + sums["prize"] + sums["commission"] > 0:
-        text += "\n"
+    # Итоги
+    tax = total_base * 0.06
+    text += "─" * 20 + "\n"
+    text += f"💰 <b>ИТОГО К ВЫПЛАТЕ: {total_base:,.2f}р.</b>\n"
+    text += f"🏦 <b>С НДФЛ (6%): {total_base + tax:,.2f}р.</b>\n\n"
 
-    # 3. Добавляем сами логи
+    # Детализация (сами логи)
+    text += "📜 <b>Детализация операций:</b>\n"
     if logs:
         for log in logs:
-            text += f"   - {log}\n"
+            text += f" {log}\n"
     else:
-        text += "   (Нет операций)\n"
+        text += "   (Нет записей)\n"
 
     return text
 
@@ -544,18 +568,18 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text("❌ Произошла ошибка при создании студента.")
         return ConversationHandler.END
 
+def record_initial_payment(student_id, paid_amount, mentor_id=None):
+        """
+        Записывает платёж ВСЕГДА (если сумма > 0).
+        Бонус директору начисляется только при наличии условий.
+        """
+        try:
+            if paid_amount <= 0:
+                print(f"⚠️ Пропуск: Платёж для студента {student_id} имеет нулевую сумму.")
+                return
 
-def record_initial_payment(student_id, paid_amount, mentor_id):
-    """
-    Записывает первоначальный платёж в `payments` и начисляет бонус директору.
-    """
-    try:
-        if mentor_id is None:
-            print(f"❌ DEBUG: Платёж не записан — не передан mentor_id для студента {student_id}")
-            return
-
-        if paid_amount > 0:
-            # 1. Создаем и сохраняем платеж
+            # 1. Создаем платеж. mentor_id теперь может быть None!
+            # В таблице payments поле mentor_id должно допускать NULL.
             new_payment = Payment(
                 student_id=student_id,
                 mentor_id=mentor_id,
@@ -566,34 +590,37 @@ def record_initial_payment(student_id, paid_amount, mentor_id):
             )
 
             session.add(new_payment)
-            session.commit()  # В этот момент у new_payment появляется ID
-            print(f"✅ DEBUG: Платёж записан в payments! {paid_amount} руб. (ID: {new_payment.id})")
 
-            # 2. Начисляем бонус директору (ДОБАВЛЕННАЯ ЧАСТЬ)
+            # Используем flush, чтобы получить ID платежа, но НЕ закрывать транзакцию
+            session.flush()
+            print(f"✅ Платёж зафиксирован (ID: {new_payment.id}, Сумма: {paid_amount})")
+
+            # 2. Пробуем начислить бонус (Логика не мешает платежу)
             try:
-                # Нам нужен объект студента для проверки типа обучения
-                student = session.query(Student).filter(Student.id == student_id).first()
-
+                student = session.query(Student).get(student_id)
                 if student:
+                    # ВАЖНО: Мы передаем payment_id, чтобы связать начисление с чеком
                     salary_manager = SalaryManager()
-                    # Передаем сессию, студента и ID только что созданного платежа
                     salary_manager.init_director_bonus_commission(
                         session=session,
                         student=student,
                         payment_id=new_payment.id
                     )
-                    session.commit()  # Фиксируем записи в salary и curator_commissions
-                    print(f"✅ DEBUG: Бонус директора обработан для платежа {new_payment.id}")
+                    print(f"✅ Бонусная часть обработана для {student.telegram}")
                 else:
-                    print(f"⚠️ Warn: Студент {student_id} не найден, бонус директора пропущен.")
+                    print(f"⚠️ ПРЕДУПРЕЖДЕНИЕ: Студент {student_id} не найден в базе для начисления бонуса.")
 
-            except Exception as e:
-                print(f"❌ Ошибка при начислении бонуса директора: {e}")
-                # Не прерываем выполнение, так как сам платеж уже записан
+            except Exception as bonus_error:
+                # Ошибка в бонусах НЕ должна отменять сам платеж
+                print(f"❌ Ошибка при расчете бонуса (платеж сохранен): {bonus_error}")
 
-    except Exception as e:
-        print(f"❌ Ошибка в record_initial_payment: {e}")
-        session.rollback()
+            # Финальный и единственный коммит
+            session.commit()
+
+        except Exception as e:
+            session.rollback()
+            print(f"❌ Критическая ошибка в record_initial_payment: {e}")
+
 
 async def request_salary_period(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
