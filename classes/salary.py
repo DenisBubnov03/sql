@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date, time
 
 from sqlalchemy import func
 
@@ -96,21 +96,32 @@ class SalaryManager:
 
         return new_salary_record
 
-    def get_total_turnover(session, start_dt, end_dt):
+    def get_total_turnover(session, start_val, end_val):
         """
-        Считает общую сумму начислений (грязными) без учета статуса выплаты.
+        Считает общую сумму начислений, гарантированно захватывая весь последний день.
         """
-        # 1. Считаем сумму по менторам
+        # 1. Гарантируем, что у нас объекты datetime с правильным временем
+        if isinstance(start_val, date) and not isinstance(start_val, datetime):
+            start_dt = datetime.combine(start_val, time.min)
+        else:
+            start_dt = start_val
+
+        if isinstance(end_val, date) and not isinstance(end_val, datetime):
+            end_dt = datetime.combine(end_val, time.max)
+        else:
+            # Если это уже datetime, но время 00:00:00, лучше тоже сделать time.max
+            end_dt = datetime.combine(end_val.date(), time.max)
+
+        # 2. Считаем сумму по менторам
         mentors_total = session.query(func.sum(Salary.calculated_amount)).filter(
             Salary.date_calculated >= start_dt,
             Salary.date_calculated <= end_dt
         ).scalar() or 0.0
 
-        # 2. Считаем сумму по карьерным консультантам
+        # 3. Считаем сумму по КК
         kk_total = session.query(func.sum(SalaryKK.calculated_amount)).filter(
             SalaryKK.date_calculated >= start_dt,
             SalaryKK.date_calculated <= end_dt
         ).scalar() or 0.0
 
-        # return float(mentors_total) + float(kk_total)
         return float(mentors_total), float(kk_total)
