@@ -1,6 +1,9 @@
 from datetime import datetime
+
+from sqlalchemy import func
+
 from data_base.db import session as db_session  # Или просто session, зависит от вашего импорта
-from data_base.models import Student, CuratorCommission, Salary, Mentor  # Добавили Salary
+from data_base.models import Student, CuratorCommission, Salary, Mentor, SalaryKK  # Добавили Salary
 
 DIRECTOR_ID_MANUAL = 1
 DIRECTOR_ID_AUTO = 3
@@ -92,3 +95,22 @@ class SalaryManager:
         session.add(new_salary_record)
 
         return new_salary_record
+
+    def get_total_turnover(session, start_dt, end_dt):
+        """
+        Считает общую сумму начислений (грязными) без учета статуса выплаты.
+        """
+        # 1. Считаем сумму по менторам
+        mentors_total = session.query(func.sum(Salary.calculated_amount)).filter(
+            Salary.date_calculated >= start_dt,
+            Salary.date_calculated <= end_dt
+        ).scalar() or 0.0
+
+        # 2. Считаем сумму по карьерным консультантам
+        kk_total = session.query(func.sum(SalaryKK.calculated_amount)).filter(
+            SalaryKK.date_calculated >= start_dt,
+            SalaryKK.date_calculated <= end_dt
+        ).scalar() or 0.0
+
+        # return float(mentors_total) + float(kk_total)
+        return float(mentors_total), float(kk_total)

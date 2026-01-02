@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 
 from sqlalchemy import func
-
+from classes.salary import SalaryManager
 from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -433,9 +433,10 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
             )
 
         # где-то в вашем хэндлере, после расчёта всех чисел
-        mentor_salaries, career_consultant_salaries = calc_total_salaries_for_dates(start_date, end_date, session)
+        # mentor_salaries, career_consultant_salaries = calc_total_salaries_for_dates(start_date, end_date, session)
+        mentor_salaries, career_consultant_salaries = SalaryManager.get_total_turnover(session, start_date, end_date)
         total_salaries = mentor_salaries + career_consultant_salaries
-        
+
         # Получаем доп расходы за период
         additional_expenses = get_additional_expenses_for_period(start_date, end_date, session)
         
