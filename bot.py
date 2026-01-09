@@ -1,6 +1,7 @@
 import os
 import tracemalloc
-
+import json
+import psycopg2
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 
 from bot.handlers.career_consultant_handlers import  show_career_consultant_statistics, \
@@ -49,7 +50,93 @@ tracemalloc.start()
 # Токен Telegram-бота
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
+from pathlib import Path
 
+
+async def handle_student_inactivity_buttons(update, context):
+    query = update.callback_query
+    action, student_id = query.data.split(":")
+    await query.answer()
+
+    # Определяем абсолютный путь к JSON, чтобы не зависеть от места запуска
+    base_dir = Path(__file__).resolve().parent
+    json_path = base_dir / "utils" / "notification_state.json"
+
+    if action == "set_inactive":
+        try:
+            # 1. Обновляем статус в базе
+            db_url = os.getenv("DATABASE_URL")
+            with psycopg2.connect(db_url) as conn:
+                with conn.cursor() as cur:
+                    # Приводим student_id к int на всякий случай
+                    cur.execute(
+                        "UPDATE students SET training_status = 'Не учится' WHERE id = %s",
+                        (int(student_id),)
+                    )
+                    conn.commit()
+            print(f"✅ Статус студента {student_id} обновлен в БД")
+
+            # 2. Удаляем из JSON
+            if json_path.exists():
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    state = json.load(f)
+
+                if student_id in state:
+                    del state[student_id]
+                    with open(json_path, 'w', encoding='utf-8') as f:
+                        json.dump(state, f, ensure_ascii=False, indent=4)
+                    print(f"🗑 Запись {student_id} удалена из JSON")
+
+            await query.edit_message_text(text="✅ Статус ученика изменен на 'не учится'.")
+
+        except Exception as e:
+            print(f"❌ ОШИБКА при отключении студента: {e}")
+            await query.edit_message_text(text="⚠️ Произошла ошибка при обновлении статуса в базе.")
+
+    elif action == "keep_active":
+
+        if os.path.exists(json_path):
+
+            with open(json_path, 'r', encoding='utf-8') as f:
+
+                state = json.load(f)
+
+            if student_id in state:
+
+                # Ставим флаг "заморозки" уведомлений на 2 недели
+
+                state[student_id]["active_hold"] = True
+
+                state[student_id]["last_notified"] = str(date.today())
+
+                # На всякий случай убираем режим "долго учится", если он был
+
+                state[student_id].pop("slow_progress", None)
+
+                with open(json_path, 'w', encoding='utf-8') as f:
+
+                    json.dump(state, f, ensure_ascii=False, indent=4)
+
+                await query.edit_message_text(
+
+                    text="✅ Принято! Ученик отмечен как активный. Следующее напоминание придет через 2 недели, если созвона так и не будет."
+
+                )
+    elif action == "slow_progress":
+        if os.path.exists(json_path):
+            with open(json_path, 'r', encoding='utf-8') as f:
+                state = json.load(f)
+
+            if student_id in state:
+                state[student_id]["slow_progress"] = True  # Ставим флаг
+                state[student_id]["last_notified"] = str(date.today())  # Обнуляем дату, чтобы пинг был через неделю
+
+                with open(json_path, 'w', encoding='utf-8') as f:
+                    json.dump(state, f, ensure_ascii=False, indent=4)
+
+                await query.edit_message_text(
+                    text="⏳ Статус 'Долго учится' установлен.\nТеперь уведомления по этому ученику будут приходить раз в неделю."
+                )
 # Состояния для ConversationHandler
 def main():
     # Создание приложения Telegram
@@ -252,7 +339,12 @@ def main():
         fallbacks=[]
     )
     application.add_handler(create_meeting_handler)
-
+    application.add_handler(
+        CallbackQueryHandler(handle_student_inactivity_buttons, pattern="^(set_inactive|keep_active|slow_progress):")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_student_inactivity_buttons, pattern="^(set_inactive|keep_active):"))
+    application.add_handler(salary_handler)
     application.add_handler(contract_signing_handler)
     application.add_handler(contract_handler)
     application.add_handler(bonus_handler)
