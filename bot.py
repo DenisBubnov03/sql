@@ -20,12 +20,23 @@ from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATIS
     IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE, CONTRACT_MENU, CONTRACT_STUDENT_TG, CONTRACT_TYPE, \
     CONTRACT_ADVANCE_AMOUNT, CONTRACT_PAYMENT_TYPE, CONTRACT_MONTHS, CONTRACT_COMMISSION_TYPE, \
     CONTRACT_COMMISSION_CUSTOM, CONTRACT_FIO, CONTRACT_ADDRESS, CONTRACT_INN, CONTRACT_RS, CONTRACT_KS, \
-    CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL, MEETING_TYPE_SELECTION
+    CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL, MEETING_TYPE_SELECTION, UE_MENU, UE_START_PERIOD, UE_END_PERIOD, \
+    UE_PRODUCT_CODE
 from commands.student_commands import (
     edit_student, edit_student_field, handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
     smart_edit_student, smart_edit_student_field, handle_curator_type_selection, handle_curator_mentor_selection,
     confirm_refund_callback
+)
+from commands.unit_economics_commands import (
+    show_unit_economics_menu,
+    show_latest_unit_economics,
+    unit_economics_request_start,
+    unit_economics_handle_start,
+    unit_economics_handle_end,
+    unit_economics_handle_product_code,
+    unit_economics_back_to_statistics,
+    unit_economics_command,
 )
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
@@ -217,9 +228,18 @@ def main():
                 MessageHandler(filters.Regex("^📚 По типу обучения$"), show_course_type_menu),
                 MessageHandler(filters.Regex("^📅 По периоду$"), request_period_start),
                 MessageHandler(filters.Regex("^💰 Холдирование$"), show_held_amounts),
+                MessageHandler(filters.Regex("^💹 Юнит экономика$"), show_unit_economics_menu),
             ],
             START_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_period_start)],
             END_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_period_end)],
+            UE_MENU: [
+                MessageHandler(filters.Regex("^📌 Последний период$"), show_latest_unit_economics),
+                MessageHandler(filters.Regex("^📅 Выбрать период$"), unit_economics_request_start),
+                MessageHandler(filters.Regex("^🔙 Назад$"), unit_economics_back_to_statistics),
+            ],
+            UE_START_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, unit_economics_handle_start)],
+            UE_END_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, unit_economics_handle_end)],
+            UE_PRODUCT_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, unit_economics_handle_product_code)],
             COURSE_TYPE_MENU: [
                 MessageHandler(filters.Regex("^👨‍💻 Ручное тестирование$"), show_manual_testing_statistics),
                 MessageHandler(filters.Regex("^🤖 Автотестирование$"), show_automation_testing_statistics),
@@ -362,6 +382,7 @@ def main():
     # Регистрация обработчиков
     application.add_handler(salary_handler)
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("unit_economics", unit_economics_command))
     application.add_handler(add_student_handler)
     application.add_handler(edit_student_handler)
     application.add_handler(search_student_handler)
