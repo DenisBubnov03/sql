@@ -24,7 +24,8 @@ from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATIS
 from commands.student_commands import (
     edit_student, edit_student_field, handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
-    smart_edit_student, smart_edit_student_field, handle_curator_type_selection, handle_curator_mentor_selection
+    smart_edit_student, smart_edit_student_field, handle_curator_type_selection, handle_curator_mentor_selection,
+    confirm_refund_callback
 )
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
@@ -349,17 +350,15 @@ def main():
     application.add_handler(contract_handler)
     application.add_handler(bonus_handler)
     application.add_handler(expense_handler)
-    
+    application.add_handler(CallbackQueryHandler(confirm_refund_callback, pattern="^conf_ref_"))
     # Обработчики карьерных консультантов
     application.add_handler(MessageHandler(filters.Regex("^📊 Моя статистика$"), show_career_consultant_statistics))
     application.add_handler(MessageHandler(filters.Regex("^💼 Карьерный консультант$"), career_consultant_start))
     application.add_handler(MessageHandler(filters.Regex("^🔙 Назад$"), exit_career_consultant_menu))
     application.add_handler(career_consultant_handler)
-    
     # Обработчики управления карьерными консультантами
     application.add_handler(add_career_consultant_handler)
     application.add_handler(MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu))
-    
     # Регистрация обработчиков
     application.add_handler(salary_handler)
     application.add_handler(CommandHandler("start", start))

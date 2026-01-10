@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import func
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
 from classes.comission import AdminCommissionManager
@@ -11,11 +11,87 @@ from commands.start_commands import exit_to_main_menu
 from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM, WAIT_FOR_PAYMENT_DATE, SIGN_CONTRACT, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR
 from commands.student_info_commands import calculate_commission
 from data_base.db import session
-from data_base.models import Student, Payment, CuratorInsuranceBalance, Mentor, ManualProgress, CuratorCommission
+from data_base.models import Student, Payment, CuratorInsuranceBalance, Mentor, ManualProgress, CuratorCommission, \
+    Salary
 from data_base.operations import get_all_students, update_student, get_student_by_fio_or_telegram, delete_student
 from telegram import ReplyKeyboardMarkup, KeyboardButton
 
 
+async def handle_refund(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    student = context.user_data.get("student")
+    if not student:
+        await update.message.reply_text("Студент не выбран.")
+        return FIELD_TO_EDIT
+
+    # 1. Считаем все подтвержденные оплаты
+    total_paid = session.query(func.sum(Payment.amount)).filter(
+        Payment.student_id == student.id,
+        Payment.status == "подтвержден"
+    ).scalar() or 0
+
+    # 2. Считаем вычеты (звонки/темы) через Salary
+    # Join позволяет вытащить сразу и сумму, и имя куратора
+    deductions = session.query(Salary, Mentor).join(
+        Payment, Salary.payment_id == Payment.id
+    ).join(
+        Mentor, Salary.mentor_id == Mentor.id
+    ).filter(
+        Payment.student_id == student.id
+    ).all()
+
+    total_deductions = 0
+    details = []
+    for sal, mentor in deductions:
+        total_deductions += sal.calculated_amount
+        date_s = sal.date_calculated.strftime("%d.%m.%Y")
+        details.append(f"▫️ {date_s}: {sal.calculated_amount}р ({mentor.full_name} — {sal.comment})")
+
+    refund_sum = float(total_paid) - float(total_deductions)
+    context.user_data["refund_amount"] = refund_sum  # Сохраняем для шага подтверждения
+
+    msg = (
+            f"🔄 <b>Расчет возврата для {student.fio}</b>\n\n"
+            f"💰 Оплачено: {total_paid:,.2f} руб.\n"
+            f"📉 Вычеты за звонки:\n" + ("\n".join(details) if details else "Вычетов не найдено") + "\n"
+                                                                                                   f"──────────────────\n"
+                                                                                                   f"💵 <b>К ВОЗВРАТУ: {max(0, refund_sum):,.2f} руб.</b>\n\n"
+                                                                                                   f"Подтверждаете возврат? Статус ученика изменится на 'Возврат'."
+    )
+
+    keyboard = [[
+        InlineKeyboardButton("✅ Подтвердить", callback_data=f"conf_ref_{student.id}"),
+        InlineKeyboardButton("🚫 Отмена", callback_data="cancel_refund")
+    ]]
+
+    await update.message.reply_text(msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+    return FIELD_TO_EDIT
+
+
+async def confirm_refund_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    student_id = int(query.data.split("_")[2])
+    refund_amount = context.user_data.get("refund_amount", 0)
+
+    student = session.query(Student).get(student_id)
+    if student:
+        # Обновляем статус
+        student.training_status = "Возврат"
+
+        # Создаем корректирующий (минусовой) платеж
+        new_payment = Payment(
+            student_id=student.id,
+            amount=-refund_amount,
+            payment_date=datetime.now().date(),
+            comment=f"Возврат (вычет за звонки)",
+            status="подтвержден"
+        )
+        session.add(new_payment)
+        session.commit()
+
+        await query.edit_message_text(
+            f"✅ Возврат на сумму {refund_amount} руб. оформлен. Статус {student.fio} изменен.")
 # Функция редактирования студента
 async def edit_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -71,6 +147,8 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Универсальная обработка кнопки "Назад"
     if field_to_edit == "Назад":
         return await exit_to_main_menu(update, context)
+    if field_to_edit == "Возврат":
+        return await handle_refund(update, context)
 
     if field_to_edit == "Удалить ученика":
         await update.message.reply_text(
@@ -132,6 +210,7 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     KeyboardButton("Сумма оплаты"),
                     KeyboardButton("Статус обучения"),
                     KeyboardButton("Получил работу"),
+                    [KeyboardButton("Возврат")],
                     KeyboardButton("Комиссия выплачено"),
                     KeyboardButton("Удалить ученика"),
                 ],
@@ -169,6 +248,8 @@ async def edit_student_field_limited(update: Update, context: ContextTypes.DEFAU
     # Универсальная обработка кнопки "Назад"
     if field_to_edit == "Назад":
         return await exit_to_main_menu(update, context)
+    if field_to_edit == "Возврат":
+        return await handle_refund(update, context)
 
     if field_to_edit == "Куратор":
         # Обработка редактирования куратора

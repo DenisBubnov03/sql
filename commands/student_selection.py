@@ -57,6 +57,7 @@ async def find_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [KeyboardButton("Telegram")],
             [KeyboardButton("Статус обучения")],
             [KeyboardButton("Получил работу")],
+            [KeyboardButton("Возврат")],
             [KeyboardButton("Куратор")],
             [KeyboardButton("Назад")]
         ]
@@ -68,6 +69,7 @@ async def find_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [KeyboardButton("Статус обучения")],
             [KeyboardButton("Получил работу")],
             [KeyboardButton("Комиссия выплачено")],
+            [KeyboardButton("Возврат")],
             [KeyboardButton("Куратор")],
             [KeyboardButton("Удалить ученика")],
             [KeyboardButton("Назад")]
