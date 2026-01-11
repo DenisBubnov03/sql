@@ -4,6 +4,7 @@ import asyncio
 import psycopg2
 from datetime import datetime, date
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -21,6 +22,40 @@ MY_PERSONAL_ID = 1257163820
 bot = Bot(token=TOKEN)
 JSON_FILE = Path(__file__).resolve().parent / "notification_state.json"
 
+# --- ТЕКСТЫ УВЕДОМЛЕНИЙ (заполни при необходимости) ---
+# В этих шаблонах можно использовать параметры:
+# {student_name}, {student_telegram}, {days_passed}, {last_call_date}, {training_type}
+first_masage = (
+    "Привет! Мы не созванивались уже {days_passed} дней. "
+    "Напиши, пожалуйста, когда удобно созвониться."
+)
+
+second_massage_student = (
+    "Привет! Напоминаю: созвона не было уже {days_passed} дней. "
+    "Давай запланируем звонок на этой неделе."
+)
+second_massage_curator = (
+    "⚠️ 3 недели без созвона: <b>{student_name}</b> {student_telegram} "
+    "(тип: {training_type}). Последний созвон: <b>{last_call_date}</b>."
+)
+second_massage_director = (
+    "⚠️ 3 недели без созвона: <b>{student_name}</b> {student_telegram} "
+    "(тип: {training_type}). Последний созвон: <b>{last_call_date}</b>."
+)
+
+third_massage_student = (
+    "Привет! Это важное напоминание: созвона не было уже {days_passed} дней. "
+    "Пожалуйста, ответь и согласуй время созвона."
+)
+third_massage_curator_alarm = (
+    "🚨 <b>АЛАРМ</b>: 4 недели без созвона — <b>{student_name}</b> {student_telegram} "
+    "(тип: {training_type}). Последний созвон: <b>{last_call_date}</b>."
+)
+third_massage_director_alarm = (
+    "🚨 <b>АЛАРМ</b>: 4 недели без созвона — <b>{student_name}</b> {student_telegram} "
+    "(тип: {training_type}). Последний созвон: <b>{last_call_date}</b>."
+)
+
 
 # --- ФУНКЦИИ ---
 def load_state():
@@ -33,6 +68,23 @@ def load_state():
 def save_state(state):
     with open(JSON_FILE, 'w', encoding='utf-8') as f:
         json.dump(state, f, ensure_ascii=False, indent=4)
+
+
+def _render_template(template: str, context: dict) -> str:
+    try:
+        return template.format(**context)
+    except Exception:
+        return template
+
+
+def _director_ids_for_training_type(training_type: Optional[str]) -> list[int]:
+    if training_type == "Ручное тестирование":
+        return [1]
+    if training_type == "Автотестирование":
+        return [3]
+    if training_type == "Фуллстек":
+        return [1, 3]
+    return []
 
 
 async def send_smart_message(chat_id, text, kb=None):
@@ -78,7 +130,7 @@ async def run_check():
         return
 
     cur.execute("""
-        SELECT s.id, s.fio, m.chat_id, s.telegram, s.last_call_date 
+        SELECT s.id, s.fio, m.chat_id, s.telegram, s.last_call_date, s.training_type
         FROM students s
         JOIN mentors m ON s.mentor_id = m.id
         WHERE s.training_status = 'Учится'
@@ -86,10 +138,13 @@ async def run_check():
     """)
     rows = cur.fetchall()
 
+    cur.execute("SELECT id, chat_id FROM mentors WHERE id IN (1, 3);")
+    director_chat_ids = {int(row_id): row_chat_id for row_id, row_chat_id in cur.fetchall() if row_chat_id}
+
     state = load_state()
     today = date.today()
 
-    for s_id, s_name, m_chat_id,s_telegram, raw_date in rows:
+    for s_id, s_name, m_chat_id, s_telegram, raw_date, training_type in rows:
         s_id_str = str(s_id)
         try:
             if not raw_date: continue
@@ -101,75 +156,94 @@ async def run_check():
         days_passed = (today - last_call).days
         if days_passed <= 14:
             if s_id_str in state:
-                del state[s_id_str]  # Удаляем все флаги (slow_progress, active_hold), т.к. ученик ожил
+                del state[s_id_str]  # Удаляем все флаги, т.к. ученик ожил
             continue
 
-            # --- Логика уведомлений ---
-        if days_passed > 14:
-            if s_id_str not in state:
-                # Первое уведомление
-                msg = f"⚠️ Студент <b>{s_name}</b> не созванивался уже <b>{days_passed}</b> дн.! Необходимо написать ученику."
-                if await send_smart_message(m_chat_id, msg):
-                    state[s_id_str] = {"last_notified": str(today)}
+        # --- Логика триггеров (2/3/4 недели) ---
+        if s_id_str not in state:
+            state[s_id_str] = {}
 
+        last_stage = int(state[s_id_str].get("stage", 0) or 0)
+        if days_passed >= 28:
+            required_stage = 3
+        elif days_passed >= 21:
+            required_stage = 2
+        else:
+            required_stage = 1  # 15-20 дней
+
+        context = {
+            "student_name": s_name,
+            "student_telegram": s_telegram,
+            "days_passed": days_passed,
+            "last_call_date": str(last_call),
+            "training_type": training_type or "",
+        }
+
+        async def _send_to_directors(text: str) -> None:
+            for director_id in _director_ids_for_training_type(training_type):
+                chat_id = director_chat_ids.get(director_id)
+                if chat_id:
+                    await send_smart_message(chat_id, text)
+
+        # Отправляем недостающие стадии по порядку, чтобы не пропускать эскалации
+        for stage in range(last_stage + 1, required_stage + 1):
+            if stage == 1:
+                curator_text = (
+                    f"⚠️ Студент <b>{s_name}</b> не созванивался уже <b>{days_passed}</b> дн.! "
+                    f"Необходимо написать ученику {s_telegram}."
+                )
+                student_text = _render_template(first_masage, context)
+                await send_smart_message(m_chat_id, curator_text)
+                await send_smart_message(s_telegram, student_text)
+
+            elif stage == 2:
+                student_text = _render_template(second_massage_student, context)
+                curator_text = _render_template(second_massage_curator, context)
+                director_text = _render_template(second_massage_director, context)
+                await send_smart_message(s_telegram, student_text)
+                await send_smart_message(m_chat_id, curator_text)
+                await _send_to_directors(director_text)
+
+            elif stage == 3:
+                student_text = _render_template(third_massage_student, context)
+                curator_text = _render_template(third_massage_curator_alarm, context)
+                director_text = _render_template(third_massage_director_alarm, context)
+                await send_smart_message(s_telegram, student_text)
+                await send_smart_message(m_chat_id, curator_text)
+                await _send_to_directors(director_text)
+
+        if required_stage > last_stage:
+            state[s_id_str]["stage"] = required_stage
+            state[s_id_str]["last_notified"] = str(today)
+
+        # Повторы для 1-го уровня (2 недели) — как раньше, с кнопками статуса
+        if required_stage == 1 and state[s_id_str].get("last_notified"):
+            last_notified = datetime.strptime(state[s_id_str]["last_notified"], "%Y-%m-%d").date()
+
+            if state[s_id_str].get("active_hold"):
+                interval = 14  # Пауза 2 недели после кнопки "Активен"
+                status_note = " (после подтверждения активности)"
+            elif state[s_id_str].get("slow_progress"):
+                interval = 7  # Пауза неделя после кнопки "Долго учится"
+                status_note = " (режим: раз в неделю)"
             else:
-                last_notified = datetime.strptime(state[s_id_str]["last_notified"], "%Y-%m-%d").date()
+                interval = 3  # Стандартно
+                status_note = ""
 
-                # ВЫБОР ИНТЕРВАЛА
+            if (today - last_notified).days >= interval:
                 if state[s_id_str].get("active_hold"):
-                    interval = 14  # Пауза 2 недели после кнопки "Активен"
-                    status_note = " (после подтверждения активности)"
-                elif state[s_id_str].get("slow_progress"):
-                    interval = 7  # Пауза неделя после кнопки "Долго учится"
-                    status_note = " (режим: раз в неделю)"
-                else:
-                    interval = 3  # Стандартно
-                    status_note = ""
+                    state[s_id_str].pop("active_hold", None)
 
-                if (today - last_notified).days >= interval:
-                    # Если срок холда (14 дней) прошел, мы можем сбросить флаг active_hold,
-                    # чтобы после этого уведомления снова начать пинговать раз в 3 дня
-                    if state[s_id_str].get("active_hold"):
-                        state[s_id_str].pop("active_hold", None)
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="❌ Не учится", callback_data=f"set_inactive:{s_id_str}")],
+                    [InlineKeyboardButton(text="✅ Активен (на 2 нед.)", callback_data=f"keep_active:{s_id_str}")],
+                    [InlineKeyboardButton(text="⏳ Долго учится (на 1 нед.)",
+                                          callback_data=f"slow_progress:{s_id_str}")]
+                ])
 
-                    kb = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="❌ Не учится", callback_data=f"set_inactive:{s_id_str}")],
-                        [InlineKeyboardButton(text="✅ Активен (на 2 нед.)", callback_data=f"keep_active:{s_id_str}")],
-                        [InlineKeyboardButton(text="⏳ Долго учится (на 1 нед.)",
-                                              callback_data=f"slow_progress:{s_id_str}")]
-                    ])
-
-                    msg = f"🔔 Повтор{status_note}! <b>{s_name}</b> молчит {days_passed} дн. Подтвердите статус:"
-
-                    if await send_smart_message(m_chat_id, msg, kb):
-                        state[s_id_str]["last_notified"] = str(today)
-
-        if days_passed > 14:
-            if s_id_str not in state:
-                # Первое уведомление (без изменений)
-                msg = f"⚠️ Студент <b>{s_name}</b> не созванивался уже <b>{days_passed}</b> дн.!"
-                if await send_smart_message(m_chat_id, msg):
-                    state[s_id_str] = {"last_notified": str(today)}
-
-            else:
-                last_notified = datetime.strptime(state[s_id_str]["last_notified"], "%Y-%m-%d").date()
-
-                # НОВАЯ ЛОГИКА: Выбираем интервал (7 дней если "долго учится", иначе 3)
-                interval = 7 if state[s_id_str].get("slow_progress") else 3
-
-                if (today - last_notified).days >= interval:
-                    # Добавляем третью кнопку
-                    kb = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="❌ Не учится", callback_data=f"set_inactive:{s_id_str}")],
-                        [InlineKeyboardButton(text="✅ Активен", callback_data=f"keep_active:{s_id_str}")],
-                        [InlineKeyboardButton(text="⏳ Долго учится", callback_data=f"slow_progress:{s_id_str}")]
-                    ])
-
-                    status_text = " (режим: раз в неделю)" if interval == 7 else ""
-                    msg = f"🔔 Повтор{status_text}! <b>{s_name}</b> молчит {days_passed} дн. Что делаем?"
-
-                    if await send_smart_message(m_chat_id, msg, kb):
-                        state[s_id_str]["last_notified"] = str(today)
+                msg = f"🔔 Повтор{status_note}! <b>{s_name}</b> молчит {days_passed} дн. Подтвердите статус:"
+                if await send_smart_message(m_chat_id, msg, kb):
+                    state[s_id_str]["last_notified"] = str(today)
 
     save_state(state)
     cur.close()
