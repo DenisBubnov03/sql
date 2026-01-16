@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, Date, DECIMAL, Boolean, ForeignKey, Numeric, Text, DateTime, TIMESTAMP, \
-    func, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, String, Date, DECIMAL, Boolean, ForeignKey, Numeric, Text, DateTime, \
+    TIMESTAMP, func, UniqueConstraint, CheckConstraint, Computed
 from sqlalchemy.orm import relationship
 
 
@@ -432,3 +432,144 @@ class SalaryKK(Base):
     kk = relationship("CareerConsultant")
     payment = relationship("Payment")
 
+
+class UnitEconomics(Base):
+    __tablename__ = "unit_economics"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+    product_code = Column(Text, nullable=False, default="default", server_default="default")
+
+    om_manual_cost = Column(Numeric(14, 2), nullable=False, default=0, server_default="0")
+    om_auto_cost = Column(Numeric(14, 2), nullable=False, default=0, server_default="0")
+    avito_cost = Column(Numeric(14, 2), nullable=False, default=0, server_default="0")
+    media_cost = Column(Numeric(14, 2), nullable=False, default=0, server_default="0")
+
+    leads_total_count = Column(Integer, nullable=False, default=0, server_default="0")
+    leads_om_count = Column(Integer, nullable=False, default=0, server_default="0")
+
+    infrastructure_costs = Column(Numeric(14, 2), nullable=False, default=0, server_default="0")
+    salary_admin_fixed = Column(Numeric(14, 2), nullable=False, default=0, server_default="0")
+    salary_mentors_manual = Column(Numeric(14, 2), nullable=False, default=0, server_default="0")
+    salary_mentors_auto = Column(Numeric(14, 2), nullable=False, default=0, server_default="0")
+
+    revenue_total = Column(Numeric(14, 2), nullable=False, default=0, server_default="0")
+    product_price = Column(Numeric(14, 2), nullable=False, default=0, server_default="0")
+
+    om_total = Column(
+        Numeric(14, 2),
+        Computed("om_manual_cost + om_auto_cost", persisted=True),
+    )
+    marketing_total = Column(
+        Numeric(14, 2),
+        Computed("(om_manual_cost + om_auto_cost) + avito_cost + media_cost", persisted=True),
+    )
+
+    lead_cost_total = Column(
+        Numeric(14, 4),
+        Computed(
+            "((om_manual_cost + om_auto_cost) + avito_cost + media_cost) / NULLIF(leads_total_count, 0)",
+            persisted=True,
+        ),
+    )
+    lead_cost_om = Column(
+        Numeric(14, 4),
+        Computed("(om_manual_cost + om_auto_cost) / NULLIF(leads_om_count, 0)", persisted=True),
+    )
+
+    fixed_costs_total = Column(
+        Numeric(14, 2),
+        Computed(
+            "infrastructure_costs + salary_admin_fixed + salary_mentors_manual + salary_mentors_auto",
+            persisted=True,
+        ),
+    )
+
+    profit_manual_before_fixed = Column(
+        Numeric(14, 4),
+        Computed("product_price - ((om_manual_cost + om_auto_cost) / NULLIF(leads_om_count, 0))", persisted=True),
+    )
+    profit_auto_before_fixed = Column(
+        Numeric(14, 4),
+        Computed("product_price - ((om_manual_cost + om_auto_cost) / NULLIF(leads_om_count, 0))", persisted=True),
+    )
+    profit_full_before_fixed = Column(
+        Numeric(14, 4),
+        Computed(
+            "product_price - (((om_manual_cost + om_auto_cost) + avito_cost + media_cost) / NULLIF(leads_total_count, 0))",
+            persisted=True,
+        ),
+    )
+
+    dir_manual = Column(
+        Numeric(14, 4),
+        Computed(
+            "(product_price - ((om_manual_cost + om_auto_cost) / NULLIF(leads_om_count, 0))) * 0.10",
+            persisted=True,
+        ),
+    )
+    dir_auto = Column(
+        Numeric(14, 4),
+        Computed(
+            "(product_price - ((om_manual_cost + om_auto_cost) / NULLIF(leads_om_count, 0))) * 0.10",
+            persisted=True,
+        ),
+    )
+
+    margin_manual = Column(
+        Numeric(14, 4),
+        Computed(
+            "product_price"
+            " - ((om_manual_cost + om_auto_cost) / NULLIF(leads_om_count, 0))"
+            " - ((product_price - ((om_manual_cost + om_auto_cost) / NULLIF(leads_om_count, 0))) * 0.10)",
+            persisted=True,
+        ),
+    )
+    margin_auto = Column(
+        Numeric(14, 4),
+        Computed(
+            "product_price"
+            " - ((om_manual_cost + om_auto_cost) / NULLIF(leads_om_count, 0))"
+            " - ((product_price - ((om_manual_cost + om_auto_cost) / NULLIF(leads_om_count, 0))) * 0.10)",
+            persisted=True,
+        ),
+    )
+
+    gross_profit = Column(
+        Numeric(14, 2),
+        Computed("revenue_total - (((om_manual_cost + om_auto_cost) + avito_cost + media_cost))", persisted=True),
+    )
+    net_profit = Column(
+        Numeric(14, 2),
+        Computed(
+            "revenue_total"
+            " - (((om_manual_cost + om_auto_cost) + avito_cost + media_cost))"
+            " - (infrastructure_costs + salary_admin_fixed + salary_mentors_manual + salary_mentors_auto)",
+            persisted=True,
+        ),
+    )
+
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("period_start", "period_end", "product_code", name="uq_unit_economics_period_product"),
+        CheckConstraint("leads_total_count >= 0", name="ck_unit_economics_leads_total_nonneg"),
+        CheckConstraint("leads_om_count >= 0", name="ck_unit_economics_leads_om_nonneg"),
+    )
+
+class MarketingSpend(Base):
+    __tablename__ = "marketing_spend"
+    id = Column(Integer, primary_key=True)
+    report_month = Column(Date, nullable=False) # Всегда 1-е число месяца
+    channel = Column(String(50), nullable=False) # OM_manual, OM_auto, Avito, Media
+    amount = Column(Numeric(10, 2), default=0)
+
+class FixedExpense(Base):
+    __tablename__ = "fixed_expenses"
+    id = Column(Integer, primary_key=True)
+    report_month = Column(Date, nullable=False)
+    category = Column(String(100), nullable=False) # Cineskop, ChatPlace, Bots, Salaries_fixed
+    amount = Column(Numeric(10, 2), default=0)

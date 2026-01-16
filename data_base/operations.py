@@ -1,9 +1,12 @@
 import random
 
+from typing import Optional
+
 from data_base.db import session
-from data_base.models import Student, Mentor, Payment, CareerConsultant
+from data_base.models import Student, Mentor, Payment, CareerConsultant, UnitEconomics
 from datetime import datetime, timedelta
 from sqlalchemy import or_, func
+from sqlalchemy import desc
 
 
 # Функции для работы с карьерными консультантами
@@ -163,6 +166,27 @@ def calculate_career_consultant_salary(consultant_id, start_date, end_date):
             salary += float(payment.amount) * consultant_percent
     
     return round(salary, 2)
+
+
+def get_latest_unit_economics(product_code: str = "default") -> Optional[UnitEconomics]:
+    return (
+        session.query(UnitEconomics)
+        .filter(UnitEconomics.product_code == product_code)
+        .order_by(desc(UnitEconomics.period_end), desc(UnitEconomics.period_start), desc(UnitEconomics.id))
+        .first()
+    )
+
+
+def get_unit_economics(period_start, period_end, product_code: str = "default") -> Optional[UnitEconomics]:
+    return (
+        session.query(UnitEconomics)
+        .filter(
+            UnitEconomics.period_start == period_start,
+            UnitEconomics.period_end == period_end,
+            UnitEconomics.product_code == product_code,
+        )
+        .first()
+    )
 
 
 # Добавление нового студента
@@ -459,5 +483,3 @@ def calculate_held_amount(student_id, direction, mentor_id=None, is_director=Fal
 #
 #     print(f"🎯 Назначен ментор (ID: {mentor_id})")
 #     return mentor_id
-
-
