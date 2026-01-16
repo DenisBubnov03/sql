@@ -559,3 +559,17 @@ class UnitEconomics(Base):
         CheckConstraint("leads_total_count >= 0", name="ck_unit_economics_leads_total_nonneg"),
         CheckConstraint("leads_om_count >= 0", name="ck_unit_economics_leads_om_nonneg"),
     )
+
+class MarketingSpend(Base):
+    __tablename__ = "marketing_spend"
+    id = Column(Integer, primary_key=True)
+    report_month = Column(Date, nullable=False) # Всегда 1-е число месяца
+    channel = Column(String(50), nullable=False) # OM_manual, OM_auto, Avito, Media
+    amount = Column(Numeric(10, 2), default=0)
+
+class FixedExpense(Base):
+    __tablename__ = "fixed_expenses"
+    id = Column(Integer, primary_key=True)
+    report_month = Column(Date, nullable=False)
+    category = Column(String(100), nullable=False) # Cineskop, ChatPlace, Bots, Salaries_fixed
+    amount = Column(Numeric(10, 2), default=0)
