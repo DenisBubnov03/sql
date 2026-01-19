@@ -395,6 +395,7 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
     total_paid = session.query(func.sum(Payment.amount)).filter(
         Payment.payment_date.between(start_date, end_date),
         Payment.status == "подтвержден",
+        ~Payment.comment.ilike("%Системное восстановление%"),  # Исключаем доп расходы из оборота
         ~Payment.comment.ilike("%Доп расход%")  # Исключаем доп расходы из оборота
     ).scalar() or 0
 
