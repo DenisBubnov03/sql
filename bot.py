@@ -20,12 +20,23 @@ from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATIS
     IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE, CONTRACT_MENU, CONTRACT_STUDENT_TG, CONTRACT_TYPE, \
     CONTRACT_ADVANCE_AMOUNT, CONTRACT_PAYMENT_TYPE, CONTRACT_MONTHS, CONTRACT_COMMISSION_TYPE, \
     CONTRACT_COMMISSION_CUSTOM, CONTRACT_FIO, CONTRACT_ADDRESS, CONTRACT_INN, CONTRACT_RS, CONTRACT_KS, \
-    CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL, MEETING_TYPE_SELECTION
+    CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL, MEETING_TYPE_SELECTION, UE_MENU, UE_START_PERIOD, UE_END_PERIOD, \
+    UE_PRODUCT_CODE, EXPENSE_SUB_CATEGORY
 from commands.student_commands import (
     edit_student, edit_student_field, handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
     smart_edit_student, smart_edit_student_field, handle_curator_type_selection, handle_curator_mentor_selection,
     confirm_refund_callback
+)
+from commands.unit_economics_commands import (
+    show_unit_economics_menu,
+    show_latest_unit_economics,
+    unit_economics_request_start,
+    unit_economics_handle_start,
+    unit_economics_handle_end,
+    # unit_economics_handle_product_code,
+    unit_economics_back_to_statistics,
+    unit_economics_command,
 )
 from commands.student_employment_commands import *
 from commands.student_info_commands import *
@@ -37,7 +48,8 @@ from commands.student_selection import find_student, handle_multiple_students
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
     handle_period_start, handle_period_end, show_held_amounts
-from commands.additional_expenses_commands import start_expense_process, handle_expense_type, handle_expense_name, handle_expense_amount, handle_expense_date
+from commands.additional_expenses_commands import start_expense_process, handle_expense_type, handle_expense_amount, \
+    handle_expense_date, handle_sub_category
 from commands.contract_commands import (
     start_contract_formation, handle_contract_menu, handle_student_telegram,
     handle_contract_type, handle_advance_amount, handle_payment_type, handle_months,
@@ -217,9 +229,18 @@ def main():
                 MessageHandler(filters.Regex("^📚 По типу обучения$"), show_course_type_menu),
                 MessageHandler(filters.Regex("^📅 По периоду$"), request_period_start),
                 MessageHandler(filters.Regex("^💰 Холдирование$"), show_held_amounts),
+                MessageHandler(filters.Regex("^💹 Юнит экономика$"), show_unit_economics_menu),
             ],
             START_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_period_start)],
             END_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_period_end)],
+            UE_MENU: [
+                MessageHandler(filters.Regex("^📌 Последний период$"), show_latest_unit_economics),
+                MessageHandler(filters.Regex("^📅 Выбрать период$"), unit_economics_request_start),
+                MessageHandler(filters.Regex("^🔙 Назад$"), unit_economics_back_to_statistics),
+            ],
+            UE_START_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, unit_economics_handle_start)],
+            UE_END_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, unit_economics_handle_end)],
+            # UE_PRODUCT_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, unit_economics_handle_product_code)],
             COURSE_TYPE_MENU: [
                 MessageHandler(filters.Regex("^👨‍💻 Ручное тестирование$"), show_manual_testing_statistics),
                 MessageHandler(filters.Regex("^🤖 Автотестирование$"), show_automation_testing_statistics),
@@ -312,15 +333,17 @@ def main():
     )
     
     # Обработчик доп расходов
-    expense_handler = ConversationHandler(
+    expense_conv = ConversationHandler(
+        # Добавил ^ и 💸 для соответствия кнопке
         entry_points=[MessageHandler(filters.Regex("^Доп расходы$"), start_expense_process)],
         states={
             EXPENSE_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_type)],
-            EXPENSE_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_name)],
+            EXPENSE_SUB_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sub_category)],
             EXPENSE_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_amount)],
             EXPENSE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_date)],
         },
-        fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)],
+        fallbacks=[CommandHandler("cancel", exit_to_main_menu),
+                   MessageHandler(filters.Regex("^🔙 Отмена$"), exit_to_main_menu)]
     )
     
     # Обработчик карьерных консультантов
@@ -340,21 +363,20 @@ def main():
         fallbacks=[]
     )
     application.add_handler(create_meeting_handler)
-    application.add_handler(
-        CallbackQueryHandler(handle_student_inactivity_buttons, pattern="^(set_inactive|keep_active|slow_progress):")
-    )
+    # application.add_handler(
+    #     CallbackQueryHandler(handle_student_inactivity_buttons, pattern="^(set_inactive|keep_active|slow_progress):")
+    # )
     application.add_handler(
         CallbackQueryHandler(handle_student_inactivity_buttons, pattern="^(set_inactive|keep_active):"))
-    application.add_handler(salary_handler)
     application.add_handler(contract_signing_handler)
     application.add_handler(contract_handler)
     application.add_handler(bonus_handler)
-    application.add_handler(expense_handler)
+    application.add_handler(expense_conv)
     application.add_handler(CallbackQueryHandler(confirm_refund_callback, pattern="^conf_ref_"))
     # Обработчики карьерных консультантов
     application.add_handler(MessageHandler(filters.Regex("^📊 Моя статистика$"), show_career_consultant_statistics))
     application.add_handler(MessageHandler(filters.Regex("^💼 Карьерный консультант$"), career_consultant_start))
-    application.add_handler(MessageHandler(filters.Regex("^🔙 Назад$"), exit_career_consultant_menu))
+    application.add_handler(MessageHandler(filters.Regex("^🔙 Назад$"), exit_to_main_menu))
     application.add_handler(career_consultant_handler)
     # Обработчики управления карьерными консультантами
     application.add_handler(add_career_consultant_handler)
@@ -362,6 +384,7 @@ def main():
     # Регистрация обработчиков
     application.add_handler(salary_handler)
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("unit_economics", unit_economics_command))
     application.add_handler(add_student_handler)
     application.add_handler(edit_student_handler)
     application.add_handler(search_student_handler)

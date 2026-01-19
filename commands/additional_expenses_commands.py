@@ -1,204 +1,192 @@
 from datetime import datetime
+
+from sqlalchemy import func
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from commands.start_commands import exit_to_main_menu
+from commands.states import EXPENSE_TYPE, EXPENSE_SUB_CATEGORY, EXPENSE_AMOUNT, EXPENSE_DATE
 from data_base.db import session
-from data_base.models import Payment
+# Импортируем твои новые модели
+from data_base.models import MarketingSpend, FixedExpense
 
-# Состояния для ConversationHandler
-EXPENSE_TYPE = "EXPENSE_TYPE"
-EXPENSE_NAME = "EXPENSE_NAME"
-EXPENSE_AMOUNT = "EXPENSE_AMOUNT"
-EXPENSE_DATE = "EXPENSE_DATE"
+# Добавляем новое состояние для подкатегорий
+# (EXPENSE_TYPE, EXPENSE_SUB_CATEGORY, EXPENSE_AMOUNT, EXPENSE_DATE) = range(4)
 
+# Маппинг для базы данных (чтобы в БД сохранялись английские ключи, а в кнопках были русские)
+MARKETING_CHANNELS = {
+    "ОМ Ручной": "om_manual",
+    "ОМ Авто": "om_auto",
+    "Авито": "avito",
+    "Ютуб": "media"
+}
 
+FIXED_CATEGORIES = {
+    "Cineskop": "cineskop",
+    "Chat Place": "chat_place",
+    "Боты": "bots",
+    "Оклады": "salaries_fixed",
+    "Менторы": "mentors",
+    "Другое": "other_fixed"
+}
+
+def get_additional_expenses_for_period(start_date, end_date, detailed=False):
+    """
+    Суммирует расходы из новых таблиц за указанный период.
+    :param detailed: если True, вернет словарь с разбивкой по категориям
+    """
+    # Если даты пришли как datetime, берем только date
+    if isinstance(start_date, datetime): start_date = start_date.date()
+    if isinstance(end_date, datetime): end_date = end_date.date()
+
+    # Считаем маркетинг
+    marketing_query = session.query(func.sum(MarketingSpend.amount)).filter(
+        MarketingSpend.report_month >= start_date,
+        MarketingSpend.report_month <= end_date
+    ).scalar() or 0
+
+    # Считаем фиксы
+    fixed_query = session.query(func.sum(FixedExpense.amount)).filter(
+        FixedExpense.report_month >= start_date,
+        FixedExpense.report_month <= end_date
+    ).scalar() or 0
+
+    total = float(marketing_query) + float(fixed_query)
+
+    if not detailed:
+        return total
+
+    # Для юнит-экономики нам понадобится детальный отчет
+    return {
+        "total": total,
+        "marketing_total": float(marketing_query),
+        "fixed_total": float(fixed_query)
+    }
 
 async def start_expense_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Начало процесса добавления доп расходов.
-    """
     user_id = update.message.from_user.id
     if user_id not in AUTHORIZED_USERS and user_id not in NOT_ADMINS:
         await update.message.reply_text("Извините, у вас нет доступа.")
         return ConversationHandler.END
 
     await update.message.reply_text(
-        "💸 Выберите тип доп расходов:",
+        "💸 Выберите тип расхода:",
         reply_markup=ReplyKeyboardMarkup(
-            [["Реклама"], ["Зарплата"], ["Другое"], ["Назад"]],
-            one_time_keyboard=True
+            [["Маркетинг"], ["Фиксы"], ["Назад"]],
+            one_time_keyboard=True, resize_keyboard=True
         )
     )
     return EXPENSE_TYPE
 
+
 async def handle_expense_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Обрабатывает выбор типа расхода.
-    """
-    expense_type = update.message.text.strip()
-    
-    if expense_type == "Назад":
+    choice = update.message.text.strip()
+
+    if choice == "Назад":
         return await exit_to_main_menu(update, context)
-    
-    if expense_type not in ["Реклама", "Зарплата", "Другое"]:
-        await update.message.reply_text(
-            "❌ Некорректный тип расхода. Выберите 'Реклама', 'Зарплата' или 'Другое':",
-            reply_markup=ReplyKeyboardMarkup(
-                [["Реклама"], ["Зарплата"], ["Другое"], ["Назад"]],
-                one_time_keyboard=True
-            )
-        )
+
+    context.user_data["main_type"] = choice  # 'Маркетинг' или 'Фиксы'
+
+    if choice == "Маркетинг":
+        keyboard = [["ОМ Ручной", "ОМ Авто"], ["Авито", "Ютуб"], ["Назад"]]
+        text = "🎯 Выберите канал маркетинга:"
+    elif choice == "Фиксы":
+        keyboard = [["Cineskop", "Chat Place"], ["Боты", "Оклады"], ["Менторы", "Другое"], ["Назад"]]
+        text = "⚙️ Выберите категорию фиксированных расходов:"
+    else:
         return EXPENSE_TYPE
-    
-    if expense_type == "Другое":
-        # Если выбрано "Другое", запрашиваем наименование платежа
-        await update.message.reply_text(
-            "📝 Введите наименование платежа:",
-            reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True)
-        )
-        return EXPENSE_NAME
-    
-    # Для "Реклама" и "Зарплата" сразу переходим к сумме
-    context.user_data["expense_type"] = expense_type
+
     await update.message.reply_text(
-        f"💰 Введите сумму для расхода '{expense_type}':",
-        reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True)
+        text,
+        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    )
+    return EXPENSE_SUB_CATEGORY
+
+
+async def handle_sub_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    sub_choice = update.message.text.strip()
+
+    if sub_choice == "Назад":
+        return await start_expense_process(update, context)
+
+    # Сохраняем "человеческое" название для вывода и "техническое" для БД
+    context.user_data["sub_category_name"] = sub_choice
+
+    if context.user_data["main_type"] == "Маркетинг":
+        context.user_data["db_category"] = MARKETING_CHANNELS.get(sub_choice, "other")
+    else:
+        context.user_data["db_category"] = FIXED_CATEGORIES.get(sub_choice, "other_fixed")
+
+    await update.message.reply_text(
+        f"💰 Введите сумму для '{sub_choice}':",
+        reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True, resize_keyboard=True)
     )
     return EXPENSE_AMOUNT
 
-
-async def handle_expense_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Обрабатывает ввод наименования платежа для типа "Другое".
-    """
-    expense_name = update.message.text.strip()
-    
-    if expense_name == "Назад":
-        return await exit_to_main_menu(update, context)
-    
-    if not expense_name:
-        await update.message.reply_text(
-            "❌ Наименование не может быть пустым. Введите наименование платежа:",
-            reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True)
-        )
-        return EXPENSE_NAME
-    
-    # Сохраняем наименование как тип расхода
-    context.user_data["expense_type"] = expense_name
-    await update.message.reply_text(
-        f"💰 Введите сумму для расхода '{expense_name}':",
-        reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True)
-    )
-    return EXPENSE_AMOUNT
 
 async def handle_expense_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Обрабатывает ввод суммы расхода.
-    """
     amount_text = update.message.text.strip()
-    
     if amount_text == "Назад":
-        return await exit_to_main_menu(update, context)
-    
+        return await handle_expense_type(update, context)
+
     try:
-        amount = float(amount_text)
-        if amount <= 0:
-            raise ValueError("Сумма должна быть положительной")
-        
+        amount = float(amount_text.replace(",", "."))
+        if amount <= 0: raise ValueError
         context.user_data["expense_amount"] = amount
+
         await update.message.reply_text(
-            f"📅 Введите дату расхода в формате ДД.ММ.ГГГГ или выберите 'Сегодня':",
-            reply_markup=ReplyKeyboardMarkup(
-                [["Сегодня"], ["Назад"]],
-                one_time_keyboard=True
-            )
+            "📅 Введите дату расхода (ДД.ММ.ГГГГ) или нажмите 'Сегодня':",
+            reply_markup=ReplyKeyboardMarkup([["Сегодня"], ["Назад"]], one_time_keyboard=True, resize_keyboard=True)
         )
         return EXPENSE_DATE
-        
     except ValueError:
-        await update.message.reply_text(
-            "❌ Некорректная сумма. Введите положительное число:",
-            reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True)
-        )
+        await update.message.reply_text("❌ Введите корректное число.")
         return EXPENSE_AMOUNT
 
+
 async def handle_expense_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Обрабатывает ввод даты расхода и сохраняет расход в базу.
-    """
     date_text = update.message.text.strip()
-    
     if date_text == "Назад":
-        return await exit_to_main_menu(update, context)
-    
+        return await handle_sub_category(update, context)
+
     try:
         if date_text.lower() == "сегодня":
             expense_date = datetime.now().date()
         else:
             expense_date = datetime.strptime(date_text, "%d.%m.%Y").date()
-        
-        expense_type = context.user_data.get("expense_type")
-        expense_amount = context.user_data.get("expense_amount")
-        
-        # Создаем запись о расходе в таблице Payment
-        # student_id = None для расходов без привязки к студенту
-        expense_payment = Payment(
-            student_id=None,  # Нет привязки к студенту для доп расходов
-            mentor_id=None,  # Нет привязки к ментору
-            amount=expense_amount,
-            payment_date=expense_date,
-            comment=f"Доп расход: {expense_type}",
-            status="подтвержден"
-        )
-        
-        try:
-            session.add(expense_payment)
-            session.commit()
-            
-            await update.message.reply_text(
-                f"✅ Расход успешно добавлен:\n"
-                f"💰 Тип: {expense_type}\n"
-                f"💸 Сумма: {expense_amount} руб.\n"
-                f"📅 Дата: {expense_date.strftime('%d.%m.%Y')}"
+
+        # Для отчетности нам нужно 1-е число месяца
+        report_month = expense_date.replace(day=1)
+
+        main_type = context.user_data.get("main_type")
+        db_category = context.user_data.get("db_category")
+        amount = context.user_data.get("expense_amount")
+
+        if main_type == "Маркетинг":
+            new_record = MarketingSpend(
+                report_month=report_month,
+                channel=db_category,
+                amount=amount
             )
-        except Exception as commit_error:
-            session.rollback()
-            await update.message.reply_text(f"❌ Ошибка при сохранении расхода: {commit_error}")
-            return await exit_to_main_menu(update, context)
-        
-        # Очищаем данные
-        context.user_data.pop("expense_type", None)
-        context.user_data.pop("expense_amount", None)
-        
-        return await exit_to_main_menu(update, context)
-        
-    except ValueError:
+        else:
+            new_record = FixedExpense(
+                report_month=report_month,
+                category=db_category,
+                amount=amount
+            )
+
+        session.add(new_record)
+        session.commit()
+
         await update.message.reply_text(
-            "❌ Некорректная дата. Введите дату в формате ДД.ММ.ГГГГ или выберите 'Сегодня':",
-            reply_markup=ReplyKeyboardMarkup(
-                [["Сегодня"], ["Назад"]],
-                one_time_keyboard=True
-            )
+            f"✅ Расход зафиксирован!\n"
+            f"📁 Тип: {main_type} ({context.user_data['sub_category_name']})\n"
+            f"💰 Сумма: {amount} руб.\n"
+            f"📅 Отчетный период: {report_month.strftime('%m.%Y')}"
         )
-        return EXPENSE_DATE
-    except Exception as e:
-        # Делаем rollback в случае ошибки
-        session.rollback()
-        await update.message.reply_text(f"❌ Ошибка при сохранении расхода: {e}")
         return await exit_to_main_menu(update, context)
 
-def get_additional_expenses_for_period(start_date, end_date, session):
-    """
-    Получает сумму доп расходов за период.
-    """
-    expenses = session.query(Payment).filter(
-        Payment.payment_date >= start_date,
-        Payment.payment_date <= end_date,
-        Payment.status == "подтвержден",
-        Payment.comment.ilike("%Доп расход%"),
-        Payment.student_id.is_(None),  # Только расходы без студента
-        Payment.mentor_id.is_(None)  # Только расходы без ментора
-    ).all()
-    
-    return sum(float(expense.amount) for expense in expenses) 
+    except Exception as e:
+        session.rollback()
+        await update.message.reply_text(f"❌ Ошибка: {e}")
+        return await exit_to_main_menu(update, context)
