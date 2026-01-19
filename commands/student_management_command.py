@@ -520,9 +520,9 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
             payment_mentor_id = auto_mentor_id
         else:
             payment_mentor_id = mentor_id if mentor_id else auto_mentor_id
-        if payment_mentor_id is not None:
-            record_initial_payment(student_id, context.user_data.get("paid_amount", 0), payment_mentor_id)
-
+        paid_amount = context.user_data.get("paid_amount", 0)
+        if paid_amount > 0:
+            record_initial_payment(student_id, paid_amount, payment_mentor_id)
         # Получаем имена менторов
         mentor_id = context.user_data.get("mentor_id")
         auto_mentor_id = context.user_data.get("auto_mentor_id")
