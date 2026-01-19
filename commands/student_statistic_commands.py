@@ -394,23 +394,30 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
     # Получаем сумму всех платежей (включая первоначальные и доплаты), ИСКЛЮЧАЯ доп расходы
     total_paid = session.query(func.sum(Payment.amount)).filter(
         Payment.payment_date.between(start_date, end_date),
+        Payment.status == "подтвержден",
         ~Payment.comment.ilike("%Доп расход%")  # Исключаем доп расходы из оборота
     ).scalar() or 0
 
     # Получаем сумму доплат (где comment = "Доплата")
     additional_payments = session.query(func.sum(Payment.amount)).filter(
         Payment.payment_date.between(start_date, end_date),
+        Payment.status == "подтвержден",
         Payment.comment == "Доплата"
     ).scalar() or 0
 
     additional_commission = session.query(func.sum(Payment.amount)).filter(
         Payment.payment_date.between(start_date, end_date),
+        Payment.status == "подтвержден",
         Payment.comment == "Комиссия"
     ).scalar() or 0
 
     # Общая стоимость обучения для найденных студентов
     total_cost = sum(student.total_cost for student in students)
-    payment_amount = sum(student.payment_amount for student in students)
+    payment_amount = session.query(func.sum(Payment.amount)).filter(
+        Payment.payment_date.between(start_date, end_date),
+        Payment.status == "подтвержден",
+        Payment.comment == "Первоначальный платёж при регистрации"
+    ).scalar() or 0
 
     # Остаток к оплате
     remaining_payment = total_cost - payment_amount

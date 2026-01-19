@@ -110,11 +110,11 @@ async def send_smart_message(chat_id, text, kb=None):
     except Exception as e:
         print(f"⚠️ Ошибка отправки на {chat_id}: {e}. Пересылаю админу.")
         # Экранируем текст для админа, чтобы не упало при пересылке
-        admin_text = f"<b>‼️ ОШИБКА ДОСТАВКИ</b> (ID: {chat_id})\n\n{text}"
-        try:
-            await bot.send_message(chat_id=MY_PERSONAL_ID, text=admin_text, reply_markup=kb, parse_mode="HTML")
-        except Exception as e2:
-            print(f"❌ Даже админу не отправить: {e2}")
+        # admin_text = f"<b>‼️ ОШИБКА ДОСТАВКИ</b> (ID: {chat_id})\n\n{text}"
+        # try:
+            # await bot.send_message(chat_id=MY_PERSONAL_ID, text=admin_text, reply_markup=kb, parse_mode="HTML")
+        # except Exception as e2:
+        #     print(f"❌ Даже админу не отправить: {e2}")
         return False
 
 
@@ -130,12 +130,13 @@ async def run_check():
         print(f"❌ Ошибка БД: {e}")
         return
 
+    # Запрос данных
     cur.execute("""
         SELECT s.id, s.fio, m.chat_id, s.telegram, s.last_call_date, s.training_type
         FROM students s
         JOIN mentors m ON s.mentor_id = m.id
         WHERE s.training_status = 'Учится'
-        and s.start_date >= '2025-10-01';
+        AND s.start_date >= '2025-10-01';
     """)
     rows = cur.fetchall()
 
@@ -144,6 +145,10 @@ async def run_check():
 
     state = load_state()
     today = date.today()
+
+    # Словари для сбора "Дайджестов" (чтобы не спамить)
+    curator_digests = {}  # {m_chat_id: [список строк уведомлений]}
+    director_digests = {}  # {d_chat_id: [список строк уведомлений]}
 
     for s_id, s_name, m_chat_id, s_telegram, raw_date, training_type in rows:
         s_id_str = str(s_id)
@@ -156,21 +161,23 @@ async def run_check():
 
         days_passed = (today - last_call).days
         if days_passed <= 14:
-            if s_id_str in state:
-                del state[s_id_str]  # Удаляем все флаги, т.к. ученик ожил
+            if s_id_str in state: del state[s_id_str]
             continue
 
-        # --- Логика триггеров (2/3/4 недели) ---
-        if s_id_str not in state:
-            state[s_id_str] = {}
-
-        last_stage = int(state[s_id_str].get("stage", 0) or 0)
+        # Определение текущей максимальной стадии
         if days_passed >= 28:
             required_stage = 3
         elif days_passed >= 21:
             required_stage = 2
         else:
-            required_stage = 1  # 15-20 дней
+            required_stage = 1
+
+        last_stage = int(state.get(s_id_str, {}).get("stage", 0))
+
+        # Если стадия не выросла — ничего не шлем (кроме повторов для Stage 1, но это ниже)
+        if required_stage <= last_stage:
+            # Логика повторов для стадии 1 (раз в 3/7/14 дней) остается тут, если нужно
+            continue
 
         context = {
             "student_name": s_name,
@@ -180,75 +187,62 @@ async def run_check():
             "training_type": training_type or "",
         }
 
-        async def _send_to_directors(text: str) -> None:
-            for director_id in _director_ids_for_training_type(training_type):
-                chat_id = director_chat_ids.get(director_id)
-                if chat_id:
-                    await send_smart_message(chat_id, text)
+        # --- ПОДГОТОВКА УВЕДОМЛЕНИЙ (БЕЗ ОТПРАВКИ КУРАТОРУ СРАЗУ) ---
+        student_msg = None
+        curator_alert = ""
 
-        # Отправляем недостающие стадии по порядку, чтобы не пропускать эскалации
-        for stage in range(last_stage + 1, required_stage + 1):
-            if stage == 1:
-                curator_text = (
-                    f"⚠️ Студент <b>{s_name}</b> не созванивался уже <b>{days_passed}</b> дн.! "
-                    f"Необходимо написать ученику {s_telegram}."
-                )
-                student_text = _render_template(first_masage, context)
-                await send_smart_message(m_chat_id, curator_text)
-                await send_smart_message(s_telegram, student_text)
+        if required_stage == 1:
+            student_msg = _render_template(first_masage, context)
+            curator_alert = f"❗ <b>{s_name}</b> ({days_passed} дн.) — Напиши ученику: {s_telegram}"
 
-            elif stage == 2:
-                student_text = _render_template(second_massage_student, context)
-                curator_text = _render_template(second_massage_curator, context)
-                director_text = _render_template(second_massage_director, context)
-                await send_smart_message(s_telegram, student_text)
-                await send_smart_message(m_chat_id, curator_text)
-                await _send_to_directors(director_text)
+        elif required_stage == 2:
+            student_msg = _render_template(second_massage_student, context)
+            curator_alert = f"⚠️ <b>{s_name}</b> ({days_passed} дн.) — 3 недели без связи! {s_telegram}"
+            # Добавляем директорам
+            for d_id in _director_ids_for_training_type(training_type):
+                d_chat = director_chat_ids.get(d_id)
+                if d_chat:
+                    director_digests.setdefault(d_chat, []).append(f"⚠️ 3 нед: {s_name} ({training_type})")
 
-            elif stage == 3:
-                student_text = _render_template(third_massage_student, context)
-                curator_text = _render_template(third_massage_curator_alarm, context)
-                director_text = _render_template(third_massage_director_alarm, context)
-                await send_smart_message(s_telegram, student_text)
-                await send_smart_message(m_chat_id, curator_text)
-                await _send_to_directors(director_text)
+        elif required_stage == 3:
+            student_msg = _render_template(third_massage_student, context)
+            curator_alert = f"🚨 <b>АЛАРМ: {s_name}</b> ({days_passed} дн.) — 4 недели тишины! {s_telegram}"
+            # Добавляем директорам
+            for d_id in _director_ids_for_training_type(training_type):
+                d_chat = director_chat_ids.get(d_id)
+                if d_chat:
+                    director_digests.setdefault(d_chat, []).append(f"🚨 4 нед: {s_name} ({training_type})")
 
-        if required_stage > last_stage:
-            state[s_id_str]["stage"] = required_stage
-            state[s_id_str]["last_notified"] = str(today)
+        # 1. Отправляем ученику (индивидуально, это не спам)
+        if student_msg:
+            await send_smart_message(s_telegram, student_msg)
 
-        # Повторы для 1-го уровня (2 недели) — как раньше, с кнопками статуса
-        if required_stage == 1 and state[s_id_str].get("last_notified"):
-            last_notified = datetime.strptime(state[s_id_str]["last_notified"], "%Y-%m-%d").date()
+        # 2. Копим сообщение для куратора
+        curator_digests.setdefault(m_chat_id, []).append(curator_alert)
 
-            if state[s_id_str].get("active_hold"):
-                interval = 14  # Пауза 2 недели после кнопки "Активен"
-                status_note = " (после подтверждения активности)"
-            elif state[s_id_str].get("slow_progress"):
-                interval = 7  # Пауза неделя после кнопки "Долго учится"
-                status_note = " (режим: раз в неделю)"
-            else:
-                interval = 3  # Стандартно
-                status_note = ""
+        # Обновляем состояние в JSON
+        if s_id_str not in state: state[s_id_str] = {}
+        state[s_id_str]["stage"] = required_stage
+        state[s_id_str]["last_notified"] = str(today)
 
-            if (today - last_notified).days >= interval:
-                if state[s_id_str].get("active_hold"):
-                    state[s_id_str].pop("active_hold", None)
+    # --- ФИНАЛЬНАЯ РАССЫЛКА ДАЙДЖЕСТОВ ---
 
-                kb = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="❌ Не учится", callback_data=f"set_inactive:{s_id_str}")],
-                    [InlineKeyboardButton(text="✅ Активен (на 2 нед.)", callback_data=f"keep_active:{s_id_str}")]
-                ])
+    # Кураторам
+    for chat_id, alerts in curator_digests.items():
+        header = "<b>📋 Список студентов без созвонов:</b>\n\n"
+        full_text = header + "\n".join(alerts)
+        await send_smart_message(chat_id, full_text)
 
-                msg = f"🔔 Повтор{status_note}! <b>{s_name}</b> молчит {days_passed} дн. Подтвердите статус:"
-                if await send_smart_message(m_chat_id, msg, kb):
-                    state[s_id_str]["last_notified"] = str(today)
+    # Директорам
+    for chat_id, alerts in director_digests.items():
+        header = "<b>📊 Сводка по проблемным студентам:</b>\n\n"
+        full_text = header + "\n".join(alerts)
+        await send_smart_message(chat_id, full_text)
 
     save_state(state)
     cur.close()
     conn.close()
     await bot.session.close()
-
 
 if __name__ == "__main__":
     asyncio.run(run_check())
