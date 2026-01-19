@@ -376,7 +376,7 @@ def main():
     # Обработчики карьерных консультантов
     application.add_handler(MessageHandler(filters.Regex("^📊 Моя статистика$"), show_career_consultant_statistics))
     application.add_handler(MessageHandler(filters.Regex("^💼 Карьерный консультант$"), career_consultant_start))
-    application.add_handler(MessageHandler(filters.Regex("^🔙 Назад$"), exit_career_consultant_menu))
+    application.add_handler(MessageHandler(filters.Regex("^🔙 Назад$"), exit_to_main_menu))
     application.add_handler(career_consultant_handler)
     # Обработчики управления карьерными консультантами
     application.add_handler(add_career_consultant_handler)

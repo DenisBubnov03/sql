@@ -439,7 +439,7 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
         total_salaries = mentor_salaries + career_consultant_salaries
 
         # Получаем доп расходы за период
-        additional_expenses = get_additional_expenses_for_period(start_date, end_date, session)
+        additional_expenses = get_additional_expenses_for_period(start_date, end_date)
         
         # Чистая прибыль с учетом доп расходов
         net_profit = int(total_paid) - int(total_salaries) - int(additional_expenses)
