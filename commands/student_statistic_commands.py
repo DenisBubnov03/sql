@@ -268,15 +268,15 @@ def calc_total_salaries_for_dates(start_date, end_date, session) -> tuple:
             mentor_salaries.setdefault(3, 0)
             mentor_salaries[3] += float(p.amount) * 0.1
 
-    fs_students = session.query(Student).filter(
-        Student.training_type == "Фуллстек",
-        Student.total_cost >= 50000,
-        Student.start_date >= start_date,
-        Student.start_date <= end_date
-    ).all()
-    if fs_students:
-        mentor_salaries.setdefault(1, 0)
-        mentor_salaries[1] += len(fs_students) * 5000
+    # fs_students = session.query(Student).filter(
+    #     Student.training_type == "Фуллстек",
+    #     Student.total_cost >= 50000,
+    #     Student.start_date >= start_date,
+    #     Student.start_date <= end_date
+    # ).all()
+    # if fs_students:
+    #     mentor_salaries.setdefault(1, 0)
+    #     mentor_salaries[1] += len(fs_students) * 5000
 
     for p in detailed_payments:
         student = session.query(Student).get(p.student_id)
