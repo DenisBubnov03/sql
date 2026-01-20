@@ -1,33 +1,53 @@
+import tracemalloc
 import os
 import tracemalloc
 import json
+from pathlib import Path
 import psycopg2
+from dotenv import load_dotenv
+from telegram import CallbackQuery
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 
-from bot.handlers.career_consultant_handlers import  show_career_consultant_statistics, \
-    show_assign_student_menu, handle_student_selection, handle_assignment_confirmation, CONFIRM_ASSIGNMENT, SELECT_STUDENT, \
-    career_consultant_start, exit_career_consultant_menu
+from bot.handlers.career_consultant_handlers import show_career_consultant_statistics, \
+    show_assign_student_menu, handle_student_selection, handle_assignment_confirmation, career_consultant_start
+from commands.additional_expenses_commands import start_expense_process, handle_expense_type, handle_expense_amount, \
+    handle_expense_date, handle_sub_category
+from commands.career_consultant_commands import add_career_consultant_handler
+from commands.contract_commands import (
+    start_contract_formation, handle_contract_menu, handle_student_telegram,
+    handle_contract_type, handle_advance_amount, handle_payment_type, handle_months,
+    handle_commission_type, handle_commission_custom, handle_fio, handle_address,
+    handle_inn, handle_rs, handle_ks, handle_bank, handle_bik, handle_email
+)
 from commands.create_meeting import create_meeting_entry, select_meeting_type
 from commands.mentor_bonus_commands import start_bonus_process, handle_mentor_tg, handle_bonus_amount
-from commands.start_commands import start, exit_to_main_menu
-from commands.career_consultant_commands import add_career_consultant_handler
+from commands.start_commands import start
 from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, \
     COURSE_TYPE_MENU, \
-    CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, SELECT_MENTOR, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
-    EXPENSE_TYPE, EXPENSE_NAME, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, \
+    CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
+    EXPENSE_TYPE, EXPENSE_AMOUNT, EXPENSE_DATE, SIGN_CONTRACT, FIELD_TO_EDIT, SELECT_STUDENT, \
     WAIT_FOR_NEW_VALUE, \
     CONFIRM_ASSIGNMENT, WAIT_FOR_DETAILED_SALARY, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR, \
-    IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE, CONTRACT_MENU, CONTRACT_STUDENT_TG, CONTRACT_TYPE, \
+    CONTRACT_MENU, CONTRACT_STUDENT_TG, CONTRACT_TYPE, \
     CONTRACT_ADVANCE_AMOUNT, CONTRACT_PAYMENT_TYPE, CONTRACT_MONTHS, CONTRACT_COMMISSION_TYPE, \
     CONTRACT_COMMISSION_CUSTOM, CONTRACT_FIO, CONTRACT_ADDRESS, CONTRACT_INN, CONTRACT_RS, CONTRACT_KS, \
     CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL, MEETING_TYPE_SELECTION, UE_MENU, UE_START_PERIOD, UE_END_PERIOD, \
-    UE_PRODUCT_CODE, EXPENSE_SUB_CATEGORY
+    EXPENSE_SUB_CATEGORY
 from commands.student_commands import (
-    edit_student, edit_student_field, handle_student_deletion, handle_new_value,
+    handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
     smart_edit_student, smart_edit_student_field, handle_curator_type_selection, handle_curator_mentor_selection,
     confirm_refund_callback
 )
+from commands.student_info_commands import *
+from commands.student_management_command import *
+from commands.student_management_command import handle_detailed_salary_request
+from commands.student_notifications import check_call_notifications, check_payment_notifications, \
+    check_prepayment_notifications, check_postpayment_notifications, check_all_notifications, show_notifications_menu
+from commands.student_selection import find_student, handle_multiple_students
+from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
+    show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
+    handle_period_start, handle_period_end, show_held_amounts
 from commands.unit_economics_commands import (
     show_unit_economics_menu,
     show_latest_unit_economics,
@@ -38,119 +58,110 @@ from commands.unit_economics_commands import (
     unit_economics_back_to_statistics,
     unit_economics_command,
 )
-from commands.student_employment_commands import *
-from commands.student_info_commands import *
-from commands.student_management_command import *
-from commands.student_management_command import handle_detailed_salary_request
-from commands.student_notifications import check_call_notifications, check_payment_notifications, \
-    check_prepayment_notifications, check_postpayment_notifications, check_all_notifications, show_notifications_menu
-from commands.student_selection import find_student, handle_multiple_students
-from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
-    show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
-    handle_period_start, handle_period_end, show_held_amounts
-from commands.additional_expenses_commands import start_expense_process, handle_expense_type, handle_expense_amount, \
-    handle_expense_date, handle_sub_category
-from commands.contract_commands import (
-    start_contract_formation, handle_contract_menu, handle_student_telegram,
-    handle_contract_type, handle_advance_amount, handle_payment_type, handle_months,
-    handle_commission_type, handle_commission_custom, handle_fio, handle_address,
-    handle_inn, handle_rs, handle_ks, handle_bank, handle_bik, handle_email
-)
-import os
-from dotenv import load_dotenv
+from data_base.db import DATABASE_URL
+from utils.notification import _director_ids_for_training_type, load_state, save_state, bot, \
+    get_director_chat_id_from_db
+
 load_dotenv()
 tracemalloc.start()
 # Токен Telegram-бота
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-from pathlib import Path
-
 
 async def handle_student_inactivity_buttons(update, context):
     query = update.callback_query
-    action, student_id = query.data.split(":")
+    action, student_id_raw = query.data.split(":")
+    student_id_str = str(student_id_raw)
     await query.answer()
 
-    # Определяем абсолютный путь к JSON, чтобы не зависеть от места запуска
+    # Получаем данные куратора, который нажал кнопку
+    curator = update.effective_user
+    curator_tg = f"@{curator.username}" if curator.username else f"ID: {curator.id}"
+
     base_dir = Path(__file__).resolve().parent
     json_path = base_dir / "utils" / "notification_state.json"
 
-    if action == "set_inactive":
+    if action in ["set_inactive", "drop_student"]:
         try:
-            # 1. Обновляем статус в базе
             db_url = os.getenv("DATABASE_URL")
             with psycopg2.connect(db_url) as conn:
                 with conn.cursor() as cur:
-                    # Приводим student_id к int на всякий случай
-                    cur.execute(
-                        "UPDATE students SET training_status = 'Не учится' WHERE id = %s",
-                        (int(student_id),)
-                    )
-                    conn.commit()
-            print(f"✅ Статус студента {student_id} обновлен в БД")
+                    # 1. Добавляем s.telegram в запрос
+                    cur.execute("SELECT fio, training_type, telegram FROM students WHERE id = %s",
+                                (int(student_id_raw),))
+                    student_data = cur.fetchone()
 
-            # 2. Удаляем из JSON
+                    if student_data:
+                        s_name, t_type, s_tg = student_data  # s_tg — это ТГ ученика
+
+                        cur.execute(
+                            "UPDATE students SET training_status = 'Не учится' WHERE id = %s",
+                            (int(student_id_raw),)
+                        )
+                        conn.commit()
+
+                        # 2. Формируем расширенное сообщение для директора
+                        for d_id in _director_ids_for_training_type(t_type):
+                            d_chat = get_director_chat_id_from_db(d_id)
+                            if d_chat:
+                                msg = (
+                                    f"📉 <b>СТАТУС ИЗМЕНЕН</b>\n\n"
+                                    f"👤 Студент: <b>{s_name}</b> ({s_tg})\n"
+                                    f"👨‍🏫 Куратор: <b>{curator_tg}</b>\n"
+                                    f"📚 Направление: {t_type}\n"
+                                    f"📝 Действие: Отчисление за неактивность"
+                                )
+                                await context.bot.send_message(chat_id=d_chat, text=msg, parse_mode="HTML")
+
+            # Удаление из JSON (стейта)
             if json_path.exists():
                 with open(json_path, 'r', encoding='utf-8') as f:
                     state = json.load(f)
-
-                if student_id in state:
-                    del state[student_id]
+                if student_id_str in state:
+                    del state[student_id_str]
                     with open(json_path, 'w', encoding='utf-8') as f:
                         json.dump(state, f, ensure_ascii=False, indent=4)
-                    print(f"🗑 Запись {student_id} удалена из JSON")
 
-            await query.edit_message_text(text="✅ Статус ученика изменен на 'не учится'.")
+            await query.edit_message_text(text=f"✅ Статус ученика {s_name} изменен. Руководство уведомлено.")
 
         except Exception as e:
-            print(f"❌ ОШИБКА при отключении студента: {e}")
-            await query.edit_message_text(text="⚠️ Произошла ошибка при обновлении статуса в базе.")
+            print(f"❌ ОШИБКА при отчислении: {e}")
+            await query.edit_message_text(text="⚠️ Ошибка при обновлении данных.")
 
+    # --- 2. ПАУЗА (keep_active) ---
     elif action == "keep_active":
-
-        if os.path.exists(json_path):
-
+        if json_path.exists():
             with open(json_path, 'r', encoding='utf-8') as f:
-
                 state = json.load(f)
 
-            if student_id in state:
-
-                # Ставим флаг "заморозки" уведомлений на 2 недели
-
-                state[student_id]["active_hold"] = True
-
-                state[student_id]["last_notified"] = str(date.today())
-
-                # На всякий случай убираем режим "долго учится", если он был
-
-                state[student_id].pop("slow_progress", None)
+            if student_id_str in state:
+                state[student_id_str]["active_hold"] = True
+                state[student_id_str]["last_notified"] = str(date.today())
+                state[student_id_str].pop("slow_progress", None)
 
                 with open(json_path, 'w', encoding='utf-8') as f:
-
                     json.dump(state, f, ensure_ascii=False, indent=4)
 
                 await query.edit_message_text(
-
-                    text="✅ Принято! Ученик отмечен как активный. Следующее напоминание придет через 2 недели, если созвона так и не будет."
-
+                    text="✅ Принято! Пауза 2 недели. Если созвона не будет, я вернусь с проверкой позже."
                 )
+
+    # --- 3. МЕДЛЕННЫЙ ПРОГРЕСС (slow_progress) ---
     elif action == "slow_progress":
-        if os.path.exists(json_path):
+        if json_path.exists():
             with open(json_path, 'r', encoding='utf-8') as f:
                 state = json.load(f)
 
-            if student_id in state:
-                state[student_id]["slow_progress"] = True  # Ставим флаг
-                state[student_id]["last_notified"] = str(date.today())  # Обнуляем дату, чтобы пинг был через неделю
+            if student_id_str in state:
+                state[student_id_str]["slow_progress"] = True
+                state[student_id_str]["last_notified"] = str(date.today())
 
                 with open(json_path, 'w', encoding='utf-8') as f:
                     json.dump(state, f, ensure_ascii=False, indent=4)
 
                 await query.edit_message_text(
-                    text="⏳ Статус 'Долго учится' установлен.\nТеперь уведомления по этому ученику будут приходить раз в неделю."
+                    text="⏳ Статус 'Долго учится' установлен. Уведомления будут приходить раз в неделю."
                 )
-# Состояния для ConversationHandler
 def main():
     # Создание приложения Telegram
     application = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -367,7 +378,7 @@ def main():
     #     CallbackQueryHandler(handle_student_inactivity_buttons, pattern="^(set_inactive|keep_active|slow_progress):")
     # )
     application.add_handler(
-        CallbackQueryHandler(handle_student_inactivity_buttons, pattern="^(set_inactive|keep_active):"))
+        CallbackQueryHandler(handle_student_inactivity_buttons, pattern="^(set_inactive|keep_active|drop_student):"))
     application.add_handler(contract_signing_handler)
     application.add_handler(contract_handler)
     application.add_handler(bonus_handler)
