@@ -15,7 +15,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 dotenv_path = BASE_DIR / '.env'
 load_dotenv(dotenv_path=dotenv_path)
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
+TOKEN = os.getenv("TELEGRAM_TOKEN_STUDENT")
 DATABASE_URL = DATABASE_URL
 MY_PERSONAL_ID = 1257163820
 
