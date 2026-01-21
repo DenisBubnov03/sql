@@ -9,14 +9,14 @@ from dotenv import load_dotenv
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
-
+from data_base.db import DATABASE_URL
 # --- ПУТИ ---
 BASE_DIR = Path(__file__).resolve().parent.parent
 dotenv_path = BASE_DIR / '.env'
 load_dotenv(dotenv_path=dotenv_path)
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = DATABASE_URL
 MY_PERSONAL_ID = 1257163820
 
 bot = Bot(token=TOKEN)
