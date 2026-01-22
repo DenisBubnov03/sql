@@ -68,6 +68,75 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет! Выберите действие:", reply_markup=markup)
 
 
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
+from telegram.ext import ContextTypes, ConversationHandler
+
+
+# Общая функция для логики сброса и отрисовки меню
+async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Полностью сбрасывает состояние пользователя и возвращает в главное меню.
+    Вызывается командами /start и /restart.
+    """
+    # 1. Сброс данных
+    context.user_data.clear()
+
+    # 2. Остановка фоновых задач пользователя (если есть)
+    user_id = update.effective_user.id
+    current_jobs = context.job_queue.get_jobs_by_name(str(user_id))
+    for job in current_jobs:
+        job.schedule_removal()
+
+    username = update.effective_user.username
+
+    # 3. Проверка ролей (ваша логика)
+    if await is_career_consultant(user_id, username):
+        from bot.handlers.career_consultant_handlers import career_consultant_start
+        return await career_consultant_start(update, context)
+
+    if user_id not in AUTHORIZED_USERS and user_id not in NOT_ADMINS:
+        await update.message.reply_text("Извините, у вас нет доступа.")
+        return ConversationHandler.END
+
+    # 4. Выбор клавиатуры
+    if user_id in NOT_ADMINS:
+        reply_keyboard = [
+            [KeyboardButton('Добавить студента')],
+            [KeyboardButton('Подписание договора')],
+            [KeyboardButton('Договор')],
+            [KeyboardButton("📹 Создание встречи")],
+            [KeyboardButton("📊 Рассчитать зарплату")],
+            [KeyboardButton('Поиск ученика')],
+            [KeyboardButton('Статистика')],
+            [KeyboardButton('Редактировать данные студента')],
+            [KeyboardButton('Доп расходы')]
+        ]
+    else:
+        # Ваше стандартное админ-меню
+        reply_keyboard = [
+            [KeyboardButton('Добавить студента')],
+            [KeyboardButton('Премия куратору')],
+            [KeyboardButton('Подписание договора')],
+            [KeyboardButton('Договор')],
+            [KeyboardButton('Редактировать данные студента')],
+            [KeyboardButton('Проверить уведомления')],
+            [KeyboardButton('Поиск ученика')],
+            [KeyboardButton('Статистика')],
+            [KeyboardButton("📊 Рассчитать зарплату")],
+            [KeyboardButton('Доп расходы')],
+            [KeyboardButton('💼 Добавить КК')]
+        ]
+
+    markup = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True, one_time_keyboard=True)
+
+    await update.message.reply_text(
+        "🔄 Состояние сброшено. Все процессы остановлены.\nВыберите действие:",
+        reply_markup=markup
+    )
+
+    # Возвращаем END, чтобы выйти из любого ConversationHandler
+    return ConversationHandler.END
+
 # Возврат в главное меню
 async def exit_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
