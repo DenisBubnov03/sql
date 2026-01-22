@@ -18,7 +18,7 @@ from commands.contract_commands import (
 )
 from commands.create_meeting import create_meeting_entry, select_meeting_type
 from commands.mentor_bonus_commands import start_bonus_process, handle_mentor_tg, handle_bonus_amount
-from commands.start_commands import start
+from commands.start_commands import start, restart
 from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, \
     COURSE_TYPE_MENU, \
     CONFIRM_DELETE, WAIT_FOR_PAYMENT_DATE, AWAIT_MENTOR_TG, AWAIT_BONUS_AMOUNT, \
@@ -294,6 +294,7 @@ def main():
     # Регистрация обработчиков
     application.add_handler(salary_handler)
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("restart", restart))
     application.add_handler(CommandHandler("unit_economics", unit_economics_command))
     application.add_handler(add_student_handler)
     application.add_handler(edit_student_handler)

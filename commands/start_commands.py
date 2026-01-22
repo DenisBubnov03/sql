@@ -68,75 +68,75 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привет! Выберите действие:", reply_markup=markup)
 
 
+# Общая функция для логики сброса и отрисовки меню
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
+import logging
 
+# Предполагаем, что импорты ролей и клавиатур уже есть
+# from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 
-# Общая функция для логики сброса и отрисовки меню
 async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Полностью сбрасывает состояние пользователя и возвращает в главное меню.
-    Вызывается командами /start и /restart.
     """
-    # 1. Сброс данных
+    # 1. Сброс данных сессии
     context.user_data.clear()
 
-    # 2. Остановка фоновых задач пользователя (если есть)
     user_id = update.effective_user.id
-    current_jobs = context.job_queue.get_jobs_by_name(str(user_id))
-    for job in current_jobs:
-        job.schedule_removal()
-
     username = update.effective_user.username
 
-    # 3. Проверка ролей (ваша логика)
+    # 2. Безопасная остановка фоновых задач
+    if context.job_queue:
+        current_jobs = context.job_queue.get_jobs_by_name(str(user_id))
+        for job in current_jobs:
+            job.schedule_removal()
+    else:
+        logging.warning(f"JobQueue не настроен. Пропускаем удаление задач для {user_id}")
+
+    # 3. Проверка ролей
+    # Проверка на карьерного консультанта
     if await is_career_consultant(user_id, username):
         from bot.handlers.career_consultant_handlers import career_consultant_start
         return await career_consultant_start(update, context)
 
+    # Проверка на доступ (если не КК и не в списках доступа)
     if user_id not in AUTHORIZED_USERS and user_id not in NOT_ADMINS:
-        await update.message.reply_text("Извините, у вас нет доступа.")
+        await update.message.reply_text("Извините, у вас нет доступа к этой системе.")
         return ConversationHandler.END
 
-    # 4. Выбор клавиатуры
+    # 4. Формирование меню (выбор кнопок)
     if user_id in NOT_ADMINS:
         reply_keyboard = [
             [KeyboardButton('Добавить студента')],
-            [KeyboardButton('Подписание договора')],
-            [KeyboardButton('Договор')],
-            [KeyboardButton("📹 Создание встречи")],
-            [KeyboardButton("📊 Рассчитать зарплату")],
-            [KeyboardButton('Поиск ученика')],
-            [KeyboardButton('Статистика')],
+            [KeyboardButton('Подписание договора'), KeyboardButton('Договор')],
+            [KeyboardButton("📹 Создание встречи"), KeyboardButton("📊 Рассчитать зарплату")],
+            [KeyboardButton('Поиск ученика'), KeyboardButton('Статистика')],
             [KeyboardButton('Редактировать данные студента')],
             [KeyboardButton('Доп расходы')]
         ]
     else:
-        # Ваше стандартное админ-меню
+        # Админ-меню (добавлены кнопки, которые были в твоем списке)
         reply_keyboard = [
             [KeyboardButton('Добавить студента')],
-            [KeyboardButton('Премия куратору')],
-            [KeyboardButton('Подписание договора')],
-            [KeyboardButton('Договор')],
-            [KeyboardButton('Редактировать данные студента')],
-            [KeyboardButton('Проверить уведомления')],
-            [KeyboardButton('Поиск ученика')],
-            [KeyboardButton('Статистика')],
-            [KeyboardButton("📊 Рассчитать зарплату")],
-            [KeyboardButton('Доп расходы')],
-            [KeyboardButton('💼 Добавить КК')]
+            [KeyboardButton('Премия куратору'), KeyboardButton('Подписание договора')],
+            [KeyboardButton('Договор'), KeyboardButton('Редактировать данные студента')],
+            [KeyboardButton('Проверить уведомления'), KeyboardButton('Поиск ученика')],
+            [KeyboardButton('Статистика'), KeyboardButton("📊 Рассчитать зарплату")],
+            [KeyboardButton('Доп расходы'), KeyboardButton('💼 Добавить КК')]
         ]
 
-    markup = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True, one_time_keyboard=True)
+    markup = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True)
 
-    await update.message.reply_text(
-        "🔄 Состояние сброшено. Все процессы остановлены.\nВыберите действие:",
-        reply_markup=markup
-    )
+    # 5. Ответ пользователю
+    # Если команда вызвана как /start, текст может быть другим
+    text = "🔄 Состояние сброшено. Вы в главном меню.\nВыберите действие:"
+    if update.message.text == '/start':
+        text = f"Добро пожаловать, {update.effective_user.first_name}! 👋\nВыберите действие:"
 
-    # Возвращаем END, чтобы выйти из любого ConversationHandler
+    await update.message.reply_text(text, reply_markup=markup)
+
     return ConversationHandler.END
-
 # Возврат в главное меню
 async def exit_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
