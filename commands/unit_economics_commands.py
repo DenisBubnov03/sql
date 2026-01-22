@@ -25,9 +25,9 @@ def _fmt_money(v):
 
 
 # --- КОНСТАНТЫ ЗП (Меняй только здесь, и всё обновится само) ---
-RESERVE_M = 13800
-RESERVE_A = 25800
-RESERVE_F = 28800
+RESERVE_M = 9200
+RESERVE_A = 17200
+RESERVE_F = RESERVE_A + RESERVE_M
 
 
 def calculate_ue_data(start_date, end_date):
