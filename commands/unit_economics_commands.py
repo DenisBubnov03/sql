@@ -128,14 +128,14 @@ def _format_report(d):
         f"💹 <b>Юнит-экономика</b>\n\n"
         f"💰 <b>Финансы:</b>\n"
         f"— Выручка: {_fmt_money(d['revenue'])}\n"
-        f"— Gross Profit (до фиксов): <b>{_fmt_money(d['gross_bf'])}</b>\n\n"
+        f"— Gross profit before fixed: <b>{_fmt_money(d['gross_bf'])}</b>\n\n"
 
         f"🎯 <b>Маркетинг ОМ:</b>\n"
         f"  ├ OM manual: {_fmt_money(d['om_m_cost'])}\n"
         f"  └ OM auto: {_fmt_money(d['om_a_cost'])}\n"
         f"— <b>OM total: {_fmt_money(d['om_total'])}</b>\n"
         f"— Клиентов ОМ: <b>{d['c_m_om'] + d['c_a_om'] + d['c_f_om']}</b>\n"
-        f"— Cost (CAC): <b>{_fmt_money(d['cac'])}</b>\n\n"
+        f"— Сlient cost OM: <b>{_fmt_money(d['cac'])}</b>\n\n"
 
         f"👨‍🏫 <b>Резерв ЗП менторов (Только ОМ):</b>\n"
         f"— Ручное ({d['c_m_om']} чел): {_fmt_money(d['c_m_om'] * RESERVE_M)}\n"
@@ -155,7 +155,7 @@ def _format_report(d):
         f"— Auto: <b>{_fmt_money(d['m_a'])}</b>\n"
         f"— Fullstack: <b>{_fmt_money(d['m_f'])}</b>\n\n"
 
-        f"🏁 <b>Чистая прибыль (Net): {_fmt_money(d['net'])}</b>"
+        f"🏁 <b>Чистая прибыль (net_profit): {_fmt_money(d['net'])}</b>"
     )
 
 
