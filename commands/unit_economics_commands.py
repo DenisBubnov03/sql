@@ -1,4 +1,6 @@
 from __future__ import annotations
+from __future__ import annotations
+
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
@@ -10,210 +12,150 @@ from sqlalchemy import func
 from commands.states import UE_MENU, UE_START_PERIOD, UE_END_PERIOD, STATISTICS_MENU
 from commands.student_statistic_commands import show_statistics_menu
 from data_base.db import session
+from data_base.models import StudentMeta, Payment, MarketingSpend, FixedExpense, Student
+
+from datetime import datetime
+from sqlalchemy import func
+from data_base.db import session
 from data_base.models import StudentMeta, Payment, MarketingSpend, FixedExpense
 
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ФОРМАТИРОВАНИЯ ---
-
-def _fmt_money(value: float | Decimal | None) -> str:
-    if value is None or value == 0:
-        return "0 ₽"
-    return f"{float(value):,.0f}".replace(",", " ") + " ₽"
+def _fmt_money(v):
+    return f"{float(v or 0):,.0f}".replace(",", " ") + " ₽"
 
 
-def _fmt_num(value: float | Decimal | None, decimals: int = 2) -> str:
-    if value is None:
-        return "0"
-    return f"{float(value):,.{decimals}f}".replace(",", " ")
+# --- КОНСТАНТЫ ЗП (Меняй только здесь, и всё обновится само) ---
+RESERVE_M = 13800
+RESERVE_A = 25800
+RESERVE_F = 28800
 
 
-# --- ЯДРО: КАЛЬКУЛЯТОР ЮНИТ-ЭКОНОМИКИ ---
-
-# def calculate_ue_data(start_date, end_date):
-#     """Выполняет расчет всех метрик из ТЗ на лету"""
-#
-#     # 1. Лиды (из StudentMeta)
-#     leads_total = session.query(StudentMeta).filter(
-#         StudentMeta.created_at.between(start_date, end_date)
-#     ).count() or 0
-#
-#     leads_om = session.query(StudentMeta).filter(
-#         StudentMeta.created_at.between(start_date, end_date),
-#         StudentMeta.source.ilike('%ОМ%')  # Ищем источник, где есть "ОМ"
-#     ).count() or 0
-#
-#     # 2. Маркетинговые расходы (из MarketingSpend)
-#     m_spend = session.query(MarketingSpend.channel, func.sum(MarketingSpend.amount)).filter(
-#         MarketingSpend.report_month.between(start_date, end_date)
-#     ).group_by(MarketingSpend.channel).all()
-#
-#     m_map = {channel: float(amount) for channel, amount in m_spend}
-#     om_manual = m_map.get('om_manual', 0)
-#     om_auto = m_map.get('om_auto', 0)
-#     avito = m_map.get('avito', 0)
-#     media = m_map.get('media', 0)
-#
-#     om_total = om_manual + om_auto
-#     marketing_total = om_total + avito + media
-#
-#     # 3. Фиксы (из FixedExpense)
-#     f_spend = session.query(FixedExpense.category, func.sum(FixedExpense.amount)).filter(
-#         FixedExpense.report_month.between(start_date, end_date)
-#     ).group_by(FixedExpense.category).all()
-#
-#     f_map = {cat: float(amt) for cat, amt in f_spend}
-#     infra = f_map.get('cineskop', 0) + f_map.get('chat_place', 0) + f_map.get('bots', 0)
-#     salary_fixed = f_map.get('salaries_fixed', 0)
-#     mentors_manual = f_map.get('mentors_manual', 0)
-#     mentors_auto = f_map.get('mentors_auto', 0)
-#
-#     fixed_costs_total = infra + salary_fixed + mentors_manual + mentors_auto
-#
-#     # 4. Выручка (из Payment)
-#     revenue_total = session.query(func.sum(Payment.amount)).filter(
-#         Payment.payment_date.between(start_date, end_date),
-#         ~Payment.comment.ilike("%Доп расход%"),  # <--- Ваш фильтр здесь
-#         Payment.status == 'подтвержден'
-#     ).scalar() or 0
-#
-#     # Кол-во продаж (учеников с оплатами в этот период)
-#     sales_count = session.query(func.count(func.distinct(Payment.student_id))).filter(
-#         Payment.payment_date.between(start_date, end_date),
-#         Payment.status == 'подтвержден'
-#     ).scalar() or 0
-#
-#     # Средняя цена продукта (Revenue / Sales)
-#     product_price = float(revenue_total) / sales_count if sales_count > 0 else 0
-#
-#     # --- РАСЧЕТ МЕТРИК ---
-#
-#     # Стоимость лида
-#     lead_cost_total = marketing_total / leads_total if leads_total > 0 else 0
-#     lead_cost_om = om_total / leads_om if leads_om > 0 else 0
-#
-#     # Прибыль с продукта до фиксов (Цена - Лид)
-#     profit_manual_bf = product_price - lead_cost_om
-#     profit_auto_bf = product_price - lead_cost_om
-#     profit_full_bf = product_price - lead_cost_total
-#
-#     # Проценты директорам (10%)
-#     dir_manual = profit_manual_bf * 0.10 if profit_manual_bf > 0 else 0
-#     dir_auto = profit_auto_bf * 0.10 if profit_auto_bf > 0 else 0
-#
-#     # Маржа (Чистая с продукта)
-#     margin_manual = profit_manual_bf - dir_manual
-#     margin_auto = profit_auto_bf - dir_auto
-#
-#     # Итого по школе
-#     gross_profit = float(revenue_total) - marketing_total
-#     net_profit = gross_profit - fixed_costs_total
-#
-#     return {
-#         "period": f"{start_date:%d.%m.%Y} — {end_date:%d.%m.%Y}",
-#         "om_manual": om_manual, "om_auto": om_auto, "avito": avito, "media": media,
-#         "leads_total": leads_total, "leads_om": leads_om,
-#         "infra": infra, "salary_fixed": salary_fixed,
-#         "mentors_manual": mentors_manual, "mentors_auto": mentors_auto,
-#         "revenue": float(revenue_total), "price": product_price,
-#         "om_total": om_total, "m_total": marketing_total,
-#         "cpa_total": lead_cost_total, "cpa_om": lead_cost_om,
-#         "f_total": fixed_costs_total,
-#         "p_manual_bf": profit_manual_bf, "p_auto_bf": profit_auto_bf, "p_full_bf": profit_full_bf,
-#         "dir_manual": dir_manual, "dir_auto": dir_auto,
-#         "margin_manual": margin_manual, "margin_auto": margin_auto,
-#         "gross": gross_profit, "net": net_profit
-#     }
-
-
-# --- ЯДРО РАСЧЕТА ---
 def calculate_ue_data(start_date, end_date):
-    try:
-        # 1. БЮДЖЕТ НА ОМ
-        m_spend = session.query(MarketingSpend.channel, func.sum(MarketingSpend.amount)).filter(
-            MarketingSpend.report_month.between(start_date, end_date)
-        ).group_by(MarketingSpend.channel).all()
+    # 1. ОБЩАЯ ВЫРУЧКА
+    revenue_total = session.query(func.sum(Payment.amount)).filter(
+        Payment.payment_date.between(start_date, end_date),
+        Payment.status == "подтвержден",
+        ~Payment.comment.ilike("%Системное восстановление%"),
+        ~Payment.comment.ilike("%Доп расход%")
+    ).scalar() or 0
 
-        m_map = {ch: float(amt or 0) for ch, amt in m_spend}
-        om_manual = m_map.get('om_manual', 0)
-        om_auto = m_map.get('om_auto', 0)
-        total_om_spend = om_manual + om_auto
+    # 2. НОВЫЕ ОМ-ЩИКИ
+    new_om_students = (
+        session.query(Student.id, Student.training_type)
+        .join(StudentMeta, StudentMeta.student_id == Student.id)
+        .filter(
+            StudentMeta.created_at.between(start_date, end_date),
+            StudentMeta.source.ilike("%ОМ%")
+        ).all()
+    )
 
-        # 2. ДАННЫЕ ПО КУПИВШИМ С ОМ
-        om_data = session.query(func.count(func.distinct(Payment.student_id)), func.sum(Payment.amount)) \
-            .join(StudentMeta, Payment.student_id == StudentMeta.student_id) \
-            .filter(
-            Payment.payment_date.between(start_date, end_date),
-            Payment.status == 'подтвержден',
-            StudentMeta.source.ilike('%ОМ%')
-        ).first()
+    m_om, a_om, f_om = set(), set(), set()
+    for s_id, t_type in new_om_students:
+        t_type_low = (t_type or "").lower()
+        if "фулл" in t_type_low:
+            f_om.add(s_id)
+        elif "авто" in t_type_low:
+            a_om.add(s_id)
+        elif "ручн" in t_type_low:
+            m_om.add(s_id)
 
-        sales_om_count = int(om_data[0] or 0)
-        revenue_om_total = float(om_data[1] or 0)
+    count_m_om, count_a_om, count_f_om = len(m_om), len(a_om), len(f_om)
+    total_om = count_m_om + count_a_om + count_f_om
 
-        # 3. LEAD COST OM (Твоя формула)
-        # (Вся выручка ОМ - Весь бюджет ОМ) / Кол-во купивших
-        lead_cost_om = 0
-        if sales_om_count > 0:
-            lead_cost_om = (revenue_om_total - total_om_spend) / sales_om_count
+    # 3. ВСЕ НОВЫЕ (для общего резерва ЗП)
+    all_new_raw = (
+        session.query(Student.id, Student.training_type)
+        .join(StudentMeta, StudentMeta.student_id == Student.id)
+        .filter(StudentMeta.created_at.between(start_date, end_date))
+        .all()
+    )
 
-        # 4. ЧИСТАЯ ПРИБЫЛЬ С ЮНИТА (Минус ЗП куратора 30%)
-        # Для ручного (46 000 * 0.3 = 13 800)
-        # Для авто (86 000 * 0.3 = 25 800)
-        net_unit_manual = lead_cost_om - 13800
-        net_unit_auto = lead_cost_om - 25800
+    m_all, a_all, f_all = set(), set(), set()
+    for s_id, t_type in all_new_raw:
+        t_type_low = (t_type or "").lower()
+        if "фулл" in t_type_low:
+            f_all.add(s_id)
+        elif "авто" in t_type_low:
+            a_all.add(s_id)
+        elif "ручн" in t_type_low:
+            m_all.add(s_id)
 
-        # Для общего итога школы (опционально)
-        rev_all = session.query(func.sum(Payment.amount)).filter(
-            Payment.payment_date.between(start_date, end_date),
-            Payment.status == 'подтвержден'
-        ).scalar() or 0
+    count_m_all, count_a_all, count_f_all = len(m_all), len(a_all), len(f_all)
 
-        return {
-            "period": f"{start_date:%d.%m.%Y} — {end_date:%d.%m.%Y}",
-            "om_manual": om_manual,
-            "om_auto": om_auto,
-            "total_om_spend": total_om_spend,
-            "sales_om_count": sales_om_count,
-            "revenue_om_total": revenue_om_total,
-            "lead_cost_om": lead_cost_om,
-            "net_unit_manual": net_unit_manual,
-            "net_unit_auto": net_unit_auto,
-            "rev_all": float(rev_all)
-        }
-    except Exception as e:
-        print(f"Ошибка в расчетах: {e}")
-        return None
+    # 4. МАРКЕТИНГ И ФИКСЫ
+    m_spend = session.query(MarketingSpend.channel, func.sum(MarketingSpend.amount)).filter(
+        MarketingSpend.report_month.between(start_date, end_date)
+    ).group_by(MarketingSpend.channel).all()
+
+    m_map = {c: float(a) for c, a in m_spend}
+    om_m_cost = m_map.get('om_manual', 0)
+    om_a_cost = m_map.get('om_auto', 0)
+    om_total = om_m_cost + om_a_cost
+    marketing_total = om_total + m_map.get('avito', 0) + m_map.get('media', 0)
+
+    fixed_other = session.query(func.sum(FixedExpense.amount)).filter(
+        FixedExpense.report_month.between(start_date, end_date)
+    ).scalar() or 0
+
+    # 5. МЕТРИКИ И МАРЖА
+    client_cost_om = om_total / total_om if total_om > 0 else 0
+    cost_manual, cost_avto, cost_full = 46000, 86000, 96000
+
+    margin_m = cost_manual - client_cost_om - RESERVE_M
+    margin_a = cost_avto - client_cost_om - RESERVE_A
+    margin_f = cost_full - client_cost_om - RESERVE_F
+
+    # 6. РЕЗЕРВЫ (Синхронизировано с константами)
+    res_om = (count_m_om * RESERVE_M) + (count_a_om * RESERVE_A) + (count_f_om * RESERVE_F)
+    res_all = (count_m_all * RESERVE_M) + (count_a_all * RESERVE_A) + (count_f_all * RESERVE_F)
+
+    # 7. ПРИБЫЛЬ
+    gross_before_fixed = float(revenue_total) - marketing_total
+    net_profit = gross_before_fixed - float(fixed_other) - res_all
+
+    return {
+        "revenue": revenue_total, "om_m_cost": om_m_cost, "om_a_cost": om_a_cost,
+        "om_total": om_total, "cac": client_cost_om, "gross_bf": gross_before_fixed,
+        "m_m": margin_m, "m_a": margin_a, "m_f": margin_f,
+        "c_m_om": count_m_om, "c_a_om": count_a_om, "c_f_om": count_f_om,
+        "c_m_all": count_m_all, "c_a_all": count_a_all, "c_f_all": count_f_all,
+        "res_om": res_om, "res_all": res_all, "fixed": fixed_other, "net": net_profit
+    }
 
 
-def _format_report(d: dict) -> str:
-    if not d:
-        return "❌ Ошибка при формировании данных."
-
+def _format_report(d):
     return (
-        f"💹 <b>ЮНИТ-ЭКОНОМИКА (MVP)</b>\n"
-        f"Период: <b>{d['period']}</b>\n"
-        f"——————————————————\n\n"
+        f"💹 <b>Юнит-экономика</b>\n\n"
+        f"💰 <b>Финансы:</b>\n"
+        f"— Выручка: {_fmt_money(d['revenue'])}\n"
+        f"— Gross Profit (до фиксов): <b>{_fmt_money(d['gross_bf'])}</b>\n\n"
 
-        f"1️⃣ <b>Бюджет на ОМ:</b>\n"
-        f"├ Ручной (OM_manual): {_fmt_money(d['om_manual'])}\n"
-        f"├ Авто (OM_auto): {_fmt_money(d['om_auto'])}\n"
-        f"└ <b>Total OM: {_fmt_money(d['total_om_spend'])}</b>\n\n"
+        f"🎯 <b>Маркетинг ОМ:</b>\n"
+        f"  ├ OM manual: {_fmt_money(d['om_m_cost'])}\n"
+        f"  └ OM auto: {_fmt_money(d['om_a_cost'])}\n"
+        f"— <b>OM total: {_fmt_money(d['om_total'])}</b>\n"
+        f"— Клиентов ОМ: <b>{d['c_m_om'] + d['c_a_om'] + d['c_f_om']}</b>\n"
+        f"— Cost (CAC): <b>{_fmt_money(d['cac'])}</b>\n\n"
 
-        f"2️⃣ <b>Lead cost OM:</b>\n"
-        f"├ Купивших с ОМ: <b>{d['sales_om_count']} чел.</b>\n"
-        f"└ <b>Чистыми после маркетинга: {_fmt_money(d['lead_cost_om'])}</b>\n"
-        f"<i>(Выручка ОМ - Траты ОМ) / Кол-во</i>\n\n"
+        f"👨‍🏫 <b>Резерв ЗП менторов (Только ОМ):</b>\n"
+        f"— Ручное ({d['c_m_om']} чел): {_fmt_money(d['c_m_om'] * RESERVE_M)}\n"
+        f"— Авто ({d['c_a_om']} чел): {_fmt_money(d['c_a_om'] * RESERVE_A)}\n"
+        f"— Fullstack ({d['c_f_om']} чел): {_fmt_money(d['c_f_om'] * RESERVE_F)}\n"
+        f"📌 Итого ЗП (ОМ): {_fmt_money(d['res_om'])}\n\n"
 
-        f"3️⃣ <b>Чистая с ручного (Unit):</b>\n"
-        f"└ <b>Профит: {_fmt_money(d['net_unit_manual'])}</b>\n"
-        f"<i>(Lead cost OM - 13 800 ₽)</i>\n\n"
+        f"🏢 <b>ОБЩИЕ расходы (Все новые):</b>\n"
+        f"— Ручное ({d['c_m_all']} чел): {_fmt_money(d['c_m_all'] * RESERVE_M)}\n"
+        f"— Авто ({d['c_a_all']} чел): {_fmt_money(d['c_a_all'] * RESERVE_A)}\n"
+        f"— Fullstack ({d['c_f_all']} чел): {_fmt_money(d['c_f_all'] * RESERVE_F)}\n"
+        f"— Прочие фиксы: {_fmt_money(d['fixed'])}\n"
+        f"💰 <b>ИТОГО РАСХОДОВ: {_fmt_money(d['res_all'] + d['fixed'])}</b>\n\n"
 
-        f"4️⃣ <b>Чистая с авто (Unit):</b>\n"
-        f"└ <b>Профит: {_fmt_money(d['net_unit_auto'])}</b>\n"
-        f"<i>(Lead cost OM - 25 800 ₽)</i>\n\n"
+        f"📈 <b>Маржа с ОМ продукта:</b>\n"
+        f"— Manual: <b>{_fmt_money(d['m_m'])}</b>\n"
+        f"— Auto: <b>{_fmt_money(d['m_a'])}</b>\n"
+        f"— Fullstack: <b>{_fmt_money(d['m_f'])}</b>\n\n"
 
-        f"——————————————————\n"
-        f"💰 <b>Общая выручка школы:</b> {_fmt_money(d['rev_all'])}"
+        f"🏁 <b>Чистая прибыль (Net): {_fmt_money(d['net'])}</b>"
     )
 
 
