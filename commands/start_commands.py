@@ -63,6 +63,7 @@ def get_reply_markup(role: str):
 
 # --- Основные команды ---
 
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     username = update.effective_user.username
