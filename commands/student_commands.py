@@ -16,6 +16,8 @@ from data_base.models import Student, Payment, CuratorInsuranceBalance, Mentor, 
 from data_base.operations import get_all_students, update_student, get_student_by_fio_or_telegram, delete_student
 from telegram import ReplyKeyboardMarkup, KeyboardButton
 
+from utils.security import get_user_role, restrict_to, role_based_router
+
 
 async def handle_refund(update: Update, context: ContextTypes.DEFAULT_TYPE):
     student = context.user_data.get("student")
@@ -122,14 +124,11 @@ async def edit_student_limited(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 # Редактирование поля студента
+@restrict_to(['admin', 'mentor']) # Разрешаем доступ обеим ролям
 async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Выбор поля для редактирования или удаления.
     """
-    user_id = update.message.from_user.id
-    if user_id not in AUTHORIZED_USERS:
-        await update.message.reply_text("Извините, у вас нет доступа.")
-        return
 
     FIELD_MAPPING = {
         "ФИО": "fio",
@@ -696,38 +695,13 @@ async def handle_contract_signing(update, context):
     return await exit_to_main_menu(update, context)
 
 # Умная функция для определения прав редактирования
-async def smart_edit_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Умная функция, которая определяет права пользователя и выбирает соответствующий обработчик.
-    """
-    user_id = update.message.from_user.id
-    
-    if user_id in AUTHORIZED_USERS:
-        # Полные права - используем обычное редактирование
-        return await edit_student(update, context)
-    elif user_id in NOT_ADMINS:
-        # Ограниченные права - используем ограниченное редактирование
-        return await edit_student_limited(update, context)
-    else:
-        await update.message.reply_text("Извините, у вас нет доступа.")
-        return ConversationHandler.END
+@restrict_to(['admin', 'mentor'])
+async def smart_edit_student(update, context):
+    return await role_based_router(update, context, edit_student, edit_student_limited)
 
-# Умная функция для определения прав редактирования полей
-async def smart_edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Умная функция для редактирования полей в зависимости от прав пользователя.
-    """
-    user_id = update.message.from_user.id
-    
-    if user_id in AUTHORIZED_USERS:
-        # Полные права - используем обычное редактирование полей
-        return await edit_student_field(update, context)
-    elif user_id in NOT_ADMINS:
-        # Ограниченные права - используем ограниченное редактирование полей
-        return await edit_student_field_limited(update, context)
-    else:
-        await update.message.reply_text("Извините, у вас нет доступа.")
-        return ConversationHandler.END
+@restrict_to(['admin', 'mentor'])
+async def smart_edit_student_field(update, context):
+    return await role_based_router(update, context, edit_student_field, edit_student_field_limited)
 
 
 async def process_insurance_on_employment(student_id: int):

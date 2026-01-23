@@ -9,6 +9,7 @@ from commands.states import EXPENSE_TYPE, EXPENSE_SUB_CATEGORY, EXPENSE_AMOUNT, 
 from data_base.db import session
 # Импортируем твои новые модели
 from data_base.models import MarketingSpend, FixedExpense
+from utils.security import restrict_to
 
 # Добавляем новое состояние для подкатегорий
 # (EXPENSE_TYPE, EXPENSE_SUB_CATEGORY, EXPENSE_AMOUNT, EXPENSE_DATE) = range(4)
@@ -62,12 +63,9 @@ def get_additional_expenses_for_period(start_date, end_date, detailed=False):
         "marketing_total": float(marketing_query),
         "fixed_total": float(fixed_query)
     }
-
+@restrict_to(['admin', 'mentor']) # Разрешаем доступ обеим ролям
 async def start_expense_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id not in AUTHORIZED_USERS and user_id not in NOT_ADMINS:
-        await update.message.reply_text("Извините, у вас нет доступа.")
-        return ConversationHandler.END
+
 
     await update.message.reply_text(
         "💸 Выберите тип расхода:",

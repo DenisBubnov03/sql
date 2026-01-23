@@ -4,54 +4,12 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 
 from data_base.operations import get_all_students, get_student_by_fio_or_telegram
+from utils.security import get_user_role
 
 
-# Поиск студента
-async def find_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Поиск студента в базе данных.
-    """
-    search_query = update.message.text.strip()
-    # Если пользователь нажал "Главное меню", возвращаем в главное меню
-    if search_query == "Главное меню":
-        return await exit_to_main_menu(update, context)
-
-    students = get_all_students()  # Получение списка студентов из базы данных
-
-    matching_students = [
-        student for student in students
-        if search_query.lower() in student.fio.lower() or search_query.lower() in student.telegram.lower()
-    ]
-
-    if not matching_students:  # Если студенты не найдены
-        await update.message.reply_text(
-            "Студент не найден. Попробуйте снова ввести ФИО или Telegram:",
-            reply_markup=ReplyKeyboardMarkup([["Главное меню"]], one_time_keyboard=True)
-        )
-        return FIO_OR_TELEGRAM
-
-    if len(matching_students) > 1:  # Если найдено несколько студентов
-        response = "Найдено несколько студентов. Укажите номер:\n"
-        for i, student in enumerate(matching_students, start=1):
-            response += f"{i}. {student.fio} - {student.telegram}\n"
-
-        context.user_data["matching_students"] = matching_students
-        await update.message.reply_text(
-            response,
-            reply_markup=ReplyKeyboardMarkup(
-                [[str(i)] for i in range(1, len(matching_students) + 1)] + [["Назад"]],
-                one_time_keyboard=True
-            )
-        )
-        return SELECT_STUDENT
-
-    # Если найден только один студент
-    student = matching_students[0]
-    context.user_data["student"] = student
-    # Клавиатура по ролям
-    from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
-    user_id = update.message.from_user.id
-    if user_id in NOT_ADMINS and user_id not in AUTHORIZED_USERS:
+def get_edit_menu_keyboard(role: str):
+    """Генерирует кнопки редактирования студента в зависимости от роли."""
+    if role == "mentor":
         keyboard = [
             [KeyboardButton("ФИО")],
             [KeyboardButton("Telegram")],
@@ -61,7 +19,7 @@ async def find_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [KeyboardButton("Куратор")],
             [KeyboardButton("Назад")]
         ]
-    else:
+    else:  # admin
         keyboard = [
             [KeyboardButton("ФИО")],
             [KeyboardButton("Telegram")],
@@ -74,22 +32,61 @@ async def find_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [KeyboardButton("Удалить ученика")],
             [KeyboardButton("Назад")]
         ]
+    return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+
+# Поиск студента
+async def find_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    search_query = update.message.text.strip()
+
+    if search_query == "Главное меню":
+        return await exit_to_main_menu(update, context)
+
+    students = get_all_students()
+
+    matching_students = [
+        student for student in students
+        if search_query.lower() in student.fio.lower() or search_query.lower() in student.telegram.lower()
+    ]
+
+    if not matching_students:
+        await update.message.reply_text(
+            "Студент не найден. Попробуйте снова ввести ФИО или Telegram:",
+            reply_markup=ReplyKeyboardMarkup([["Главное меню"]], one_time_keyboard=True, resize_keyboard=True)
+        )
+        return FIO_OR_TELEGRAM
+
+    if len(matching_students) > 1:
+        response = "Найдено несколько студентов. Укажите номер:\n"
+        for i, student in enumerate(matching_students, start=1):
+            response += f"{i}. {student.fio} - {student.telegram}\n"
+
+        context.user_data["matching_students"] = matching_students
+        await update.message.reply_text(
+            response,
+            reply_markup=ReplyKeyboardMarkup(
+                [[str(i)] for i in range(1, len(matching_students) + 1)] + [["Назад"]],
+                one_time_keyboard=True, resize_keyboard=True
+            )
+        )
+        return SELECT_STUDENT
+
+    # Если найден один студент
+    student = matching_students[0]
+    context.user_data["student"] = student
+
+    # ОПРЕДЕЛЯЕМ РОЛЬ И ДАЕМ МЕНЮ
+    role = await get_user_role(update.effective_user.id, update.effective_user.username)
+    markup = get_edit_menu_keyboard(role)
+
     await update.message.reply_text(
         f"Вы выбрали студента: {student.fio} ({student.telegram}).\n"
         "Что вы хотите отредактировать?",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard,
-            one_time_keyboard=True
-        )
+        reply_markup=markup
     )
     return FIELD_TO_EDIT
 
 
-# Обработка выбора из нескольких студентов
 async def handle_multiple_students(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Обрабатывает выбор студента из списка.
-    """
     selected_option = update.message.text
     matching_students = context.user_data.get("matching_students")
 
@@ -100,36 +97,16 @@ async def handle_multiple_students(update: Update, context: ContextTypes.DEFAULT
     try:
         index = int(selected_option) - 1
         if 0 <= index < len(matching_students):
-            context.user_data["student"] = matching_students[index]
-            from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
-            user_id = update.message.from_user.id
-            if user_id in NOT_ADMINS and user_id not in AUTHORIZED_USERS:
-                keyboard = [
-                    [KeyboardButton("ФИО")],
-                    [KeyboardButton("Telegram")],
-                    [KeyboardButton("Статус обучения")],
-                    [KeyboardButton("Получил работу")],
-                    [KeyboardButton("Куратор")],
-                    [KeyboardButton("Назад")]
-                ]
-            else:
-                keyboard = [
-                    [KeyboardButton("ФИО")],
-                    [KeyboardButton("Telegram")],
-                    [KeyboardButton("Сумма оплаты")],
-                    [KeyboardButton("Статус обучения")],
-                    [KeyboardButton("Получил работу")],
-                    [KeyboardButton("Комиссия выплачено")],
-                    [KeyboardButton("Куратор")],
-                    [KeyboardButton("Удалить ученика")],
-                    [KeyboardButton("Назад")]
-                ]
+            student = matching_students[index]
+            context.user_data["student"] = student
+
+            # ОПРЕДЕЛЯЕМ РОЛЬ И ДАЕМ МЕНЮ
+            role = await get_user_role(update.effective_user.id, update.effective_user.username)
+            markup = get_edit_menu_keyboard(role)
+
             await update.message.reply_text(
-                f"Вы выбрали студента: {matching_students[index].fio}.",
-                reply_markup=ReplyKeyboardMarkup(
-                    keyboard,
-                    one_time_keyboard=True
-                )
+                f"Вы выбрали студента: {student.fio}.",
+                reply_markup=markup
             )
             return FIELD_TO_EDIT
         else:

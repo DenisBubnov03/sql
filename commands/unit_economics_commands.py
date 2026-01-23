@@ -131,31 +131,31 @@ def _format_report(d):
         f"— Gross profit before fixed: <b>{_fmt_money(d['gross_bf'])}</b>\n\n"
 
         f"🎯 <b>Маркетинг ОМ:</b>\n"
-        f"  ├ OM manual: {_fmt_money(d['om_m_cost'])}\n"
-        f"  └ OM auto: {_fmt_money(d['om_a_cost'])}\n"
-        f"— <b>OM total: {_fmt_money(d['om_total'])}</b>\n"
+        # f"  ├ OM manual: {_fmt_money(d['om_m_cost'])}\n"
+        # f"  └ OM auto: {_fmt_money(d['om_a_cost'])}\n"
+        # f"— <b>OM total: {_fmt_money(d['om_total'])}</b>\n"
         f"— Клиентов ОМ: <b>{d['c_m_om'] + d['c_a_om'] + d['c_f_om']}</b>\n"
         f"— Сlient cost OM: <b>{_fmt_money(d['cac'])}</b>\n\n"
 
-        f"👨‍🏫 <b>Резерв ЗП менторов (Только ОМ):</b>\n"
-        f"— Ручное ({d['c_m_om']} чел): {_fmt_money(d['c_m_om'] * RESERVE_M)}\n"
-        f"— Авто ({d['c_a_om']} чел): {_fmt_money(d['c_a_om'] * RESERVE_A)}\n"
-        f"— Fullstack ({d['c_f_om']} чел): {_fmt_money(d['c_f_om'] * RESERVE_F)}\n"
-        f"📌 Итого ЗП (ОМ): {_fmt_money(d['res_om'])}\n\n"
-
-        f"🏢 <b>ОБЩИЕ расходы (Все новые):</b>\n"
-        f"— Ручное ({d['c_m_all']} чел): {_fmt_money(d['c_m_all'] * RESERVE_M)}\n"
-        f"— Авто ({d['c_a_all']} чел): {_fmt_money(d['c_a_all'] * RESERVE_A)}\n"
-        f"— Fullstack ({d['c_f_all']} чел): {_fmt_money(d['c_f_all'] * RESERVE_F)}\n"
-        f"— Прочие фиксы: {_fmt_money(d['fixed'])}\n"
-        f"💰 <b>ИТОГО РАСХОДОВ: {_fmt_money(d['res_all'] + d['fixed'])}</b>\n\n"
+        # f"👨‍🏫 <b>Резерв ЗП менторов (Только ОМ):</b>\n"
+        # f"— Ручное ({d['c_m_om']} чел): {_fmt_money(d['c_m_om'] * RESERVE_M)}\n"
+        # f"— Авто ({d['c_a_om']} чел): {_fmt_money(d['c_a_om'] * RESERVE_A)}\n"
+        # f"— Fullstack ({d['c_f_om']} чел): {_fmt_money(d['c_f_om'] * RESERVE_F)}\n"
+        # f"📌 Итого ЗП (ОМ): {_fmt_money(d['res_om'])}\n\n"
+        # 
+        # f"🏢 <b>ОБЩИЕ расходы (Все новые):</b>\n"
+        # f"— Ручное ({d['c_m_all']} чел): {_fmt_money(d['c_m_all'] * RESERVE_M)}\n"
+        # f"— Авто ({d['c_a_all']} чел): {_fmt_money(d['c_a_all'] * RESERVE_A)}\n"
+        # f"— Fullstack ({d['c_f_all']} чел): {_fmt_money(d['c_f_all'] * RESERVE_F)}\n"
+        # f"— Прочие фиксы: {_fmt_money(d['fixed'])}\n"
+        # f"💰 <b>ИТОГО РАСХОДОВ: {_fmt_money(d['res_all'] + d['fixed'])}</b>\n\n"
 
         f"📈 <b>Маржа с ОМ продукта:</b>\n"
         f"— Manual: <b>{_fmt_money(d['m_m'])}</b>\n"
         f"— Auto: <b>{_fmt_money(d['m_a'])}</b>\n"
         f"— Fullstack: <b>{_fmt_money(d['m_f'])}</b>\n\n"
 
-        f"🏁 <b>Чистая прибыль (net_profit): {_fmt_money(d['net'])}</b>"
+        # f"🏁 <b>Чистая прибыль (net_profit): {_fmt_money(d['net'])}</b>"
     )
 
 

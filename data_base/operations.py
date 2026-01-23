@@ -483,3 +483,9 @@ def calculate_held_amount(student_id, direction, mentor_id=None, is_director=Fal
 #
 #     print(f"🎯 Назначен ментор (ID: {mentor_id})")
 #     return mentor_id
+# data_base/operations.py
+
+def get_mentor_by_telegram(telegram: str):
+    """Находит активного ментора по Telegram."""
+    # Убедитесь, что формат (с @ или без) совпадает с тем, как вы записываете их в базу
+    return session.query(Mentor).filter(Mentor.telegram == telegram).first()

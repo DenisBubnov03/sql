@@ -6,16 +6,14 @@ from commands.authorized_users import AUTHORIZED_USERS
 from commands.start_commands import exit_to_main_menu
 from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU
 from data_base.operations import get_all_students, get_students_with_no_calls, get_students_with_unpaid_payment
+from utils.security import restrict_to
 
 
+@restrict_to(['admin', 'mentor']) # Разрешаем доступ обеим ролям
 async def show_notifications_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Отображает меню для выбора уведомлений.
     """
-    user_id = update.message.from_user.id
-    if user_id not in AUTHORIZED_USERS:
-        await update.message.reply_text("Извините, у вас нет доступа.")
-        return ConversationHandler.END
 
     await update.message.reply_text(
         "Выберите тип уведомлений:",

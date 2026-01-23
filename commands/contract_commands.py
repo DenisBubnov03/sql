@@ -16,6 +16,7 @@ from commands.states import (
     CONTRACT_RS, CONTRACT_KS, CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL
 )
 from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
+from utils.security import restrict_to
 
 
 def get_project_root():
@@ -117,16 +118,12 @@ def get_contract_number():
     today = date.today()
     return f"{today.day}/{today.month}"
 
-
+@restrict_to(['admin', 'mentor']) # Разрешаем доступ обеим ролям
 async def start_contract_formation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Начало процесса формирования договора.
     Показывает меню: создать новый или отправить существующий.
     """
-    user_id = update.message.from_user.id
-    if user_id not in AUTHORIZED_USERS and user_id not in NOT_ADMINS:
-        await update.message.reply_text("Извините, у вас нет доступа.")
-        return
 
     await update.message.reply_text(
         "📄 Формирование договора\n\n"

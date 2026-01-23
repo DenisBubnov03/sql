@@ -11,18 +11,15 @@ from data_base.db import session
 from data_base.models import Student, Payment
 from data_base.operations import get_general_statistics, get_students_by_period, get_students_by_training_type
 from commands.additional_expenses_commands import get_additional_expenses_for_period
+from utils.security import restrict_to
 
 logger = logging.getLogger(__name__)
 
-
+@restrict_to(['admin', 'mentor']) # Разрешаем доступ обеим ролям
 async def show_statistics_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Отображает главное меню статистики.
     """
-    user_id = update.message.from_user.id
-    if user_id not in AUTHORIZED_USERS and user_id not in NOT_ADMINS:
-        await update.message.reply_text("Извините, у вас нет доступа.")
-        return
 
     await update.message.reply_text(
         "📊 Статистика:\nВыберите тип статистики:",
@@ -478,7 +475,7 @@ async def show_period_statistics(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text(response)
     return STATISTICS_MENU
 
-
+@restrict_to(['admin', 'mentor']) # Разрешаем доступ обеим ролям
 async def show_held_amounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Показывает общую сумму активного холдирования с 1 сентября 2025 по текущую дату.
@@ -492,10 +489,7 @@ async def show_held_amounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.message.from_user.id
         logger.info(f"💰 Запрос холдирования от пользователя {user_id}")
-        
-        if user_id not in AUTHORIZED_USERS and user_id not in NOT_ADMINS:
-            await update.message.reply_text("Извините, у вас нет доступа.")
-            return STATISTICS_MENU
+
         
         from config import Config
         from data_base.models import HeldAmount, Mentor

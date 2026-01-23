@@ -83,7 +83,7 @@ def main():
             STUDENT_SOURCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_source)],
 
         },
-        fallbacks=[],
+        fallbacks=[CommandHandler("restart", restart)],
     )
 
     # Обработчик редактирования студента (умный - для всех пользователей)
@@ -122,7 +122,7 @@ def main():
                 MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)
             ]
         },
-        fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)]
+        fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu),CommandHandler("restart", restart)]
     )
 
     search_student_handler = ConversationHandler(
@@ -130,7 +130,7 @@ def main():
         states={
             FIO_OR_TELEGRAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, display_student_info)],
         },
-        fallbacks=[],
+        fallbacks=[CommandHandler("restart", restart)],
     )
 
     statistics_handler = ConversationHandler(
@@ -161,7 +161,7 @@ def main():
             ],
         },
         fallbacks=[
-            MessageHandler(filters.Regex("^🔙 Вернуться в меню$"), exit_to_main_menu),
+            MessageHandler(filters.Regex("^🔙 Вернуться в меню$"), exit_to_main_menu),CommandHandler("restart", restart)
         ],
     )
 
@@ -183,7 +183,7 @@ def main():
             ],
         },
         fallbacks=[
-            MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu),
+            MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu),CommandHandler("restart", restart)
         ],
     )
     salary_handler = ConversationHandler(
@@ -196,7 +196,7 @@ def main():
             "SALARY_PAY_SELECT": [MessageHandler(filters.TEXT, handle_payment_selection)],
             "SALARY_CONFIRM_PAY": [MessageHandler(filters.TEXT, confirm_payout)],
         },
-        fallbacks=[MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu)]
+        fallbacks=[MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu),CommandHandler("restart", restart)]
     )
 
 
@@ -207,14 +207,14 @@ def main():
             AWAIT_MENTOR_TG: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mentor_tg)],
             AWAIT_BONUS_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bonus_amount)],
         },
-        fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu)],
+        fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu),CommandHandler("restart", restart)],
     )
     contract_signing_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Подписание договора$"), start_contract_signing)],
         states={
             SIGN_CONTRACT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_contract_signing)],
         },
-        fallbacks=[],
+        fallbacks=[MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu),CommandHandler("restart", restart)],
     )
     
     # Обработчик формирования договоров
@@ -240,7 +240,7 @@ def main():
         },
         fallbacks=[
             MessageHandler(filters.Regex("^🔙 Отмена$"), exit_to_main_menu),
-            MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu),
+            MessageHandler(filters.Regex("^🔙 Главное меню$"), exit_to_main_menu),CommandHandler("restart", restart)
         ],
     )
     
@@ -255,7 +255,7 @@ def main():
             EXPENSE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_date)],
         },
         fallbacks=[CommandHandler("cancel", exit_to_main_menu),
-                   MessageHandler(filters.Regex("^🔙 Отмена$"), exit_to_main_menu)]
+                   MessageHandler(filters.Regex("^🔙 Отмена$"), exit_to_main_menu),CommandHandler("restart", restart)]
     )
     
     # Обработчик карьерных консультантов
@@ -265,14 +265,14 @@ def main():
             SELECT_STUDENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_student_selection)],
             CONFIRM_ASSIGNMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_assignment_confirmation)],
         },
-        fallbacks=[MessageHandler(filters.Regex("^🔙 Назад$"), exit_to_main_menu)],
+        fallbacks=[MessageHandler(filters.Regex("^🔙 Назад$"), exit_to_main_menu),CommandHandler("restart", restart)],
     )
     create_meeting_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^📹 Создание встречи$"), create_meeting_entry)],
         states={
             MEETING_TYPE_SELECTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_meeting_type)]
         },
-        fallbacks=[]
+        fallbacks=[CommandHandler("restart", restart)]
     )
     application.add_handler(create_meeting_handler)
     # application.add_handler(

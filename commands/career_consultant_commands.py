@@ -6,17 +6,16 @@ from commands.authorized_users import AUTHORIZED_USERS
 from commands.start_commands import exit_to_main_menu
 from datetime import datetime
 
+from utils.security import restrict_to
+
 # Состояния для добавления карьерного консультанта
 AWAIT_CC_TELEGRAM = "AWAIT_CC_TELEGRAM"
 AWAIT_CC_NAME = "AWAIT_CC_NAME"
 
-
+@restrict_to(['admin', 'mentor']) # Разрешаем доступ обеим ролям
 async def add_career_consultant_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начало процесса добавления карьерного консультанта."""
-    user_id = update.message.from_user.id
-    if user_id not in AUTHORIZED_USERS:
-        await update.message.reply_text("❌ У вас нет доступа к этой функции.")
-        return ConversationHandler.END
+
     
     await update.message.reply_text(
         "💼 Добавление карьерного консультанта\n\n"

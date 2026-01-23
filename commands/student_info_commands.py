@@ -8,17 +8,14 @@ from telegram.ext import ContextTypes, ConversationHandler
 from data_base.db import session
 from data_base.models import Mentor
 from data_base.operations import get_all_students, get_student_by_fio_or_telegram
+from utils.security import restrict_to
 
 
+@restrict_to(['admin', 'mentor']) # Разрешаем доступ обеим ролям
 async def search_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Запрашивает ввод для поиска студента по ФИО или Telegram с возможностью возврата в главное меню.
     """
-    user_id = update.message.from_user.id
-
-    if user_id not in AUTHORIZED_USERS and user_id not in NOT_ADMINS:
-        await update.message.reply_text("Извините, у вас нет доступа.")
-        return ConversationHandler.END
 
     # Проверяем, ввел ли пользователь "Главное меню"
     search_query = update.message.text.strip() if update.message else None
