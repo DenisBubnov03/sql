@@ -1,8 +1,9 @@
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
+from data_base.models import Mentor
 from data_base.operations import get_career_consultant_by_telegram, get_mentor_by_telegram
-from data_base.db import get_session
+from data_base.db import get_session, session
 
 
 # --- Функция определения ролей (твоя логика) ---
@@ -65,6 +66,36 @@ def get_reply_markup(role: str):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     username = update.effective_user.username
+
+    # Форматируем username (добавляем @, если нужно), как в твоем примере
+    formatted_username = f"@{username}" if username and not username.startswith("@") else username
+
+    # --- ПРОВЕРКА И ДОБАВЛЕНИЕ В ТАБЛИЦУ MENTORS ---
+    try:
+        # Ищем ментора по chat_id (user_id)
+        mentor = session.query(Mentor).filter(Mentor.chat_id == user_id).first()
+
+        if not mentor:
+            # Если по ID не нашли, проверяем по юзернейму (вдруг он уже был вбит вручную)
+            mentor_by_username = session.query(Mentor).filter(Mentor.telegram == formatted_username).first()
+
+            if mentor_by_username:
+                # Привязываем ID к существующей записи
+                mentor_by_username.chat_id = user_id
+                session.commit()
+            else:
+                # Если вообще нет записи — создаем новую
+                new_mentor = Mentor(
+                    chat_id=user_id,
+                    telegram=formatted_username,
+                    full_name=update.effective_user.full_name
+                )
+                session.add(new_mentor)
+                session.commit()
+    except Exception as e:
+        session.rollback()
+        # Здесь можно добавить logger.error(f"Ошибка БД: {e}")
+    # -----------------------------------------------
 
     role = await get_user_role(user_id, username)
 
