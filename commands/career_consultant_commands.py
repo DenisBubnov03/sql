@@ -2,7 +2,6 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters
 from data_base.db import session
 from data_base.models import CareerConsultant
-from commands.authorized_users import AUTHORIZED_USERS
 from commands.start_commands import exit_to_main_menu
 from datetime import datetime
 

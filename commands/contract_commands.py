@@ -15,7 +15,6 @@ from commands.states import (
     CONTRACT_COMMISSION_CUSTOM, CONTRACT_FIO, CONTRACT_ADDRESS, CONTRACT_INN,
     CONTRACT_RS, CONTRACT_KS, CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL
 )
-from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from utils.security import restrict_to
 
 

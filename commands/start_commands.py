@@ -1,33 +1,9 @@
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
-from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from data_base.models import Mentor
 from data_base.operations import get_career_consultant_by_telegram, get_mentor_by_telegram
 from data_base.db import get_session, session
-
-
-# --- Функция определения ролей (твоя логика) ---
-async def get_user_role(user_id: int, username: str = None):
-    if not username:
-        return "admin" if user_id in AUTHORIZED_USERS else None
-
-    formatted_username = f"@{username.replace('@', '')}"
-    session = get_session()
-    try:
-        cc = get_career_consultant_by_telegram(formatted_username)
-        if cc and cc.is_active:
-            return "cc"
-
-        mentor = get_mentor_by_telegram(formatted_username)
-        if mentor:
-            return "mentor"
-
-        if user_id in AUTHORIZED_USERS:
-            return "admin"
-
-        return None
-    finally:
-        session.close()
+from utils.security import get_user_role
 
 
 # --- Твои списки кнопок (1 в 1 из функции start) ---

@@ -3,7 +3,6 @@ from datetime import datetime
 from sqlalchemy import func
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
-from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from commands.start_commands import exit_to_main_menu
 from commands.states import EXPENSE_TYPE, EXPENSE_SUB_CATEGORY, EXPENSE_AMOUNT, EXPENSE_DATE
 from data_base.db import session

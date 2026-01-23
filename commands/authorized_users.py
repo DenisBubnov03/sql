@@ -1,7 +1,7 @@
 
 import os
-AUTHORIZED_USERS = os.getenv("AUTHORIZED_USERS")
-NOT_ADMINS = os.getenv("NOT_ADMINS")
+# AUTHORIZED_USERS = os.getenv("AUTHORIZED_USERS")
+# NOT_ADMINS = os.getenv("NOT_ADMINS")
 
 # AUTHORIZED_USERS = [
 # 1257163820,

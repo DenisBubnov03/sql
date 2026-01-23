@@ -8,9 +8,7 @@ from data_base.operations import (
 from bot.keyboards.career_consultant_keyboards import (
     get_career_consultant_main_keyboard
 )
-from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from commands.states import SELECT_STUDENT, CONFIRM_ASSIGNMENT
-from datetime import datetime, timedelta
 
 
 async def career_consultant_start(update: Update, context: ContextTypes.DEFAULT_TYPE):

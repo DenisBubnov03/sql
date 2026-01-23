@@ -2,7 +2,6 @@ from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
-from commands.authorized_users import AUTHORIZED_USERS
 from commands.start_commands import exit_to_main_menu
 from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU
 from data_base.operations import get_all_students, get_students_with_no_calls, get_students_with_unpaid_payment

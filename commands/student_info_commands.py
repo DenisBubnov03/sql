@@ -1,4 +1,3 @@
-from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from commands.start_commands import exit_to_main_menu
 from commands.states import FIO_OR_TELEGRAM
 

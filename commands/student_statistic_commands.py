@@ -3,7 +3,6 @@ from datetime import datetime
 
 from sqlalchemy import func
 from classes.salary import SalaryManager
-from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from commands.states import STATISTICS_MENU, COURSE_TYPE_MENU, START_PERIOD, END_PERIOD

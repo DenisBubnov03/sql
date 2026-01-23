@@ -5,7 +5,6 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKe
 from telegram.ext import ContextTypes, ConversationHandler
 
 from classes.comission import AdminCommissionManager
-from commands.authorized_users import AUTHORIZED_USERS, NOT_ADMINS
 from commands.logger import log_student_change
 from commands.start_commands import exit_to_main_menu
 from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM, WAIT_FOR_PAYMENT_DATE, SIGN_CONTRACT, SELECT_CURATOR_TYPE, SELECT_CURATOR_MENTOR
@@ -107,14 +106,11 @@ async def edit_student(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # Ограниченная функция редактирования для NOT_ADMINS
+@restrict_to(['admin', 'mentor']) # Разрешаем доступ обеим ролям
 async def edit_student_limited(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Ограниченная версия редактирования студента для NOT_ADMINS.
     """
-    user_id = update.message.from_user.id
-    if user_id not in NOT_ADMINS:
-        await update.message.reply_text("Извините, у вас нет доступа.")
-        return ConversationHandler.END
 
     await update.message.reply_text(
         "Введите ФИО или Telegram студента, данные которого вы хотите отредактировать:",
@@ -223,16 +219,12 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     return FIELD_TO_EDIT
 
-
+@restrict_to(['admin', 'mentor']) # Разрешаем доступ обеим ролям
 # Ограниченное редактирование поля студента для NOT_ADMINS
 async def edit_student_field_limited(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Ограниченный выбор поля для редактирования для NOT_ADMINS.
     """
-    user_id = update.message.from_user.id
-    if user_id not in NOT_ADMINS:
-        await update.message.reply_text("Извините, у вас нет доступа.")
-        return ConversationHandler.END
 
     LIMITED_FIELD_MAPPING = {
         "ФИО": "fio",
