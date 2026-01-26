@@ -45,36 +45,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.effective_user.username
 
     # Форматируем username (добавляем @, если нужно), как в твоем примере
-    formatted_username = f"@{username}" if username and not username.startswith("@") else username
-
-    # --- ПРОВЕРКА И ДОБАВЛЕНИЕ В ТАБЛИЦУ MENTORS ---
-    try:
-        # Ищем ментора по chat_id (user_id)
-        mentor = session.query(Mentor).filter(Mentor.chat_id == user_id).first()
-
-        if not mentor:
-            # Если по ID не нашли, проверяем по юзернейму (вдруг он уже был вбит вручную)
-            mentor_by_username = session.query(Mentor).filter(Mentor.telegram == formatted_username).first()
-
-            if mentor_by_username:
-                # Привязываем ID к существующей записи
-                mentor_by_username.chat_id = user_id
-                session.commit()
-            else:
-                # Если вообще нет записи — создаем новую
-                new_mentor = Mentor(
-                    chat_id=user_id,
-                    telegram=formatted_username,
-                    full_name=update.effective_user.full_name
-                )
-                session.add(new_mentor)
-                session.commit()
-    except Exception as e:
-        session.rollback()
-        # Здесь можно добавить logger.error(f"Ошибка БД: {e}")
-    # -----------------------------------------------
-
     role = await get_user_role(user_id, username)
+    if role in ["mentor", "admin"] and username:
+        session = get_session()
+        try:
+            from data_base.models import Mentor
+            # Ищем ментора по username (убираем лишние @ для чистоты поиска)
+            formatted_username = f"@{username.replace('@', '')}"
+            mentor = session.query(Mentor).filter(Mentor.telegram == formatted_username).first()
+
+            # Если нашли ментора и у него не заполнен chat_id — записываем
+            if mentor and not mentor.chat_id:
+                mentor.chat_id = str(user_id)
+                session.commit()
+        except Exception as e:
+            print(f"Ошибка при сохранении chat_id: {e}")
+        finally:
+            session.close()
+
 
     if role == "cc":
         from bot.handlers.career_consultant_handlers import career_consultant_start
