@@ -18,6 +18,7 @@ def get_reply_markup(role: str):
             [KeyboardButton('Поиск ученика')],
             [KeyboardButton('Статистика')],
             [KeyboardButton('Редактировать данные студента')],
+            [KeyboardButton('Проверить уведомления')],
             [KeyboardButton('Доп расходы')]
         ]
     else:  # admin
