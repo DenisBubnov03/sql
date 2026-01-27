@@ -687,11 +687,11 @@ async def handle_contract_signing(update, context):
     return await exit_to_main_menu(update, context)
 
 # Умная функция для определения прав редактирования
-@restrict_to(['admin', 'mentor'])
+# @restrict_to(['admin', 'mentor'])
 async def smart_edit_student(update, context):
     return await role_based_router(update, context, edit_student, edit_student_limited)
 
-@restrict_to(['admin', 'mentor'])
+# @restrict_to(['admin', 'mentor'])
 async def smart_edit_student_field(update, context):
     return await role_based_router(update, context, edit_student_field, edit_student_field_limited)
 
@@ -896,13 +896,9 @@ async def show_curator_mentors(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def handle_curator_mentor_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Обработка выбора нового куратора.
-    """
     selected = update.message.text.strip()
     mentors_list = context.user_data.get("mentors_list", {})
 
-    # Обработка кнопки "Главное меню"
     if selected == "Главное меню":
         return await exit_to_main_menu(update, context)
 
@@ -910,17 +906,31 @@ async def handle_curator_mentor_selection(update: Update, context: ContextTypes.
         await update.message.reply_text("❌ Пожалуйста, выберите одного из предложенных.")
         return SELECT_CURATOR_MENTOR
 
-    student = context.user_data.get("student")
+    # 1. Берем ID студента, а не сам объект (предположим, ты сохранил student.id ранее)
+    # Если ты все еще хранишь объект, возьми его id: student_obj = context.user_data.get("student")
+    student_data = context.user_data.get("student")
+    student_id = student_data.id if hasattr(student_data, 'id') else student_data
+
     curator_type = context.user_data.get("curator_type")
     new_mentor_id = mentors_list[selected]
 
-    # Обновляем куратора в базе данных
     try:
+        from data_base.models import Student
+
+        # 2. СВЕЖИЙ ЗАПРОС К БАЗЕ. Это привяжет студента к текущей сессии
+        student = session.query(Student).filter(Student.id == student_id).first()
+
+        if not student:
+            await update.message.reply_text("❌ Студент не найден в базе.")
+            return await exit_to_main_menu(update, context)
+
+        # 3. Обновляем поля
         if curator_type == "manual":
             student.mentor_id = new_mentor_id
         elif curator_type == "auto":
             student.auto_mentor_id = new_mentor_id
 
+        # 4. Фиксируем изменения
         session.commit()
 
         mentor_name = selected if selected != "Не назначен" else "Не назначен"
@@ -929,10 +939,9 @@ async def handle_curator_mentor_selection(update: Update, context: ContextTypes.
             f"Студент: {student.fio}\n"
             f"Новый куратор: {mentor_name}"
         )
-
-        # Возвращаемся в главное меню после успешного обновления
         return await exit_to_main_menu(update, context)
 
     except Exception as e:
+        session.rollback()  # Всегда делай откат при ошибке
         await update.message.reply_text(f"❌ Ошибка при обновлении куратора: {str(e)}")
         return await exit_to_main_menu(update, context)
