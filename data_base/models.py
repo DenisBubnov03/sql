@@ -56,6 +56,7 @@ class Mentor(Base):
     full_name = Column(String, nullable=False)
     chat_id = Column(String, nullable=True)
     direction = Column(String, nullable=False)
+    is_admin = Column(Boolean, default=False)
 
 
 class Payment(Base):
