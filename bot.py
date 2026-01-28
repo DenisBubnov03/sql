@@ -8,7 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from bot.handlers.career_consultant_handlers import show_career_consultant_statistics, \
     show_assign_student_menu, handle_student_selection, handle_assignment_confirmation, career_consultant_start
 from commands.additional_expenses_commands import start_expense_process, handle_expense_type, handle_expense_amount, \
-    handle_expense_date, handle_sub_category
+    handle_expense_date, handle_sub_category, handle_referrer_selection
 from commands.career_consultant_commands import add_career_consultant_handler
 from commands.contract_commands import (
     start_contract_formation, handle_contract_menu, handle_student_telegram,
@@ -29,7 +29,7 @@ from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATIS
     CONTRACT_ADVANCE_AMOUNT, CONTRACT_PAYMENT_TYPE, CONTRACT_MONTHS, CONTRACT_COMMISSION_TYPE, \
     CONTRACT_COMMISSION_CUSTOM, CONTRACT_FIO, CONTRACT_ADDRESS, CONTRACT_INN, CONTRACT_RS, CONTRACT_KS, \
     CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL, MEETING_TYPE_SELECTION, UE_MENU, UE_START_PERIOD, UE_END_PERIOD, \
-    EXPENSE_SUB_CATEGORY
+    EXPENSE_SUB_CATEGORY, EXPENSE_REFERRER
 from commands.student_commands import (
     handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
@@ -253,6 +253,7 @@ def main():
             EXPENSE_SUB_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sub_category)],
             EXPENSE_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_amount)],
             EXPENSE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_expense_date)],
+            EXPENSE_REFERRER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_referrer_selection)]
         },
         fallbacks=[CommandHandler("cancel", exit_to_main_menu),
                    MessageHandler(filters.Regex("^🔙 Отмена$"), exit_to_main_menu),CommandHandler("restart", restart)]

@@ -4,7 +4,7 @@ from sqlalchemy import func
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from commands.start_commands import exit_to_main_menu
-from commands.states import EXPENSE_TYPE, EXPENSE_SUB_CATEGORY, EXPENSE_AMOUNT, EXPENSE_DATE
+from commands.states import EXPENSE_TYPE, EXPENSE_SUB_CATEGORY, EXPENSE_AMOUNT, EXPENSE_DATE, EXPENSE_REFERRER
 from data_base.db import session
 # Импортируем твои новые модели
 from data_base.models import MarketingSpend, FixedExpense
@@ -17,6 +17,7 @@ from utils.security import restrict_to
 MARKETING_CHANNELS = {
     "ОМ Ручной": "om_manual",
     "ОМ Авто": "om_auto",
+    "Рефералка":"referral",
     "Авито": "avito",
     "Ютуб": "media"
 }
@@ -28,6 +29,14 @@ FIXED_CATEGORIES = {
     "Оклады": "salaries_fixed",
     "Менторы": "mentors",
     "Другое": "other_fixed"
+}
+
+REFERRERS = {
+    "Эд": "ref Ed",
+    "Артем Артсайд": "ref Artem Artsaid",
+    "Павел Виноградов": "ref Pavel Vinogradov",
+    "Артем Септенал": "ref Artem Septenal",
+    "Дмитрий Ильин": "ref Dmitry Ilyin"
 }
 
 def get_additional_expenses_for_period(start_date, end_date, detailed=False):
@@ -85,7 +94,7 @@ async def handle_expense_type(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data["main_type"] = choice  # 'Маркетинг' или 'Фиксы'
 
     if choice == "Маркетинг":
-        keyboard = [["ОМ Ручной", "ОМ Авто"], ["Авито", "Ютуб"], ["Назад"]]
+        keyboard = [["ОМ Ручной", "ОМ Авто"], ["Авито", "Ютуб"],["Рефералка"], ["Назад"]]
         text = "🎯 Выберите канал маркетинга:"
     elif choice == "Фиксы":
         keyboard = [["Cineskop", "Chat Place"], ["Боты", "Оклады"], ["Менторы", "Другое"], ["Назад"]]
@@ -106,9 +115,19 @@ async def handle_sub_category(update: Update, context: ContextTypes.DEFAULT_TYPE
     if sub_choice == "Назад":
         return await start_expense_process(update, context)
 
-    # Сохраняем "человеческое" название для вывода и "техническое" для БД
     context.user_data["sub_category_name"] = sub_choice
 
+    # ЕСЛИ ВЫБРАЛИ РЕФЕРАЛКУ
+    if sub_choice == "Рефералка":
+        keyboard = [[name] for name in REFERRERS.keys()] + [["Назад"]]
+        await update.message.reply_text(
+            "👤 Выберите реферера:",
+            reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        )
+        from commands.states import EXPENSE_REFERRER  # Убедись, что импортировал
+        return EXPENSE_REFERRER
+
+    # Для остальных категорий идем сразу к сумме
     if context.user_data["main_type"] == "Маркетинг":
         context.user_data["db_category"] = MARKETING_CHANNELS.get(sub_choice, "other")
     else:
@@ -120,12 +139,39 @@ async def handle_sub_category(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
     return EXPENSE_AMOUNT
 
+async def handle_referrer_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ref_choice = update.message.text.strip()
+
+    if ref_choice == "Назад":
+        # Возвращаем к выбору подкатегории маркетинга
+        keyboard = [["ОМ Ручной", "ОМ Авто"], ["Авито", "Ютуб"],["Рефералка"], ["Назад"]]
+        await update.message.reply_text(
+            "🎯 Выберите канал маркетинга:",
+            reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        )
+        return EXPENSE_SUB_CATEGORY
+
+    if ref_choice not in REFERRERS:
+        await update.message.reply_text("❌ Пожалуйста, выберите из списка.")
+        return EXPENSE_REFERRER
+
+    # Сохраняем техническое название (ref Ed и т.д.) в категорию для БД
+    context.user_data["db_category"] = REFERRERS[ref_choice]
+    context.user_data["sub_category_name"] = f"Рефералка: {ref_choice}"
+
+    await update.message.reply_text(
+        f"💰 Введите сумму выплаты для '{ref_choice}':",
+        reply_markup=ReplyKeyboardMarkup([["Назад"]], one_time_keyboard=True, resize_keyboard=True)
+    )
+    return EXPENSE_AMOUNT
 
 async def handle_expense_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     amount_text = update.message.text.strip()
     if amount_text == "Назад":
+        if "Рефералка" in context.user_data.get("sub_category_name", ""):
+            from commands.states import EXPENSE_REFERRER
+            return EXPENSE_REFERRER
         return await handle_expense_type(update, context)
-
     try:
         amount = float(amount_text.replace(",", "."))
         if amount <= 0: raise ValueError
