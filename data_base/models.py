@@ -30,6 +30,7 @@ class Student(Base):
     contract_signed = Column(Boolean, default=False, server_default="false")
     start_date = Column(Date, nullable=True)
     training_type = Column(String(255), nullable=True)
+    chat_id = Column(String(50), unique=True, nullable=True)
     total_cost = Column(DECIMAL(10, 2), nullable=True)
     payment_amount = Column(DECIMAL(10, 2), nullable=True)
     last_call_date = Column(Date, nullable=True)

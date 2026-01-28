@@ -9,11 +9,10 @@ from utils.security import restrict_to
 
 
 async def send_long_message(update: Update, text: str):
-    """Вспомогательная функция для разбивки и отправки длинных сообщений."""
+    """Вспомогательная функция для разбивки сообщений."""
     if len(text) <= 4000:
         await update.message.reply_text(text)
         return
-
     parts = []
     current_part = ""
     for line in text.split('\n'):
@@ -22,10 +21,8 @@ async def send_long_message(update: Update, text: str):
             current_part = line + '\n'
         else:
             current_part += line + '\n'
-
     if current_part:
         parts.append(current_part.strip())
-
     for part in parts:
         await update.message.reply_text(part)
 
@@ -45,7 +42,7 @@ async def show_notifications_menu(update: Update, context: ContextTypes.DEFAULT_
 async def check_call_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE):
     students = get_students_with_no_calls()
     if students:
-        notifications = [f"{s.fio} {s.telegram} давно не звонил!" for s in students]
+        notifications = [f"🔹 {s.fio} {s.telegram} давно не звонил!" for s in students]
         await send_long_message(update, "❗ Уведомления по звонкам:\n\n" + "\n".join(notifications))
     else:
         await update.message.reply_text("✅ Нет уведомлений по звонкам.")
@@ -64,41 +61,32 @@ async def check_payment_notifications(update: Update, context: ContextTypes.DEFA
 
 
 async def check_prepayment_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Проверяет уведомления по предоплате (должники).
-    """
     from data_base.db import session
-    from data_base.models import Student, Payment
-    from data_base.operations import get_students_with_unpaid_payment
+    from data_base.models import Payment
 
     students = get_students_with_unpaid_payment()
     today = date.today()
+    issues = []
 
     if students:
-        notif_list = []
         for s in students:
-            # Ищем самый свежий подтвержденный платеж (не обязательно комиссию)
+            debt = s.total_cost - (s.payment_amount or 0)
             last_p = session.query(Payment).filter(
                 Payment.student_id == s.id,
                 Payment.status == "подтвержден"
             ).order_by(Payment.payment_date.desc()).first()
 
-            if last_p and last_p.payment_date:
+            if last_p:
                 days = (today - last_p.payment_date).days
-                p_info = f"📅 Последний платеж: {last_p.payment_date.strftime('%d.%m.%Y')} ({days} дн. назад)"
+                p_info = f"{last_p.payment_date.strftime('%d.%m.%Y')} ({days} дн. назад)"
             else:
-                p_info = "📅 Платежей еще не было"
+                p_info = "платежей нет"
 
-            debt = s.total_cost - (s.payment_amount or 0)
+            issues.append(f"👤 {s.fio}\n💰 Долг: {debt}р | Посл. платеж: {p_info}")
 
-            txt = (f"👤 {s.fio} ({s.telegram})\n"
-                   f"{p_info}\n"
-                   f"💰 Долг: {debt} руб. (из {s.total_cost})\n")
-            notif_list.append(txt)
-
-        await send_long_message(update, "❗ Уведомления по предоплате (должники):\n\n" + "\n".join(notif_list))
+        await send_long_message(update, "❗ Список должников (Предоплата):\n\n" + "\n\n".join(issues))
     else:
-        await update.message.reply_text("✅ Нет уведомлений по предоплате.")
+        await update.message.reply_text("✅ Нет задолженностей по предоплате.")
     return await exit_to_main_menu(update, context)
 
 
@@ -106,104 +94,51 @@ async def check_postpayment_notifications(update: Update, context: ContextTypes.
     from data_base.db import session
     from data_base.models import Student, Payment
 
-    employed_students = session.query(Student).filter(Student.training_status == "Устроился").all()
-    issues = []
+    employed = session.query(Student).filter(Student.training_status == "Устроился").all()
     today = date.today()
-    one_month_ago = today - timedelta(days=30)
+    issues = []
 
-    for student in employed_students:
+    for s in employed:
         try:
-            if not student.commission:
-                continue
+            if not s.commission: continue
+            c_data = s.commission.split(", ")
+            num = int(c_data[0]) if c_data[0].isdigit() else 0
+            perc = int(c_data[1].replace("%", "")) if len(c_data) > 1 else 0
+            total = ((s.salary or 0) * perc / 100) * num
+            paid = s.commission_paid or 0
 
-            # Парсим комиссию: "количество_платежей, процент%"
-            comm_data = [item.strip() for item in student.commission.split(",")]
-            num_payments = int(comm_data[0]) if comm_data and comm_data[0].isdigit() else 0
-            percentage = int(comm_data[1].replace("%", "")) if len(comm_data) > 1 else 0
+            if total <= paid: continue
 
-            salary = student.salary or 0
-            total_expected = (salary * percentage / 100) * num_payments
-            paid_so_far = student.commission_paid or 0
-
-            if total_expected == 0 or paid_so_far >= total_expected:
-                continue
-
-            # ПОИСК ПЛАТЕЖА: изменен фильтр на %комисс% для надежности
             last_p = session.query(Payment).filter(
-                Payment.student_id == student.id,
-                Payment.comment.ilike("%Комисс%"),
+                Payment.student_id == s.id,
+                Payment.comment.ilike("%комисс%"),
                 Payment.status == "подтвержден"
             ).order_by(Payment.payment_date.desc()).first()
 
-            last_date = last_p.payment_date if last_p else None
-            reasons = []
-
-            if paid_so_far < total_expected:
-                reasons.append(f"Неполная выплата: {paid_so_far}/{total_expected} руб.")
-
-            # Обработка даты трудоустройства
-            emp_date = None
-            if student.employment_date:
-                if isinstance(student.employment_date, str):
-                    try:
-                        emp_date = datetime.strptime(student.employment_date, "%d.%m.%Y").date()
-                    except:
-                        pass
-                else:
-                    emp_date = student.employment_date
-
-            if not last_date and emp_date and emp_date < one_month_ago:
-                reasons.append("Нет платежей комиссии (устроился > 30 дней назад)")
-            elif last_date and last_date < one_month_ago:
-                reasons.append("Последний платеж комиссии был более 30 дней назад")
-
-            if reasons:
-                issues.append({
-                    'name': student.fio,
-                    'tg': student.telegram,
-                    'paid': paid_so_far,
-                    'total': total_expected,
-                    'last_date': last_date,
-                    'reasons': reasons
-                })
+            p_info = f"{last_p.payment_date.strftime('%d.%m.%Y')}" if last_p else "нет"
+            debt = total - paid
+            issues.append(f"👤 {s.fio}\n💸 Комиссия: {debt}р | Посл. платеж: {p_info}")
         except:
             continue
 
     if issues:
-        notif_list = []
-        for iss in issues:
-            if iss['last_date']:
-                days = (today - iss['last_date']).days
-                p_info = f"📅 Последний платеж: {iss['last_date'].strftime('%d.%m.%Y')} ({days} дн. назад)"
-            else:
-                p_info = "📅 Платежей по комиссии не найдено"
-
-            txt = (f"👤 {iss['name']} ({iss['tg']})\n"
-                   f"{p_info}\n"
-                   f"💰 Выплачено {iss['paid']} из {iss['total']} руб.\n"
-                   f"⚠️ " + "; ".join(iss['reasons']))
-            notif_list.append(txt)
-
-        await send_long_message(update, "❗ Уведомления по постоплате:\n\n" + "\n\n".join(notif_list))
+        await send_long_message(update, "❗ Список по постоплате (Комиссии):\n\n" + "\n\n".join(issues))
     else:
-        await update.message.reply_text("✅ Нет уведомлений по постоплате.")
+        await update.message.reply_text("✅ Нет задолженностей по комиссиям.")
     return await exit_to_main_menu(update, context)
 
 
 async def check_all_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Сборная солянка по всем типам уведомлений (кратко)."""
+    # Оригинальная краткая логика
     calls = get_students_with_no_calls()
-    prepayments = get_students_with_unpaid_payment()
-
+    payments = get_students_with_unpaid_payment()
     msgs = []
-    if prepayments:
-        msgs.append("❗ ЗАДОЛЖЕННОСТИ:")
-        msgs.extend([f"• {s.fio}: {s.total_cost - s.payment_amount}р" for s in prepayments])
-        msgs.append("")
-
+    if payments:
+        msgs.append("❗ ОПЛАТЫ:")
+        msgs.extend([f"• {s.fio}: {s.total_cost - s.payment_amount}р" for s in payments])
     if calls:
-        msgs.append("❗ ПРОПУЩЕННЫЕ ЗВОНКИ:")
-        msgs.extend([f"• {s.fio} {s.telegram}" for s in calls])
+        msgs.append("\n❗ ЗВОНКИ:")
+        msgs.extend([f"• {s.fio} ({s.telegram})" for s in calls])
 
     if not msgs:
         await update.message.reply_text("✅ Уведомлений нет!")
