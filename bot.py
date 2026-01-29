@@ -132,27 +132,38 @@ def main():
         },
         fallbacks=[CommandHandler("restart", restart)],
     )
+    # ВНУТРИ main():
+    # ВНУТРИ main():
 
     statistics_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^Статистика$"), show_statistics_menu)],
+        entry_points=[
+            MessageHandler(filters.Regex("^Статистика$"), show_statistics_menu),
+            # Позволяем зайти в ЮЭ напрямую командой
+            CommandHandler("unit_economics", unit_economics_command)
+        ],
         states={
+            # ГЛАВНОЕ МЕНЮ СТАТИСТИКИ
             STATISTICS_MENU: [
                 MessageHandler(filters.Regex("^📈 Общая статистика$"), show_general_statistics),
                 MessageHandler(filters.Regex("^📚 По типу обучения$"), show_course_type_menu),
                 MessageHandler(filters.Regex("^📅 По периоду$"), request_period_start),
                 MessageHandler(filters.Regex("^💰 Холдирование$"), show_held_amounts),
-                MessageHandler(filters.Regex("^💹 Юнит экономика$"), show_unit_economics_menu),
+                # Важно: Regex теперь ловит и пробел, и дефис
+                MessageHandler(filters.Regex("^💹 Юнит[- ]экономика$"), show_unit_economics_menu),
             ],
-            START_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_period_start)],
-            END_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_period_end)],
+
+            # ПОДМЕНЮ ЮНИТ-ЭКОНОМИКИ (Интегрировано сюда)
             UE_MENU: [
-                MessageHandler(filters.Regex("^📌 Последний период$"), show_latest_unit_economics),
+                MessageHandler(filters.Regex("^📌 Текущий месяц$"), show_latest_unit_economics),
                 MessageHandler(filters.Regex("^📅 Выбрать период$"), unit_economics_request_start),
-                MessageHandler(filters.Regex("^🔙 Назад$"), unit_economics_back_to_statistics),
+                MessageHandler(filters.Regex("^🔙 Назад$"), show_statistics_menu),  # Возврат в стат-меню
             ],
             UE_START_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, unit_economics_handle_start)],
             UE_END_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, unit_economics_handle_end)],
-            # UE_PRODUCT_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, unit_economics_handle_product_code)],
+
+            # ОСТАЛЬНЫЕ СОСТОЯНИЯ СТАТИСТИКИ
+            START_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_period_start)],
+            END_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_period_end)],
             COURSE_TYPE_MENU: [
                 MessageHandler(filters.Regex("^👨‍💻 Ручное тестирование$"), show_manual_testing_statistics),
                 MessageHandler(filters.Regex("^🤖 Автотестирование$"), show_automation_testing_statistics),
@@ -161,10 +172,14 @@ def main():
             ],
         },
         fallbacks=[
-            MessageHandler(filters.Regex("^🔙 Вернуться в меню$"), exit_to_main_menu),CommandHandler("restart", restart)
+            MessageHandler(filters.Regex("^🔙 Вернуться в меню$"), exit_to_main_menu),
+            MessageHandler(filters.Regex("^🔙 Назад$"), exit_to_main_menu),
+            CommandHandler("restart", restart)
         ],
+        allow_reentry=True
     )
 
+    # Теперь регистрируем только ОДИН хендлер для всей этой ветки
     notifications_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Проверить уведомления$"), show_notifications_menu)],
         states={
@@ -296,7 +311,6 @@ def main():
     application.add_handler(salary_handler)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("restart", restart))
-    application.add_handler(CommandHandler("unit_economics", unit_economics_command))
     application.add_handler(add_student_handler)
     application.add_handler(edit_student_handler)
     application.add_handler(search_student_handler)
