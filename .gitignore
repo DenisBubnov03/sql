@@ -12,3 +12,5 @@ __pycache__/
 .env
 .claude/
 CLAUDE.md
+*.ovpn
+answer.md

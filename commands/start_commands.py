@@ -18,7 +18,8 @@ def get_reply_markup(role: str):
             [KeyboardButton('Поиск ученика')],
             [KeyboardButton('Статистика')],
             [KeyboardButton('Редактировать данные студента')],
-            [KeyboardButton('Доп расходы')]
+            [KeyboardButton('Доп расходы')],
+            [KeyboardButton('Создать OVPN конфиг')]
         ]
     else:  # admin
         reply_keyboard = [
@@ -32,7 +33,8 @@ def get_reply_markup(role: str):
             [KeyboardButton('Статистика')],
             [KeyboardButton("📊 Рассчитать зарплату")],
             [KeyboardButton('Доп расходы')],
-            [KeyboardButton('💼 Добавить КК')]
+            [KeyboardButton('💼 Добавить КК')],
+            [KeyboardButton('Создать OVPN конфиг')]
         ]
     return ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True, one_time_keyboard=True)
 

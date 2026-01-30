@@ -29,7 +29,7 @@ from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATIS
     CONTRACT_ADVANCE_AMOUNT, CONTRACT_PAYMENT_TYPE, CONTRACT_MONTHS, CONTRACT_COMMISSION_TYPE, \
     CONTRACT_COMMISSION_CUSTOM, CONTRACT_FIO, CONTRACT_ADDRESS, CONTRACT_INN, CONTRACT_RS, CONTRACT_KS, \
     CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL, MEETING_TYPE_SELECTION, UE_MENU, UE_START_PERIOD, UE_END_PERIOD, \
-    EXPENSE_SUB_CATEGORY, EXPENSE_REFERRER
+    EXPENSE_SUB_CATEGORY, EXPENSE_REFERRER, VPN_AWAITING_TELEGRAM
 from commands.student_commands import (
     handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
@@ -45,6 +45,7 @@ from commands.student_selection import find_student, handle_multiple_students
 from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
     handle_period_start, handle_period_end, show_held_amounts
+from commands.vpn_commands import start_vpn_config, handle_vpn_telegram
 from commands.unit_economics_commands import (
     show_unit_economics_menu,
     show_latest_unit_economics,
@@ -316,6 +317,21 @@ def main():
     application.add_handler(search_student_handler)
     application.add_handler(statistics_handler)
     application.add_handler(notifications_handler)
+
+    # Обработчик генерации VPN конфигов
+    vpn_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^Создать OVPN конфиг$"), start_vpn_config)],
+        states={
+            VPN_AWAITING_TELEGRAM: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_vpn_telegram),
+            ],
+        },
+        fallbacks=[
+            MessageHandler(filters.Regex("^Главное меню$"), exit_to_main_menu),
+            CommandHandler("restart", restart),
+        ],
+    )
+    application.add_handler(vpn_handler)
 
     # application.add_handler(MessageHandler(filters.Regex("Отмена"), cancel))  # Доп. проверка
     # application.add_handler(MessageHandler(filters.ALL, debug))

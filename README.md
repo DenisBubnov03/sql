@@ -131,3 +131,7 @@ psql "$DATABASE_URL" -f migrations/2026_01_10_unit_economics.sql
 - Доступ к БД в коде: `DATABASE_URL` из окружения (см. `data_base/__init__.py`).
 - Сессия SQLAlchemy: `data_base/db.py` (`session`, `get_session()`).
 
+---
+
+# Старт работы
+- Развернуть базу
