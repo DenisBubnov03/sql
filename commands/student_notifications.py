@@ -82,7 +82,7 @@ async def check_prepayment_notifications(update: Update, context: ContextTypes.D
             else:
                 p_info = "платежей нет"
 
-            issues.append(f"👤 {s.telegram}\n💰 Долг: {debt}р | Посл. платеж: {p_info}")
+            issues.append(f"👤 {s.telegram}\n💰 Стоимость обучения: {s.total_cost} Долг: {debt}р | Посл. платеж: {p_info}")
 
         await send_long_message(update, "❗ Список должников (Предоплата):\n\n" + "\n\n".join(issues))
     else:
