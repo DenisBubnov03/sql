@@ -82,7 +82,7 @@ async def check_prepayment_notifications(update: Update, context: ContextTypes.D
             else:
                 p_info = "платежей нет"
 
-            issues.append(f"👤 {s.fio}\n💰 Долг: {debt}р | Посл. платеж: {p_info}")
+            issues.append(f"👤 {s.telegram}\n💰 Долг: {debt}р | Посл. платеж: {p_info}")
 
         await send_long_message(update, "❗ Список должников (Предоплата):\n\n" + "\n\n".join(issues))
     else:
@@ -117,7 +117,7 @@ async def check_postpayment_notifications(update: Update, context: ContextTypes.
 
             p_info = f"{last_p.payment_date.strftime('%d.%m.%Y')}" if last_p else "нет"
             debt = total - paid
-            issues.append(f"👤 {s.fio}\n💸 Комиссия: {debt}р | Посл. платеж: {p_info}")
+            issues.append(f"👤 {s.telegram}\n💸 Комиссия: {debt}р | Посл. платеж: {p_info}")
         except:
             continue
 
@@ -135,7 +135,7 @@ async def check_all_notifications(update: Update, context: ContextTypes.DEFAULT_
     msgs = []
     if payments:
         msgs.append("❗ ОПЛАТЫ:")
-        msgs.extend([f"• {s.fio}: {s.total_cost - s.payment_amount}р" for s in payments])
+        msgs.extend([f"• {s.telegram}: {s.total_cost - s.payment_amount}р" for s in payments])
     if calls:
         msgs.append("\n❗ ЗВОНКИ:")
         msgs.extend([f"• {s.fio} ({s.telegram})" for s in calls])
