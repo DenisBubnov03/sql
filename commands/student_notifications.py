@@ -32,7 +32,7 @@ async def show_notifications_menu(update: Update, context: ContextTypes.DEFAULT_
     await update.message.reply_text(
         "Выберите тип уведомлений:",
         reply_markup=ReplyKeyboardMarkup(
-            [["По звонкам"], ["По оплате"], ["Все"], ["🔙 Главное меню"]],
+            [["По оплате"], ["🔙 Главное меню"]],
             one_time_keyboard=True
         )
     )
