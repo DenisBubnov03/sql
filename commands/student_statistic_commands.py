@@ -5,7 +5,7 @@ from sqlalchemy import func
 from classes.salary import SalaryManager
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
-from commands.states import STATISTICS_MENU, COURSE_TYPE_MENU, START_PERIOD, END_PERIOD
+from commands.states import STATISTICS_MENU, COURSE_TYPE_MENU, START_PERIOD, END_PERIOD, UE_MENU
 from data_base.db import session
 from data_base.models import Student, Payment
 from data_base.operations import get_general_statistics, get_students_by_period, get_students_by_training_type
@@ -24,7 +24,6 @@ async def show_statistics_menu(update: Update, context: ContextTypes.DEFAULT_TYP
         "📊 Статистика:\nВыберите тип статистики:",
         reply_markup=ReplyKeyboardMarkup(
             [
-                ["📈 Общая статистика", "📚 По типу обучения"],
                 ["📅 По периоду", "💰 Холдирование"],
                 ["💹 Юнит экономика"],
                 ["🔙 Вернуться в меню"]
@@ -33,45 +32,6 @@ async def show_statistics_menu(update: Update, context: ContextTypes.DEFAULT_TYP
         )
     )
     return STATISTICS_MENU
-
-
-async def show_general_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Отображает общую статистику по всем студентам.
-    """
-    statistics = get_general_statistics()
-    total_students = statistics.get("total_students", 0)
-    fully_paid = statistics.get("fully_paid", 0)
-    not_fully_paid = total_students - fully_paid
-
-    await update.message.reply_text(
-        f"📋 Общая статистика:\n\n"
-        f"👥 Всего студентов: {total_students}\n"
-        f"✅ Полностью оплатили: {fully_paid}\n"
-        f"❌ Не оплатили полностью: {not_fully_paid}",
-        reply_markup=ReplyKeyboardMarkup(
-            [["🔙 Вернуться в меню"]],
-            one_time_keyboard=True
-        )
-    )
-    return STATISTICS_MENU
-
-
-async def show_course_type_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Отображает меню выбора типа обучения для статистики.
-    """
-    await update.message.reply_text(
-        "📚 Выберите тип обучения для статистики:",
-        reply_markup=ReplyKeyboardMarkup(
-            [
-                ["👨‍💻 Ручное тестирование", "🤖 Автотестирование", "💻 Фуллстек"],
-                ["🔙 Назад"]
-            ],
-            one_time_keyboard=True
-        )
-    )
-    return COURSE_TYPE_MENU
 
 
 async def show_course_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE, course_type, emoji):
@@ -130,22 +90,56 @@ async def request_period_start(update: Update, context: ContextTypes.DEFAULT_TYP
     """
     Запрашивает начальную дату периода.
     """
-    await update.message.reply_text("Введите начальную дату периода в формате ДД.ММ.ГГГГ:")
+    await update.message.reply_text(
+        "Выберите действие:",
+        reply_markup=ReplyKeyboardMarkup(
+            [["📌 Текущий месяц", "📅 Выбрать период"], ["🔙 Назад"]],
+            one_time_keyboard=True, resize_keyboard=True
+        )
+    )
     return START_PERIOD
 
 
+from datetime import datetime, date
+import calendar
+
+
 async def handle_period_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Обрабатывает начальную дату периода.
-    """
+    text = update.message.text.strip()
+
+    # 1. Обработка кнопки "Текущий месяц"
+    if text == "📌 Текущий месяц":
+        today = date.today()
+        # Первый день текущего месяца
+        start_date = today.replace(day=1)
+        # Последний день текущего месяца
+        last_day = calendar.monthrange(today.year, today.month)[1]
+        end_date = today.replace(day=last_day)
+
+        context.user_data["start_date"] = datetime.combine(start_date, datetime.min.time())
+        context.user_data["end_date"] = datetime.combine(end_date, datetime.max.time())
+
+        await update.message.reply_text(
+            f"📊 Выбран период: {start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}"
+        )
+
+        # Здесь можно либо вернуть END_PERIOD, либо сразу вызвать функцию генерации отчета
+        return await show_period_statistics(update, context)
+
+        # 2. Обработка кнопки "Выбрать период"
+    if text == "📅 Выбрать период":
+        await update.message.reply_text("Введите дату начала в формате ДД.ММ.ГГГГ:")
+        return START_PERIOD
+
+    # 3. Обработка ручного ввода даты
     try:
-        start_date_text = update.message.text.strip()
-        start_date = datetime.strptime(start_date_text, "%d.%m.%Y")
+        start_date = datetime.strptime(text, "%d.%m.%Y")
         context.user_data["start_date"] = start_date
         await update.message.reply_text("Введите конечную дату периода в формате ДД.ММ.ГГГГ:")
         return END_PERIOD
     except ValueError:
-        await update.message.reply_text("❌ Неверный формат даты! Введите дату в формате ДД.ММ.ГГГГ (например: 10.11.2024):")
+        await update.message.reply_text(
+            "❌ Неверный формат! Введите дату (ДД.ММ.ГГГГ) или выберите вариант на клавиатуре:")
         return START_PERIOD
 
 

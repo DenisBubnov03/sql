@@ -39,16 +39,6 @@ async def show_notifications_menu(update: Update, context: ContextTypes.DEFAULT_
     return NOTIFICATION_MENU
 
 
-async def check_call_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    students = get_students_with_no_calls()
-    if students:
-        notifications = [f"🔹 {s.fio} {s.telegram} давно не звонил!" for s in students]
-        await send_long_message(update, "❗ Уведомления по звонкам:\n\n" + "\n".join(notifications))
-    else:
-        await update.message.reply_text("✅ Нет уведомлений по звонкам.")
-    return await exit_to_main_menu(update, context)
-
-
 async def check_payment_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Выберите тип уведомлений по оплате:",
@@ -172,22 +162,4 @@ async def check_postpayment_notifications(update: Update, context: ContextTypes.
         await send_long_message(update, "❗ Список по постоплате (Комиссии):\n\n" + "\n\n".join(issues))
     else:
         await update.message.reply_text("✅ Нет задолженностей по комиссиям.")
-    return await exit_to_main_menu(update, context)
-
-async def check_all_notifications(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Оригинальная краткая логика
-    calls = get_students_with_no_calls()
-    payments = get_students_with_unpaid_payment()
-    msgs = []
-    if payments:
-        msgs.append("❗ ОПЛАТЫ:")
-        msgs.extend([f"• {s.telegram}: {s.total_cost - s.payment_amount}р" for s in payments])
-    if calls:
-        msgs.append("\n❗ ЗВОНКИ:")
-        msgs.extend([f"• {s.fio} ({s.telegram})" for s in calls])
-
-    if not msgs:
-        await update.message.reply_text("✅ Уведомлений нет!")
-    else:
-        await send_long_message(update, "\n".join(msgs))
     return await exit_to_main_menu(update, context)

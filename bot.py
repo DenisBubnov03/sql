@@ -39,10 +39,10 @@ from commands.student_commands import (
 from commands.student_info_commands import *
 from commands.student_management_command import *
 from commands.student_management_command import handle_detailed_salary_request
-from commands.student_notifications import check_call_notifications, check_payment_notifications, \
-    check_prepayment_notifications, check_postpayment_notifications, check_all_notifications, show_notifications_menu
+from commands.student_notifications import  check_payment_notifications, \
+    check_prepayment_notifications, check_postpayment_notifications, show_notifications_menu
 from commands.student_selection import find_student, handle_multiple_students
-from commands.student_statistic_commands import show_statistics_menu, show_general_statistics, show_course_type_menu, \
+from commands.student_statistic_commands import show_statistics_menu, \
     show_manual_testing_statistics, show_automation_testing_statistics, show_fullstack_statistics, request_period_start, \
     handle_period_start, handle_period_end, show_held_amounts
 from commands.vpn_commands import start_vpn_config, handle_vpn_telegram
@@ -145,8 +145,6 @@ def main():
         states={
             # ГЛАВНОЕ МЕНЮ СТАТИСТИКИ
             STATISTICS_MENU: [
-                MessageHandler(filters.Regex("^📈 Общая статистика$"), show_general_statistics),
-                MessageHandler(filters.Regex("^📚 По типу обучения$"), show_course_type_menu),
                 MessageHandler(filters.Regex("^📅 По периоду$"), request_period_start),
                 MessageHandler(filters.Regex("^💰 Холдирование$"), show_held_amounts),
                 # Важно: Regex теперь ловит и пробел, и дефис
@@ -185,9 +183,7 @@ def main():
         entry_points=[MessageHandler(filters.Regex("^Проверить уведомления$"), show_notifications_menu)],
         states={
             NOTIFICATION_MENU: [
-                MessageHandler(filters.Regex("^По звонкам$"), check_call_notifications),
                 MessageHandler(filters.Regex("^По оплате$"), check_payment_notifications),
-                MessageHandler(filters.Regex("^Все$"), check_all_notifications),
             ],
             PAYMENT_NOTIFICATION_MENU: [
                 MessageHandler(filters.Regex("^По предоплате$"), check_prepayment_notifications),
