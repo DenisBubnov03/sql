@@ -16,6 +16,7 @@ SPECIAL_USER_ID = 1257163820
 ADMIN_CHAT_ID = 1257163820
 DEBT_DAYS_THRESHOLD = 30
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+STUDENT_BOT = os.getenv("STUDENT_BOT_TOKEN")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(BASE_DIR, "prev_debtors.json")
@@ -148,8 +149,9 @@ async def notify_students_logic(bot):
 
 async def main():
     bot = Bot(token=TELEGRAM_TOKEN)
+    student_bot = Bot(token=STUDENT_BOT)
     await check_new_debtors(bot)
-    await notify_students_logic(bot)
+    await notify_students_logic(student_bot)
 
 
 if __name__ == "__main__":
