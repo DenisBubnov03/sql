@@ -290,29 +290,27 @@ def main():
         fallbacks=[CommandHandler("restart", restart)]
     )
     # Обработчик реферального модуля
+    # В main():
     referral_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^Рефералка$"), start_ref_module)],
         states={
             REF_MENU: [
                 MessageHandler(filters.Regex("^🏠 Внутренняя$"), show_inner_refs),
-                MessageHandler(filters.Regex("^🌍 Внешняя$"), show_external_refs),
+                MessageHandler(filters.Regex("^🌍 Внешняя$"), show_external_refs),  # ТУТ БЫЛА ЛАМБДА, ТЕПЕРЬ ФУНКЦИЯ
                 MessageHandler(filters.Regex("^💰 Выплатить всем$"), handle_payout_all),
                 MessageHandler(filters.Regex("^👤 Выплатить одному$"), ask_ref_tg),
                 MessageHandler(filters.Regex("^⬅️ Назад$"), exit_to_main_menu),
             ],
             REF_WAIT_TG: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, process_single_payout),
                 MessageHandler(filters.Regex("^⬅️ Назад$"), show_inner_refs),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, process_single_payout),
             ],
             REF_CONFIRM_PAYOUT: [
                 MessageHandler(filters.Regex("^✅ Подтвердить$"), confirm_single_payout),
                 MessageHandler(filters.Regex("^❌ Отмена$"), show_inner_refs),
             ]
         },
-        fallbacks=[
-            MessageHandler(filters.Regex("^🔙 Назад$"), exit_to_main_menu),
-            CommandHandler("restart", restart)
-        ],
+        fallbacks=[MessageHandler(filters.Regex("^🔙 Назад$"), exit_to_main_menu)],
         allow_reentry=True
     )
     application.add_handler(referral_handler)
