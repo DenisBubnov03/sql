@@ -18,6 +18,8 @@ from commands.contract_commands import (
 )
 from commands.create_meeting import create_meeting_entry, select_meeting_type
 from commands.mentor_bonus_commands import start_bonus_process, handle_mentor_tg, handle_bonus_amount
+from commands.referral_commands import start_ref_module, show_inner_refs, ask_ref_tg, process_single_payout, \
+    confirm_single_payout, handle_payout_all, show_external_refs
 from commands.start_commands import start, restart
 from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATISTICS_MENU, START_PERIOD, END_PERIOD, \
     COURSE_TYPE_MENU, \
@@ -29,7 +31,7 @@ from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATIS
     CONTRACT_ADVANCE_AMOUNT, CONTRACT_PAYMENT_TYPE, CONTRACT_MONTHS, CONTRACT_COMMISSION_TYPE, \
     CONTRACT_COMMISSION_CUSTOM, CONTRACT_FIO, CONTRACT_ADDRESS, CONTRACT_INN, CONTRACT_RS, CONTRACT_KS, \
     CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL, MEETING_TYPE_SELECTION, UE_MENU, UE_START_PERIOD, UE_END_PERIOD, \
-    EXPENSE_SUB_CATEGORY, EXPENSE_REFERRER, VPN_AWAITING_TELEGRAM
+    EXPENSE_SUB_CATEGORY, EXPENSE_REFERRER, VPN_AWAITING_TELEGRAM, REF_MENU, REF_WAIT_TG, REF_CONFIRM_PAYOUT
 from commands.student_commands import (
     handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
@@ -287,6 +289,33 @@ def main():
         },
         fallbacks=[CommandHandler("restart", restart)]
     )
+    # Обработчик реферального модуля
+    referral_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^Рефералка$"), start_ref_module)],
+        states={
+            REF_MENU: [
+                MessageHandler(filters.Regex("^🏠 Внутренняя$"), show_inner_refs),
+                MessageHandler(filters.Regex("^🌍 Внешняя$"), show_external_refs),
+                MessageHandler(filters.Regex("^💰 Выплатить всем$"), handle_payout_all),
+                MessageHandler(filters.Regex("^👤 Выплатить одному$"), ask_ref_tg),
+                MessageHandler(filters.Regex("^⬅️ Назад$"), exit_to_main_menu),
+            ],
+            REF_WAIT_TG: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, process_single_payout),
+                MessageHandler(filters.Regex("^⬅️ Назад$"), show_inner_refs),
+            ],
+            REF_CONFIRM_PAYOUT: [
+                MessageHandler(filters.Regex("^✅ Подтвердить$"), confirm_single_payout),
+                MessageHandler(filters.Regex("^❌ Отмена$"), show_inner_refs),
+            ]
+        },
+        fallbacks=[
+            MessageHandler(filters.Regex("^🔙 Назад$"), exit_to_main_menu),
+            CommandHandler("restart", restart)
+        ],
+        allow_reentry=True
+    )
+    application.add_handler(referral_handler)
     application.add_handler(create_meeting_handler)
     # application.add_handler(
     #     CallbackQueryHandler(handle_student_inactivity_buttons, pattern="^(set_inactive|keep_active|slow_progress):")

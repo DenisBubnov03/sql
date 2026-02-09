@@ -91,7 +91,7 @@ def calculate_ue_data(start_date, end_date):
     om_m_cost = m_map.get('om_manual', 0)
     om_a_cost = m_map.get('om_auto', 0)
     om_total = om_m_cost + om_a_cost
-    marketing_total = om_total + m_map.get('avito', 0) + m_map.get('media', 0)
+    marketing_total = om_total + m_map.get('avito', 0) + m_map.get('media', 0)+ m_map.get('ref', 0)
 
     fixed_other = session.query(func.sum(FixedExpense.amount)).filter(
         FixedExpense.report_month.between(start_date, end_date)

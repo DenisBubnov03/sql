@@ -116,6 +116,7 @@ class StudentMeta(Base):
     referrer_telegram = Column(String(50), nullable=True)
     source = Column(String(50), nullable=True)  # ОМ, Ютуб, Инстаграм, Авито, Сайт, Через знакомых, пусто
     created_at = Column(Date, nullable=True)
+    ref_paid = Column(Boolean, default=False, server_default="false")  # <--- Добавить это
 
     # Отношения
     student = relationship("Student", back_populates="meta")

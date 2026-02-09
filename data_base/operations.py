@@ -3,7 +3,7 @@ import random
 from typing import Optional
 
 from data_base.db import session
-from data_base.models import Student, Mentor, Payment, CareerConsultant, UnitEconomics
+from data_base.models import Student, Mentor, Payment, CareerConsultant, UnitEconomics, StudentMeta, MarketingSpend
 from datetime import datetime, timedelta
 from sqlalchemy import or_, func
 from sqlalchemy import desc
@@ -489,3 +489,50 @@ def get_mentor_by_telegram(telegram: str):
     """Находит активного ментора по Telegram."""
     # Убедитесь, что формат (с @ или без) совпадает с тем, как вы записываете их в базу
     return session.query(Mentor).filter(Mentor.telegram == telegram).first()
+
+
+def get_referral_debtors():
+    """Возвращает список студентов-рефералов, по которым не выплачена комиссия,
+    но которые уже внесли предоплату (минимум 5000 подтвержденных платежей)."""
+    # Считаем сумму подтвержденных платежей для каждого студента
+    payment_sums = (
+        session.query(Payment.student_id, func.sum(Payment.amount).label("total"))
+        .filter(Payment.status == "подтвержден")
+        .group_by(Payment.student_id)
+        .subquery()
+    )
+
+    return (
+        session.query(Student.fio, StudentMeta.referrer_telegram, Student.telegram)
+        .join(StudentMeta, StudentMeta.student_id == Student.id)
+        .join(payment_sums, payment_sums.c.student_id == Student.id)
+        .filter(
+            StudentMeta.is_referral == True,
+            StudentMeta.ref_paid == False,
+            payment_sums.c.total >= 5000
+        ).all()
+    )
+
+
+def register_ref_payout(student_tg, referrer_tg):
+    """Помечает рефералку выплаченной и регистрирует расход в маркетинге."""
+    student = session.query(Student).filter(Student.telegram == student_tg).first()
+    if not student:
+        return False
+
+    meta = session.query(StudentMeta).filter(StudentMeta.student_id == student.id).first()
+    if meta:
+        meta.ref_paid = True
+
+        # Регистрация в таблице маркетинга (1-е число текущего месяца для аналитики)
+        report_month = datetime.now().replace(day=1).date()
+        new_spend = MarketingSpend(
+            report_month=report_month,
+            channel="ref",
+            amount=5000,
+            comment=f"Ref payout to {referrer_tg} for student {student.fio}"
+        )
+        session.add(new_spend)
+        session.commit()
+        return True
+    return False

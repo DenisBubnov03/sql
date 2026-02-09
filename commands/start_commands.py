@@ -32,6 +32,7 @@ def get_reply_markup(role: str):
             [KeyboardButton('Поиск ученика')],
             [KeyboardButton('Статистика')],
             [KeyboardButton("📊 Рассчитать зарплату")],
+            [KeyboardButton('Рефералка')],
             [KeyboardButton('Доп расходы')],
             [KeyboardButton('💼 Добавить КК')],
             [KeyboardButton('Создать OVPN конфиг')]
