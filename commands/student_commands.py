@@ -11,7 +11,7 @@ from commands.states import FIELD_TO_EDIT, WAIT_FOR_NEW_VALUE, FIO_OR_TELEGRAM, 
 from commands.student_info_commands import calculate_commission
 from data_base.db import session
 from data_base.models import Student, Payment, CuratorInsuranceBalance, Mentor, ManualProgress, CuratorCommission, \
-    Salary
+    Salary, StudentMeta
 from data_base.operations import get_all_students, update_student, get_student_by_fio_or_telegram, delete_student
 from telegram import ReplyKeyboardMarkup, KeyboardButton
 
@@ -166,6 +166,17 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Обработка редактирования куратора
         return await edit_curator(update, context)
 
+    # if field_to_edit == "Канал оплаты":
+    #     context.user_data["field_to_edit"] = field_to_edit
+    #     await update.message.reply_text(
+    #         "Выберите канал внесения платежа (влияет на расчёт ЗП директоров):",
+    #         reply_markup=ReplyKeyboardMarkup(
+    #             [["Лава"], ["ИП"], ["Карточка"], ["Крипта"], ["Назад"]],
+    #             one_time_keyboard=True
+    #         )
+    #     )
+    #     return WAIT_FOR_NEW_VALUE
+
     if field_to_edit in FIELD_MAPPING:
         context.user_data["field_to_edit"] = field_to_edit
 
@@ -205,9 +216,10 @@ async def edit_student_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     KeyboardButton("Сумма оплаты"),
                     KeyboardButton("Статус обучения"),
                     KeyboardButton("Получил работу"),
-                    [KeyboardButton("Возврат")],
                     KeyboardButton("Комиссия выплачено"),
+                    KeyboardButton("Канал оплаты"),
                     KeyboardButton("Удалить ученика"),
+                    KeyboardButton("Возврат"),
                 ],
                 [
                     KeyboardButton("Назад")
@@ -335,6 +347,29 @@ async def handle_new_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not student or not field_to_edit:
         await update.message.reply_text("Ошибка: данные для редактирования отсутствуют. Начните сначала.")
         return ConversationHandler.END
+
+    if field_to_edit == "Канал оплаты":
+        channel_map = {"Лава": "lava", "ИП": "ip", "Карточка": "card", "Крипта": "crypto"}
+        if new_value not in channel_map:
+            await update.message.reply_text(
+                "Выберите один из вариантов: Лава, ИП, Карточка или Крипта.",
+                reply_markup=ReplyKeyboardMarkup(
+                    [["Лава"], ["ИП"], ["Карточка"], ["Крипта"], ["Назад"]],
+                    one_time_keyboard=True
+                )
+            )
+            return WAIT_FOR_NEW_VALUE
+        if new_value == "Назад":
+            return await exit_to_main_menu(update, context)
+        meta = session.query(StudentMeta).filter(StudentMeta.student_id == student.id).first()
+        if not meta:
+            meta = StudentMeta(student_id=student.id, payment_channel=channel_map[new_value])
+            session.add(meta)
+        else:
+            meta.payment_channel = channel_map[new_value]
+        session.commit()
+        await update.message.reply_text(f"Канал оплаты обновлён: {new_value} ({channel_map[new_value]}).")
+        return await exit_to_main_menu(update, context)
 
     if field_to_edit == "Комиссия выплачено":
         try:

@@ -31,7 +31,7 @@ from commands.states import NOTIFICATION_MENU, PAYMENT_NOTIFICATION_MENU, STATIS
     CONTRACT_ADVANCE_AMOUNT, CONTRACT_PAYMENT_TYPE, CONTRACT_MONTHS, CONTRACT_COMMISSION_TYPE, \
     CONTRACT_COMMISSION_CUSTOM, CONTRACT_FIO, CONTRACT_ADDRESS, CONTRACT_INN, CONTRACT_RS, CONTRACT_KS, \
     CONTRACT_BANK, CONTRACT_BIK, CONTRACT_EMAIL, MEETING_TYPE_SELECTION, UE_MENU, UE_START_PERIOD, UE_END_PERIOD, \
-    EXPENSE_SUB_CATEGORY, EXPENSE_REFERRER, VPN_AWAITING_TELEGRAM, REF_MENU, REF_WAIT_TG, REF_CONFIRM_PAYOUT
+    EXPENSE_SUB_CATEGORY, EXPENSE_REFERRER, VPN_AWAITING_TELEGRAM, REF_MENU, REF_WAIT_TG, REF_CONFIRM_PAYOUT, PAYMENT_CHANNEL
 from commands.student_commands import (
     handle_student_deletion, handle_new_value,
     handle_payment_date, start_contract_signing, handle_contract_signing,
@@ -84,7 +84,7 @@ def main():
             IS_REFERRAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_is_referral)],
             REFERRER_TELEGRAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_referrer_telegram)],
             STUDENT_SOURCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_source)],
-
+            PAYMENT_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_student_payment_channel)],
         },
         fallbacks=[CommandHandler("restart", restart)],
     )

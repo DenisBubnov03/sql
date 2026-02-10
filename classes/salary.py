@@ -3,7 +3,8 @@ from datetime import datetime, date, time
 from sqlalchemy import func
 
 from data_base.db import session as db_session  # Или просто session, зависит от вашего импорта
-from data_base.models import Student, CuratorCommission, Salary, Mentor, SalaryKK  # Добавили Salary
+from data_base.models import Student, CuratorCommission, Salary, Mentor, SalaryKK
+from data_base.operations import get_student_channel_commission
 
 DIRECTOR_ID_MANUAL = 1
 DIRECTOR_ID_AUTO = 3
@@ -58,9 +59,11 @@ class SalaryManager:
             print(f"Error: payment_id is required for creating Salary record! Skipping bonus init.")
             return None
 
-        # 5. Расчет 10% суммы
+        # 5. Расчет 10% суммы с вычетом комиссии канала оплаты (только для директоров)
         bonus_percent = 0.10
         total_commission_value = float(student.total_cost) * bonus_percent
+        channel_commission = get_student_channel_commission(student)
+        total_commission_value *= 1.0 - channel_commission
 
         # 6. Проверка дублей (чтобы не начислить дважды за одного студента)
         # Проверяем по таблице долгов

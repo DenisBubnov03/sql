@@ -115,6 +115,7 @@ class StudentMeta(Base):
     is_referral = Column(Boolean, default=False, server_default="false")
     referrer_telegram = Column(String(50), nullable=True)
     source = Column(String(50), nullable=True)  # ОМ, Ютуб, Инстаграм, Авито, Сайт, Через знакомых, пусто
+    payment_channel = Column(String(20), nullable=True)  # lava, ip, card, crypto — для вычета комиссии из ЗП директоров
     created_at = Column(Date, nullable=True)
     ref_paid = Column(Boolean, default=False, server_default="false")  # <--- Добавить это
 

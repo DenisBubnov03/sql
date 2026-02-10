@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from classes.salary import SalaryManager
 from commands.start_commands import exit_to_main_menu
 from commands.states import FIO, TELEGRAM, START_DATE, COURSE_TYPE, TOTAL_PAYMENT, PAID_AMOUNT, \
-    SELECT_MENTOR, IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE
+    SELECT_MENTOR, IS_REFERRAL, REFERRER_TELEGRAM, STUDENT_SOURCE, PAYMENT_CHANNEL
 from data_base.db import session
 from data_base.models import Payment, Student, CareerConsultant, SalaryKK
 from data_base.models import Payout, Salary, Mentor
@@ -459,8 +459,34 @@ async def add_student_source(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return STUDENT_SOURCE
     
     context.user_data["source"] = source
-    
-    # Теперь создаем студента с мета-данными
+
+    # Спрашиваем канал внесения платежа (для вычета комиссии из ЗП директоров)
+    await update.message.reply_text(
+        "Через что вносит платеж? (влияет на расчёт ЗП директоров)",
+        reply_markup=ReplyKeyboardMarkup(
+            [["Лава"], ["ИП"], ["Карточка"], ["Крипта"]],
+            one_time_keyboard=True
+        )
+    )
+    return PAYMENT_CHANNEL
+
+
+async def add_student_payment_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обработка выбора канала оплаты: Лава (12%), ИП (8%), Карточка/Крипта (0%).
+    """
+    raw = update.message.text.strip()
+    channel_map = {"Лава": "lava", "ИП": "ip", "Карточка": "card", "Крипта": "crypto"}
+    if raw not in channel_map:
+        await update.message.reply_text(
+            "Выберите один из вариантов: Лава, ИП, Карточка или Крипта.",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Лава"], ["ИП"], ["Карточка"], ["Крипта"]],
+                one_time_keyboard=True
+            )
+        )
+        return PAYMENT_CHANNEL
+    context.user_data["payment_channel"] = channel_map[raw]
     return await create_student_with_meta(update, context)
 
 
@@ -506,6 +532,7 @@ async def create_student_with_meta(update: Update, context: ContextTypes.DEFAULT
             is_referral=context.user_data.get("is_referral", False),
             referrer_telegram=context.user_data.get("referrer_telegram"),
             source=context.user_data.get("source"),
+            payment_channel=context.user_data.get("payment_channel"),  # lava, ip, card, crypto
             created_at=date.today()
         )
         
@@ -1468,6 +1495,7 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
                 else:
                     percent = 0.2
 
+                # Комиссия канала (Лава/ИП) уже учтена при создании записей в Salary — здесь только пересчёт для сводки
                 # Для комиссионных платежей используем новую формулу расчета от базового дохода
                 if "комисси" in comment_lower and student.commission:
                     from data_base.operations import calculate_base_income_and_salary
@@ -1485,7 +1513,7 @@ async def generate_mentor_detailed_report(mentor, salary, logs, start_date, end_
                 else:
                     # Для остальных платежей используем старую формулу
                     payout = amount * percent
-                
+
                 if "первонач" in comment_lower or "доплат" in comment_lower:
                     from_students_payout += payout
                 elif "комисси" in comment_lower:

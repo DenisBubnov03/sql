@@ -9,6 +9,21 @@ from sqlalchemy import or_, func
 from sqlalchemy import desc
 
 
+def get_student_channel_commission(student) -> float:
+    """
+    Возвращает долю комиссии канала оплаты (0..1) для студента.
+    Используется для вычета из ЗП директоров. Если мета или канал не заданы — 0.
+    """
+    from config import Config
+    if not student or not getattr(student, "id", None):
+        return 0.0
+    meta = getattr(student, "meta", None)
+    if meta is None:
+        meta = session.query(StudentMeta).filter(StudentMeta.student_id == student.id).first()
+    channel = (meta.payment_channel or "").strip().lower() if meta else ""
+    return float(Config.PAYMENT_CHANNEL_COMMISSION.get(channel, 0.0))
+
+
 # Функции для работы с карьерными консультантами
 def get_all_career_consultants():
     """Возвращает список всех активных карьерных консультантов."""

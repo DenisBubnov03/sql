@@ -55,6 +55,14 @@ class Config:
     NEW_PAYMENT_SYSTEM_START_DATE = date(2025, 11,
                                          1)  # Студенты, пришедшие с этой даты, рассчитываются по новой системе
 
+    # Комиссия канала внесения платежа (вычитается из ЗП директоров): Лава 12%, ИП 8%, карта/крипта 0%
+    PAYMENT_CHANNEL_COMMISSION = {
+        "lava": 0.12,
+        "ip": 0.08,
+        "card": 0.0,
+        "crypto": 0.0,
+    }
+
     # Методы для управления страховкой кураторов
     @classmethod
     def enable_curator_insurance(cls):
